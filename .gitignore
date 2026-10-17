@@ -1,0 +1,20 @@
+# 로컬 작업 폴더 (루트 한정 — 하위 경로의 동명 폴더는 추적된다)
+/.claude/
+/docs/
+/sw/
+
+# 의존성 · 빌드 산출물
+node_modules/
+dist/
+build/
+out/
+
+# 환경 변수
+.env
+.env.*
+
+# 파이썬
+__pycache__/
+*.py[cod]
+.venv/
+venv/
