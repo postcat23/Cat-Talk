@@ -1,0 +1,191 @@
+# Cat-Talk IPC 계약서
+
+마이그레이션 기준 문서. upstream `misosiruda/bongo-cat-chat` **dev21 / `981dd43`** (2026-11-02) 소스 실측 기반. Qt WebEngine + QWebChannel 구조를 **Electron(main) + React(renderer) + Python 사이드카**로 옮길 때의 경계·메시지·데이터 계약을 정의한다.
+
+> 이 문서는 upstream 코드에서 **실제로 오가는 것**을 기록한다. upstream이 갱신되면 해당 변경분을 이 문서에 반영한 뒤 포팅한다.
+
+---
+
+## 1. 아키텍처 — IPC는 2개 층이다
+
+원본은 단일 프로세스가 아니라 **두 개의 IPC 경계**를 가진다. 포팅은 이 둘을 분리해 매핑해야 한다.
+
+```
+[A] renderer ↔ controller           [B] controller ↔ worker(별도 프로세스)
+ QWebChannel bridge.request()         multiprocessing Queue (spawn)
+ 요청/응답(JSON), 렌더러가 600ms 폴링    commands(maxsize 64) / events(maxsize 2048) / stop(Event)
+```
+
+- **[A] renderer↔controller**: 렌더러가 `bridge.request(JSON)` 호출 → `Controller.dispatch` 처리 → JSON 반환. 렌더러는 상태를 **push로 받지 않고 `view`를 600ms 간격으로 폴링**해 최신 상태를 통째로 가져온다(`setInterval(()=>refresh(),600)`).
+- **[B] controller↔worker**: 네이티브(Steam FFI·Mono 메모리 읽기)는 `run_worker`가 도는 **spawn 자식 프로세스**에 격리. 큐로만 통신하며 이벤트는 `state`/`message`/`reaction`/`result`.
+
+### Electron 매핑
+
+| 원본 | Electron 전환 |
+|---|---|
+| Controller + worker + service + store + merger (Qt 제외 Python 전부) | **Python 사이드카** 프로세스 |
+| QWebChannel `bridge.request` | Electron main ↔ 사이드카 IPC(stdio JSON 라인/로컬 소켓), main ↔ renderer는 `ipcRenderer`/`contextBridge` |
+| 렌더러 600ms `view` 폴링 | 그대로 폴링 유지 가능. (선택) 사이드카 push로 바꿀 수 있으나 **계약 보존 원칙상 1차는 폴링 유지 권장** |
+| worker spawn + Queue | 사이드카 내부에 그대로 유지(파이썬 multiprocessing). Electron은 사이드카 1개만 관리 |
+
+**핵심 불변식:** 렌더러는 `view` 응답 하나로 전체 UI 상태를 재구성한다. 그래서 `view`가 계약의 중심이고, 나머지 액션은 명령형(상태를 바꾸고 다음 `view`에서 반영됨)이다.
+
+---
+
+## 2. 요청 액션 계약 (renderer → controller)
+
+호출 형식: `bridge.request(JSON.stringify({action, ...args}))` → `{...}` 또는 `{error:"<code>"}`.
+문자열 SteamID는 **항상 string**(JS number 정밀도 금지). 원본 `rpc()` 래퍼는 `{error}`를 reject로 변환한다.
+
+| action | 인자 | 반환(성공) | 주요 에러 | 비고 |
+|---|---|---|---|---|
+| `view` | `lobby?,account?,query?,before?,start?,seen?,limit?=100,reactions?,language?` | 아래 §3 전체 상태 객체 | `invalid_query` | 600ms 폴링. 검색·페이징·읽음 집계 |
+| `send` | `context,text` | `{id}` | `connection_changed`·`development_limit_50`·`control_character`·`storage_failed_before_send` | 워커 commands 큐로 전달 |
+| `draft` | `account,lobby,text` | `{ok:true}` | `account_changed` | 세션 한정(아래 §5) |
+| `setting` | `key,value` | `{ok:true}` | `invalid_setting` | key: `theme`/`collapsed`/`language`/`reactions_enabled`/`notification_flash`/`notification_toast` |
+| `delete` | `account,lobby?` | `{ok:true}` | `account_changed` | 현재 계정 기록 삭제 |
+| `refresh` | — | `{ok:true}` | — | 언어 재로드 + 저장소 복구 + 워커 refresh |
+| `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 차단 목록은 **영속** |
+| `open_steam_profile` | `steam_id,context` | `{ok:true}` | `steam_profile_unavailable`·`steam_profile_failed` | 네이티브 `QDesktopServices.openUrl` → Electron `shell.openExternal` |
+| `check_updates` | — | `{ok:true}` | — | |
+| `restart_update` | — | `{ok:true}` / `{ok:false,reason}` | — | reason: `auto_merge`·`unavailable`·`storage`·`sending` |
+| `update_permission` | `allowed` | `{ok:true}` / `{error:update_permission_failed}` | — | |
+| `legal` | `document` | `{ok:true}` | `invalid_document`·`legal_unavailable` | document: `privacy`/`licenses`/`chromium`/`sources`. 네이티브 `QDialog` → Electron 재설계 |
+| `merge_connect` | — | `{ok:bool}` | — | 합성 연결(게임 프로세스 모듈 로드). §4 |
+| `merge_start` | `limit` | `{ok,auto_merge}` | `invalid_merge_limit` | 사용자 명시 시작. limit 1..2^53-1 |
+| `merge_stop` | — | `{ok,auto_merge}` | — | |
+| `merge_acknowledge` | — | `{ok,auto_merge}` | — | `unknown` 상태 사용자 확인 |
+| `merge_maximum` | — | `{ok,limit,auto_merge}` | — | 가능 최대치 조회. 입력 안 보냄 |
+| `merge_group` | `group` | `{ok,auto_merge}` | — | group: `cosmetics`/`emotes` |
+
+**전역 에러 처리(`Controller.request`):** 위 화이트리스트 외 `ValueError/TypeError/KeyError/queue.Full` → `request_failed`. SQLite/OS 오류 → `storage_failed`. 요청 원문 32KB 초과 → `request_too_large`. 네이티브 예외 메시지·경로는 렌더러로 넘기지 않는다.
+
+---
+
+## 3. `view` 응답 객체
+
+`service.view()` 반환 + `Controller.dispatch('view')` 추가분. 렌더러 UI 전체가 이것으로 재구성된다.
+
+**연결·컨텍스트**
+- `context` `{account,lobby,generation}`, `state`(checking/…/ready), `notice`, `game_build`
+- `connected`, `lobby_verified`, `can_send`
+
+**메시지·방**
+- `messages[]`: `{seq,id,session,account,lobby,sender,name,body,received,own,status,echo,kind?,unsaved?}` — `kind`는 `chat`/`member_joined`/`member_left`(프레즌스), `unsaved:true`는 아직 미저장(휘발 버퍼)
+- `has_more,has_newer,latest_seq,unseen,unseen_seq`, `lobby`
+- `rooms[]`: `{lobby,started,name,segments}` — 사이드바 로비 목록(§5에서 세션 한정으로 축소)
+- `draft`, `volatile_peer_ids[]`
+
+**프로필·참여자·차단**
+- `profiles{uid:{name,avatar,…}}`(허용된 발신자+본인), `participants{uid:{…,blocked}}`
+- `profile_targets[]`(Steam 프로필 열기 허용 대상)
+- `blocks_ready`, `blocked_users[{steam_id,name}]`
+
+**설정·상태**
+- `theme`,`collapsed`,`language`,`language_preference`,`notifications{notification_flash,notification_toast}`,`reactions_enabled`
+- `storage_error`,`revision`(변경 감지용 단조 증가)
+- `translations`(요청 `language`가 현재와 다를 때만, `en`이면 사전)
+
+**추가분(dispatch)**
+- `reactions[]`(요청에 `reactions`가 있을 때): `{id,sender,kind,avatar,text,image,expires_in_ms}` — TTL 기반 1회성, 가져가면 비워짐
+- `update{…,can_restart,merge_deferred}` — 업데이트 스냅샷
+- `auto_merge{…§4 스냅샷…, connection?{state,error,can_connect}}`
+- `notification_status{…}`
+
+---
+
+## 4. 자동 합성(auto_merge) 계약
+
+게임 프로세스에 모듈을 로드해 **게임의 원본 중복선택·Merge 함수를 호출**한다(디스크 파일 무수정). 선택 알고리즘·교환 호출은 어댑터가 담당하고, `AutoMerge`는 세션 한정 상태 머신이다.
+
+**스냅샷 필드(`auto_merge`)**
+`state,reason,active,can_change_group,available_exchanges,exchange_group,can_start,can_stop,unresolved,completed,limit,pending,category,favorites_allowed,events_excluded,revision`
+
+**상태(state)**: 활성 `arming→preparing→selecting→merging→waiting→stopping` / 종결 `completed·stopped·failed·unknown` / 그 외 `idle·blocked`.
+**연결 스냅샷(`auto_merge.connection`)**: `{state,error,can_connect}`.
+
+**중요 불변식**
+- `blocks_restart = active || unresolved` → 합성 진행·미해결 중엔 앱 업데이트 재시작을 막는다(`restart_update`가 `reason:'auto_merge'` 반환).
+- `limit`은 정수 그대로 전송(2^53-1 상한, QWebChannel/JS 정확 정수).
+- `unknown`(결과 미확인)은 자동 재시도하지 않는다. 사용자가 `merge_acknowledge`로만 종결.
+- 읽기 전용/오프라인이면 `UnavailableGameUI`로 대체되어 입력을 거부한다.
+
+> **상자깡(B) 경계**: 자동 합성은 위처럼 **사이드카 내부**(인-프로세스)다. 디스크를 패치하는 `bongo-cat-auto-chest`(PS/.NET)는 이 계약에 **들어오지 않는다.** Electron UI가 별도 `BongoAutoChest.exe`를 **실행/설정만** 호출(셸아웃)하고, 코드·IPC를 공유하지 않는다. Cat-Talk의 연결 판정은 "상자깡으로 패치된 게임"도 허용해야 한다(upstream dev20이 이미 처리).
+
+---
+
+## 5. store — 휘발/영속 분할 (Cat-Talk 확정 모델)
+
+원본은 단일 `history.sqlite3`에 7개 테이블 + `timeline` TEMP 뷰. Cat-Talk은 **채팅 휘발 / 설정·차단 영속**으로 분할한다.
+
+| 테이블 | 내용 | Cat-Talk 처분 |
+|---|---|---|
+| `sessions` | 세션 경계 | **휘발** |
+| `messages` | 채팅 | **휘발** |
+| `receipts` | 자기-에코 중복제거(→messages CASCADE) | **휘발** |
+| `drafts` | 로비별 초안 | **휘발**(종료 시 삭제 확정) |
+| `presence_events` | 입·퇴장(→sessions CASCADE) | **휘발** |
+| `settings` | theme/collapsed/language/reactions_enabled/알림 | **영속(디스크)** |
+| `blocked_users` | 계정별 채팅 차단 목록 | **영속(디스크)** |
+
+**구현 권고(최소 diff):** 단일 연결에서 `ATTACH DATABASE ':memory:' AS vol` 로 휘발 5개 테이블 + `timeline` 뷰를 메모리 DB에 두고, `settings`·`blocked_users`만 디스크 메인 DB에 둔다. FK(messages→sessions, receipts→messages, presence_events→sessions)는 **전부 휘발 집합 내부**라 한 메모리 DB 안에서 성립한다. `store.py`의 메서드 표면은 그대로 유지, 테이블 배치만 변경.
+
+**삭제·단순화되는 것**
+- `RETENTION_SECONDS`·`prune()`·60초 주기 프루닝: 휘발 테이블엔 무의미 → 제거(영속 테이블은 보존 불필요).
+- 시작 시 `pending→unknown`, 열린 세션 `app_interrupted` 복구: 재시작 간 이어붙임 없음 → 제거.
+- `view`의 검색·`rooms`(사이드바 로비 목록)은 **이번 실행 세션 한정**으로 축소(의도된 동작).
+
+**프라이버시:** 채팅·초안이 디스크에 안 닿는다. 렌더러는 원본처럼 **off-the-record**(localStorage/캐시 비영속)를 Electron에서도 유지 — `webPreferences`에서 채팅 영속 경로를 만들지 않는다.
+
+---
+
+## 6. 워커 이벤트 (controller ↔ worker, 내부 사이드카)
+
+렌더러는 이걸 직접 받지 않는다. 워커가 큐로 올리면 controller가 service에 반영하고, 렌더러는 다음 `view`에서 본다.
+
+| event.type | 처리 | 페이로드(관찰된 키) |
+|---|---|---|
+| `state` | `service.update` | `account,lobby,generation,connected,lobby_verified,send_enabled,members[],profiles{},name,notice,game_build,build_fingerprint` |
+| `message` | `service.receive` → 알림 | `id,context{account,lobby,generation},sender,text,received` |
+| `reaction` | `service.receive_reaction` | `id,sender,kind('meow'/'emote'),avatar,text,image,observed,context` |
+| `result` | `service.result` | `id,status('accepted'/'failed'/'unknown')` |
+
+**commands(controller→worker)**: `{type:'send',id,text,context}`, `{type:'refresh'}`.
+**큐 사양**: commands `maxsize=64`, events `maxsize=2048`, `stop`은 Event. spawn 컨텍스트.
+
+---
+
+## 7. Electron 전환 시 재설계 지점 (네이티브 의존)
+
+원본이 Qt/Win 네이티브에 직접 붙은 부분. 포팅에서 각각 대체 필요.
+
+| 원본 | 대체 |
+|---|---|
+| `QDesktopServices.openUrl`(Steam 프로필) | `shell.openExternal(steamUri)` |
+| `QDialog`+`QTextBrowser`(legal 문서) | 렌더러 모달 또는 별도 BrowserWindow |
+| `QLockFile`(단일 인스턴스) | `app.requestSingleInstanceLock()` |
+| OTR `QWebEngineProfile`(채팅 비영속) | `webPreferences`로 채팅 영속 금지 + 파일 접근 화이트리스트 |
+| `WindowsToast`(WinRT, 고정 AUMID) | Electron `Notification` + AUMID 재배선 |
+| `QWebEngineUrlRequestInterceptor`(file/qrc 화이트리스트) | Electron `webRequest`/CSP로 로컬 자원만 허용 |
+| `QTimer`(100ms poll, 600ms view) | main 루프/렌더러 `setInterval` |
+
+---
+
+## 8. 에러 코드 목록
+
+렌더러로 통과되는 코드: `connection_changed`, `development_limit_50`, `control_character`, `storage_failed_before_send`, `legal_unavailable`, `invalid_steam_id`, `steam_profile_unavailable`, `steam_profile_failed`, `block_unavailable`, `invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large`.
+그 외 전부 → `request_failed`. SQLite/OS → `storage_failed`. `update_permission` 실패 → `{error:update_permission_failed}`.
+
+---
+
+## 부록 — 소스 매핑
+
+| 영역 | 파일 |
+|---|---|
+| IPC 접점(dispatch)·이벤트 poll | `desktop.py` |
+| 메시지 상태·프라이버시·view 조립 | `service.py` |
+| SQLite 스키마·페이징·검색 | `store.py` |
+| 합성 상태 머신 | `auto_merge.py` |
+| 합성 연결 어댑터 | `merge_connection.py` · `merge_bridge.py` · `merge_bootstrap.py` · `merge_install.py` |
+| 프레즌스/리액션/현지화 | `presence.py` · `reactions.py` · `localization.py` |
+| 렌더러(호출부) | `ui/app.js` (rpc 래퍼 + 600ms refresh) |
