@@ -7,6 +7,8 @@ node_modules/
 dist/
 build/
 out/
+# 호환성 툴체인 빌드 산출물(exe·dll·Version.cs·nupkg) — 기기마다 tools/prepare-compatibility.ps1로 재빌드
+artifacts/
 
 # 환경 변수
 .env
