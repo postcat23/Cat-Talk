@@ -68,4 +68,14 @@ ipcMain.handle('bridge-request', async (_e, payloadString) => {
 });
 
 app.whenReady().then(() => { startSidecar(); createWindow(); });
-app.on('window-all-closed', () => { if (sidecar) sidecar.kill(); app.quit(); });
+// 강제 kill은 사이드카의 종료 정리(stop → worker join/terminate)를 건너뛰어 worker를 오펀으로 남긴다.
+// stdin EOF로 스스로 정리하게 하고, 정리 상한(join 3s + 2s)을 넘길 때만 kill한다.
+const SIDECAR_EXIT_GRACE_MS = 8000;
+
+app.on('window-all-closed', () => {
+  if (!sidecar) { app.quit(); return; }
+  const child = sidecar;
+  const force = setTimeout(() => child.kill(), SIDECAR_EXIT_GRACE_MS);
+  child.once('exit', () => { clearTimeout(force); app.quit(); });
+  child.stdin.end();
+});
