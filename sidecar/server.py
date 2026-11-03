@@ -215,10 +215,10 @@ def handle(sidecar, line):
     return {"id": id, "result": result}
 
 
-def read_stdin(inbox, shutdown):
+def read_stdin(stream, inbox, shutdown):
     # 스토어/서비스에 접근하지 않는다. 줄을 inbox에 넣기만 한다.
     try:
-        for line in sys.stdin:
+        for line in stream:
             line = line.strip()
             if line:
                 inbox.put(line)
@@ -232,12 +232,18 @@ def main():
     ipc_fd = os.dup(1)
     os.dup2(2, 1)
     ipc = os.fdopen(ipc_fd, "w", encoding="utf-8", buffering=1)
-    sys.stdin.reconfigure(encoding="utf-8")
+    # stdin도 IPC 전용 fd로 떼고 fd0은 devnull로 둔다. 리더 스레드가 stdin 파이프에서 동기 읽기로
+    # 대기하는 동안 그 핸들을 물려받은 spawn 자식(worker)은 초기화에서 막힌다(Windows 실측:
+    # 다음 요청 줄이 들어올 때까지 worker CPU 0.0s, 이벤트 없음).
+    ipc_in = os.fdopen(os.dup(0), "r", encoding="utf-8")
+    devnull = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(devnull, 0)
+    os.close(devnull)
 
     sidecar = Sidecar(data_dir(), offline=os.environ.get("CATTALK_OFFLINE") == "1",
                       read_only=os.environ.get("CATTALK_READONLY") == "1")
     inbox, shutdown = queue.Queue(), threading.Event()
-    threading.Thread(target=read_stdin, args=(inbox, shutdown), daemon=True).start()
+    threading.Thread(target=read_stdin, args=(ipc_in, inbox, shutdown), daemon=True).start()
     try:
         # 메인 스레드만 Store/ChatService를 소유한다.
         while True:
