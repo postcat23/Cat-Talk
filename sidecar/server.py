@@ -17,9 +17,9 @@ import time
 # spawn 자식도 이 모듈을 재import하므로 경로 설정은 모듈 최상단에 둔다.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bongo_chat.store import Store
 from bongo_chat.service import ChatService, NOTIFICATION_KEYS
 from bongo_chat.worker import run_worker, unavailable
+from volatile_store import VolatileStore
 
 MAX_REQUEST = 32768
 # bongo_chat.localization.LANGUAGES 사본 — 그 모듈은 PySide6를 import해 사이드카에서 쓸 수 없다.
@@ -46,7 +46,8 @@ def data_dir():
 
 class Sidecar:
     def __init__(self, data, offline=False, read_only=False):
-        self.store = Store(data / "history.sqlite3")
+        # D-003: 채팅 계열은 인메모리(종료 시 소멸), settings만 디스크.
+        self.store = VolatileStore(data / "settings.sqlite3")
         self.service = ChatService(self.store)
         self.known_accounts = set()
         self.worker = None

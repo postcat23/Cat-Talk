@@ -45,7 +45,7 @@
 | `setting` | `key,value` | `{ok:true}` | `invalid_setting` | key: `theme`/`collapsed`/`language`/`reactions_enabled`/`notification_flash`/`notification_toast` |
 | `delete` | `account,lobby?` | `{ok:true}` | `account_changed` | 현재 계정 기록 삭제 |
 | `refresh` | — | `{ok:true}` | — | 언어 재로드 + 저장소 복구 + 워커 refresh |
-| `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 차단 목록은 **영속** |
+| `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 원본은 차단 목록 영속. **Cat-Talk은 미구현** — `not_wired` 응답(D-009) |
 | `open_steam_profile` | `steam_id,context` | `{ok:true}` | `steam_profile_unavailable`·`steam_profile_failed` | 네이티브 `QDesktopServices.openUrl` → Electron `shell.openExternal` |
 | `check_updates` | — | `{ok:true}` | — | |
 | `restart_update` | — | `{ok:true}` / `{ok:false,reason}` | — | reason: `auto_merge`·`unavailable`·`storage`·`sending` |
@@ -116,7 +116,7 @@
 
 ## 5. store — 휘발/영속 분할 (Cat-Talk 확정 모델)
 
-원본은 단일 `history.sqlite3`에 7개 테이블 + `timeline` TEMP 뷰. Cat-Talk은 **채팅 휘발 / 설정·차단 영속**으로 분할한다.
+원본은 단일 `history.sqlite3`에 7개 테이블 + `timeline` TEMP 뷰. Cat-Talk은 **채팅 휘발 / 설정만 영속**으로 분할하고, 차단은 무력화한다(decisions D-003·D-009).
 
 | 테이블 | 내용 | Cat-Talk 처분 |
 |---|---|---|
@@ -125,14 +125,14 @@
 | `receipts` | 자기-에코 중복제거(→messages CASCADE) | **휘발** |
 | `drafts` | 로비별 초안 | **휘발**(종료 시 삭제 확정) |
 | `presence_events` | 입·퇴장(→sessions CASCADE) | **휘발** |
-| `settings` | theme/collapsed/language/reactions_enabled/알림 | **영속(디스크)** |
-| `blocked_users` | 계정별 채팅 차단 목록 | **영속(디스크)** |
+| `settings` | theme/collapsed/language/reactions_enabled/알림 | **영속(디스크, `settings.sqlite3`)** |
+| `blocked_users` | 계정별 채팅 차단 목록 | **무력화·비영속** (`blocked_users()`→`{}`, `set_blocked()` 무동작) |
 
-**구현 권고(최소 diff):** 단일 연결에서 `ATTACH DATABASE ':memory:' AS vol` 로 휘발 5개 테이블 + `timeline` 뷰를 메모리 DB에 두고, `settings`·`blocked_users`만 디스크 메인 DB에 둔다. FK(messages→sessions, receipts→messages, presence_events→sessions)는 **전부 휘발 집합 내부**라 한 메모리 DB 안에서 성립한다. `store.py`의 메서드 표면은 그대로 유지, 테이블 배치만 변경.
+**구현: `sidecar/volatile_store.py`의 `VolatileStore(Store)` 글루.** upstream `Store`를 상속해 부모 연결을 `:memory:`로 연다 — 7개 테이블과 `timeline` 뷰가 전부 메모리 DB에 생기고(빈 `blocked_users` 포함), FK(messages→sessions, receipts→messages, presence_events→sessions)도 그 안에서 성립한다. `setting()`만 별도 디스크 연결(`settings.sqlite3`)로 돌린다. `store.py`는 수정하지 않는다(D-009) — upstream 스키마·메서드가 바뀌면 이 글루를 함께 점검한다.
 
-**삭제·단순화되는 것**
-- `RETENTION_SECONDS`·`prune()`·60초 주기 프루닝: 휘발 테이블엔 무의미 → 제거(영속 테이블은 보존 불필요).
-- 시작 시 `pending→unknown`, 열린 세션 `app_interrupted` 복구: 재시작 간 이어붙임 없음 → 제거.
+**무의미해지는 것(코드는 upstream 그대로 둠)**
+- `RETENTION_SECONDS`·`prune()`·60초 주기 프루닝: 매 실행 빈 메모리 DB라 지울 것이 사실상 없다.
+- 시작 시 `pending→unknown`, 열린 세션 `app_interrupted` 복구: 재시작 간 이어붙일 기록이 없다.
 - `view`의 검색·`rooms`(사이드바 로비 목록)은 **이번 실행 세션 한정**으로 축소(의도된 동작).
 
 **프라이버시:** 채팅·초안이 디스크에 안 닿는다. 렌더러는 원본처럼 **off-the-record**(localStorage/캐시 비영속)를 Electron에서도 유지 — `webPreferences`에서 채팅 영속 경로를 만들지 않는다.
@@ -176,6 +176,7 @@
 렌더러로 통과되는 코드: `connection_changed`, `development_limit_50`, `control_character`, `storage_failed_before_send`, `legal_unavailable`, `invalid_steam_id`, `steam_profile_unavailable`, `steam_profile_failed`, `block_unavailable`.
 `invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large` → `request_failed`로 접힘(내부에선 발생하지만 렌더러로 나가지 않음).
 그 외 전부 → `request_failed`. SQLite/OS → `storage_failed`. `update_permission` 실패 → `{error:update_permission_failed}`.
+Cat-Talk 전송 계층 추가 코드: `not_wired`(사이드카 미배선 액션), `bridge_down`(main↔사이드카 전송 실패).
 
 ---
 
