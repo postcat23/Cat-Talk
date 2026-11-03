@@ -2,14 +2,23 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
+const REQUEST_TIMEOUT_MS = 5000;
+
 let win = null, sidecar = null, nextId = 1, stdoutBuf = '';
-const pending = new Map();   // id -> {resolve, reject}
+const pending = new Map();   // id -> {resolve, reject, timer}
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
+function settle(id) {
+  const p = pending.get(id);
+  if (p) { pending.delete(id); clearTimeout(p.timer); }
+  return p;
+}
+
 function startSidecar() {
-  const py = process.env.CATTALK_PYTHON || 'python';   // python 안 잡히면 CATTALK_PYTHON=py 등으로 override
-  sidecar = spawn(py, [path.join(__dirname, '..', 'sidecar', 'server.py')], {
+  // upstream 소스는 3.10+ 문법(`dict | None`)이라 기본은 py 런처의 3.11. CATTALK_PYTHON으로 override.
+  const [py, ...pyArgs] = process.env.CATTALK_PYTHON ? [process.env.CATTALK_PYTHON] : ['py', '-3.11'];
+  sidecar = spawn(py, [...pyArgs, path.join(__dirname, '..', 'sidecar', 'server.py')], {
     stdio: ['pipe', 'pipe', 'inherit'],
   });
   sidecar.stdout.setEncoding('utf-8');
@@ -20,22 +29,24 @@ function startSidecar() {
       const line = stdoutBuf.slice(0, nl); stdoutBuf = stdoutBuf.slice(nl + 1);
       if (!line.trim()) continue;
       let msg; try { msg = JSON.parse(line); } catch (e) { continue; }
-      const p = pending.get(msg.id);
-      if (p) { pending.delete(msg.id); p.resolve(JSON.stringify(msg.result)); }
+      const p = settle(msg.id);
+      if (p) p.resolve(JSON.stringify(msg.result));
     }
   });
   sidecar.on('exit', () => {
-    for (const p of pending.values()) p.reject(new Error('sidecar_exited'));
-    pending.clear(); sidecar = null;
+    for (const id of [...pending.keys()]) settle(id).reject(new Error('sidecar_exited'));
+    sidecar = null;
   });
 }
 
 function sidecarRequest(payloadString) {
   return new Promise((resolve, reject) => {
     if (!sidecar) { reject(new Error('sidecar_down')); return; }
-    const id = nextId++;
-    pending.set(id, { resolve, reject });
     let args; try { args = JSON.parse(payloadString); } catch (e) { reject(e); return; }
+    const id = nextId++;
+    // 응답이 없거나 id가 매칭되지 않으면 영구 대기 대신 타임아웃으로 정리한다.
+    const timer = setTimeout(() => { if (settle(id)) reject(new Error('sidecar_timeout')); }, REQUEST_TIMEOUT_MS);
+    pending.set(id, { resolve, reject, timer });
     sidecar.stdin.write(JSON.stringify({ id, args }) + '\n');
   });
 }
