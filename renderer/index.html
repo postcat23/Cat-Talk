@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>Cat-Talk (dev)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; color: #e8e8e8; background: #1e2327; }
+    h1 { font-size: 16px; }
+    pre { background: #11151a; padding: 12px; border-radius: 8px; overflow: auto; }
+    .ok { color: #7ac77a; } .bad { color: #e07a7a; }
+  </style>
+</head>
+<body>
+  <h1>Cat-Talk 스텁 IPC 루프</h1>
+  <p>상태: <span id="status">연결 중…</span></p>
+  <p>view 폴링 횟수: <span id="count">0</span> / sidecar revision: <span id="rev">-</span></p>
+  <pre id="dump"></pre>
+  <script src="app.js"></script>
+</body>
+</html>
