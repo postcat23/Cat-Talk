@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - Electron 셸 + 파이썬 사이드카 스텁 IPC 루프 추가
 - upstream bongo-cat-chat dev21(981dd43) 소스 import
 - 사이드카 오프라인 실제 배선 (ChatService/Store) + IPC id 버그 수정
+- 실제 worker 활성화 (spawn + poll 루프 + 종료 정리)
+- compatibility 툴체인 import(tools/) + artifacts gitignore
 
 ### Fixed
 
