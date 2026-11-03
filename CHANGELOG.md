@@ -10,3 +10,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 ### Added
 
 - `README` — 프로젝트 개요와 Electron + React + Python 사이드카 포팅 계획 문서 추가
+- Electron 셸 + 파이썬 사이드카 스텁 IPC 루프 추가
