@@ -19,12 +19,12 @@ from bongo_chat.worker import unavailable
 MAX_REQUEST = 32768
 # bongo_chat.localization.LANGUAGES 사본 — 그 모듈은 PySide6를 import해 사이드카에서 쓸 수 없다.
 LANGUAGES = ("system", "ko", "en")
-# upstream 화이트리스트 + invalid_query·invalid_setting·account_changed·invalid_merge_limit·request_too_large
-# (upstream은 이 다섯을 request_failed로 뭉갠다).
+# upstream desktop.py Controller.request와 동일한 9개. 그 외(invalid_query·invalid_setting·
+# account_changed·invalid_merge_limit·request_too_large 포함)는 request_failed로 접힌다.
 ALLOWED_ERRORS = {
-    "request_too_large", "connection_changed", "development_limit_50", "control_character", "storage_failed_before_send",
+    "connection_changed", "development_limit_50", "control_character", "storage_failed_before_send",
     "legal_unavailable", "invalid_steam_id", "steam_profile_unavailable", "steam_profile_failed",
-    "block_unavailable", "invalid_query", "invalid_setting", "account_changed", "invalid_merge_limit",
+    "block_unavailable",
 }
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",

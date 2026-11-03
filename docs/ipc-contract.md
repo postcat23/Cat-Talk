@@ -173,7 +173,8 @@
 
 ## 8. 에러 코드 목록
 
-렌더러로 통과되는 코드: `connection_changed`, `development_limit_50`, `control_character`, `storage_failed_before_send`, `legal_unavailable`, `invalid_steam_id`, `steam_profile_unavailable`, `steam_profile_failed`, `block_unavailable`, `invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large`.
+렌더러로 통과되는 코드: `connection_changed`, `development_limit_50`, `control_character`, `storage_failed_before_send`, `legal_unavailable`, `invalid_steam_id`, `steam_profile_unavailable`, `steam_profile_failed`, `block_unavailable`.
+`invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large` → `request_failed`로 접힘(내부에선 발생하지만 렌더러로 나가지 않음).
 그 외 전부 → `request_failed`. SQLite/OS → `storage_failed`. `update_permission` 실패 → `{error:update_permission_failed}`.
 
 ---
