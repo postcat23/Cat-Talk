@@ -43,13 +43,13 @@ export default function Drawer() {
 
   return (
     <aside className={overlays.drawerOpen ? `${styles.drawer} ${styles.show}` : styles.drawer} aria-label="메뉴">
+      {/* 헤더 한 줄: 유저 프로필 … 닫기 */}
       <div className={styles.dhead}>
+        <div className={styles.acct}>
+          <span className={styles.av} style={{ background: me?.color }}><Cat /></span>
+          <div><strong>{me?.name}</strong><div className={styles.sub}>Bongo Cat 연결됨</div></div>
+        </div>
         <button className={styles.dclose} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
-      </div>
-      <div className={styles.divider} />
-      <div className={styles.acct}>
-        <span className={styles.av} style={{ background: me?.color }}><Cat /></span>
-        <div><strong>{me?.name}</strong><div className={styles.sub}>Bongo Cat 연결됨</div></div>
       </div>
       <div className={styles.divider} />
       <h3>설정</h3>

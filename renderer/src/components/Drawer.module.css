@@ -4,7 +4,7 @@
   padding:16px 16px 26px;gap:13px;overflow-y:auto}
 .show{transform:translateY(0);visibility:visible;transition:transform .28s cubic-bezier(.4,0,.2,1)}
 .drawer h3{margin:0;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
-.dhead{display:flex;align-items:center;justify-content:flex-end}
+.dhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .dclose{background:none;border:0;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:8px}
 .dclose:hover{background:var(--line);color:var(--fg)}
 .set{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px}
