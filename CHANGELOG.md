@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `renderer` — 참여자 실루엣 둥근 귀·소형 높이에서 오버레이 시 입력창 숨김
 - `renderer` — 사이드카 실연결: 600ms `view` 폴링, 전송·검색·새로고침·설정 저장, 에러·연결 안내 카드 (브리지 없으면 목업 폴백)
 - `sidecar` — 드로어 설정 영속 키 추가 (`chat_opacity`·`presence_notices`·`clear_cats`·`auto_open_chest`)
+- 아바타 렌더 활성화 + 참여자 목록 실아바타 (`view`는 id만 전달, 이미지는 `avatars` 액션으로 1회 수신)
 
 ### Changed
 
