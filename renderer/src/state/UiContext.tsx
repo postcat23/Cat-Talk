@@ -15,7 +15,7 @@ export interface Settings {
   clearCats: boolean;
   presence: boolean;
   hideTaskbarIcon: boolean; // 토글 UI만, 동작 연결은 2e-2b
-  autoOpenChest: boolean;   // 토글 UI만, 적용/해제 로직은 보류
+  autoOpenChest: boolean;   // true=켜기 활성. 켜기/끄기 버튼 UI만, 적용/복원 로직은 보류
 }
 
 export interface Overlays {

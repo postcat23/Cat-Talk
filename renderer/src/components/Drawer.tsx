@@ -69,11 +69,18 @@ export default function Drawer() {
         </div>
       ))}
       <div className={styles.divider} />
-      {/* TODO: 상자 자동 오픈 적용/해제 로직(디스크 수정 방식 확정 후). 게임 디스크 파일 미수정 원칙(D-005)과 충돌 소지 */}
+      {/* 켜기 = 패치 적용 겸 재동기화(켜져 있어도 다시 눌러 현재 게임 버전에 재적용), 끄기 = 원본 복원.
+          TODO: 상자 자동 오픈 적용/복원(IL 패치, 게임 버전 재동기화). 디스크 수정 방식 확정 후.
+          게임 디스크 파일 미수정 원칙(D-005)과 충돌 소지 */}
       <div className={styles.chest}>
         <span className={styles.cicon}>📦</span>
         <span className={styles.ctitle}>상자 자동 오픈</span>
-        <Switch on={settings.autoOpenChest} label="상자 자동 오픈" onToggle={() => set({ autoOpenChest: !settings.autoOpenChest })} />
+        <div className={styles.cbtns}>
+          <button className={settings.autoOpenChest ? `${styles.cbtn} ${styles.active}` : styles.cbtn} aria-pressed={settings.autoOpenChest}
+            onClick={() => set({ autoOpenChest: true })}>켜기</button>
+          <button className={settings.autoOpenChest ? styles.cbtn : `${styles.cbtn} ${styles.active}`} aria-pressed={!settings.autoOpenChest}
+            onClick={() => set({ autoOpenChest: false })}>끄기</button>
+        </div>
       </div>
       <div className={styles.divider} />
       <div className={styles.update}>
