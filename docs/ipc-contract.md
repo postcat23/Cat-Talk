@@ -40,6 +40,7 @@
 | action | 인자 | 반환(성공) | 주요 에러 | 비고 |
 |---|---|---|---|---|
 | `view` | `lobby?,account?,query?,before?,start?,seen?,limit?=100,reactions?,language?` | 아래 §3 전체 상태 객체 | `invalid_query` | 600ms 폴링. 검색·페이징·읽음 집계 |
+| `avatars` | `ids[]`(최대 64) | `{images:{id:dataUri}}` | — | Cat-Talk 추가. `view`의 `avatar_id`로 PNG data URI를 받는다. 모르는 id는 응답에서 빠진다 |
 | `send` | `context,text` | `{id}` | `connection_changed`·`development_limit_50`·`control_character`·`storage_failed_before_send` | 워커 commands 큐로 전달 |
 | `draft` | `account,lobby,text` | `{ok:true}` | `account_changed` | 세션 한정(아래 §5) |
 | `setting` | `key,value` | `{ok:true}` | `invalid_setting` | key: `theme`/`collapsed`/`language`/`reactions_enabled`/`notification_flash`/`notification_toast`. Cat-Talk 추가: `chat_opacity`(정수 20~100)/`presence_notices`/`clear_cats`/`auto_open_chest`(bool) |
@@ -77,7 +78,8 @@
 - `draft`, `volatile_peer_ids[]`
 
 **프로필·참여자·차단**
-- `profiles{uid:{name,avatar,…}}`(허용된 발신자+본인), `participants{uid:{…,blocked}}`
+- `profiles{uid:{name,avatar_id,…}}`(허용된 발신자+본인), `participants{uid:{…,blocked}}` — Cat-Talk은 data URI 대신 `avatar_id`를 싣는다(폴링 크기). 아바타가 없으면 키가 없다
+- `avatar_stage`(`disabled`/`loading`/`ready`/`unavailable`), `avatar_error` — Cat-Talk 추가
 - `profile_targets[]`(Steam 프로필 열기 허용 대상)
 - `blocks_ready`, `blocked_users[{steam_id,name}]`
 

@@ -1,4 +1,6 @@
 # Keep this file ASCII-only: pip<24 decodes it with the system locale (cp949 on Korean Windows).
 # Required by bongo_chat.environment (imported via bongo_chat.worker).
 psutil
-# Pillow: needed when the worker renders avatars after connecting (milestone 2b-2+).
+# Avatar sprites are read from the installed game after chat is verified. Pinned to upstream's lock.
+UnityPy==1.25.4
+pillow==12.3.0

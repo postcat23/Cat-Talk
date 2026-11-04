@@ -6,8 +6,9 @@ const DEV_PORT = 5173;   // electron/main.js의 dev URL과 맞춘다
 
 // dev는 Vite HMR(react-refresh 인라인 프리앰블, ws)을 허용하고, prod(file://)는 로컬 자원만 허용한다.
 const CSP = {
-  serve: `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:${DEV_PORT}`,
-  build: "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'",
+  serve: `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:${DEV_PORT}`,
+  // img-src data:는 사이드카가 보내는 아바타 PNG용(worker 렌더 결과, 외부 자원 아님)
+  build: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'",
 };
 
 function csp(): Plugin {

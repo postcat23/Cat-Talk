@@ -8,6 +8,7 @@ export interface Participant {
   name: string;
   color: string;   // 아바타 배경
   hat: string;     // 고양이 모자(이모지 임시 표시). 없거나 실제 아이템 번호면 ''
+  avatar?: string; // 실아바타 data URI(스킨+모자 합성 정지 PNG). 없으면 이모지 폴백
 }
 
 export interface ChatMessage {
@@ -33,6 +34,7 @@ export interface ViewContext { account: string; lobby: string; generation: strin
 
 export interface ViewProfile {
   name?: string;
+  avatar_id?: string;   // 이미지는 avatars 액션으로 받는다
   color?: string;  // 목업 데이터 전용. 실제 view에는 없다
   hat?: string | number;   // 목업은 이모지 문자열, 실제 view는 게임 아이템 번호(벗으면 -1)라 표시하지 않는다
 }
@@ -82,6 +84,8 @@ export interface ViewResponse {
   notifications: { notification_flash: boolean; notification_toast: boolean };
   reactions_enabled: boolean;
   ui_settings?: UiSettings;   // 사이드카가 설정을 읽지 못한 회차에는 없다
+  avatar_stage?: string;      // disabled·loading·ready·unavailable
+  avatar_error?: string;
   reactions?: ViewReaction[];
 }
 

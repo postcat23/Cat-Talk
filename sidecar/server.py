@@ -4,6 +4,8 @@ dispatch/request/poll/close는 src/bongo_chat/desktop.py의 Controller에서 Qt�
 notifications·merger를 뺀 포팅이다. worker는 run_worker를 spawn한다(아바타 제외).
 요청: {"id": <int>, "args": {"action": "...", ...}}  응답: {"id": <int>, "result": {...}}
 """
+from collections import OrderedDict
+import hashlib
 import json
 import multiprocessing as mp
 import os
@@ -17,11 +19,16 @@ import time
 # spawn 자식도 이 모듈을 재import하므로 경로 설정은 모듈 최상단에 둔다.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from bongo_chat.reactions import png
 from bongo_chat.service import ChatService, NOTIFICATION_KEYS
 from bongo_chat.worker import run_worker, unavailable
 from volatile_store import VolatileStore
 
 MAX_REQUEST = 32768
+# 아바타 PNG는 view에 싣지 않고 id만 보낸다(600ms 폴링마다 수십 KB×참여자×2가 되는 것을 막는다).
+# 메모리에만 두고 렌더러가 avatars 액션으로 한 번씩 받아 간다.
+MAX_AVATARS = 256
+MAX_AVATAR_REQUEST = 64
 # bongo_chat.localization.LANGUAGES 사본 — 그 모듈은 PySide6를 import해 사이드카에서 쓸 수 없다.
 LANGUAGES = ("system", "ko", "en")
 # upstream desktop.py Controller.request와 동일한 9개. 그 외(invalid_query·invalid_setting·
@@ -57,6 +64,7 @@ class Sidecar:
         self.store = VolatileStore(data / "settings.sqlite3")
         self.service = ChatService(self.store)
         self.known_accounts = set()
+        self.avatar_images = OrderedDict()   # id -> data URI
         self.worker = None
         self.closed = False
         self.last_prune = time.monotonic()
@@ -67,9 +75,9 @@ class Sidecar:
         if offline:
             self.service.update(unavailable("offline"))
         else:
-            # render_avatars=False: 아바타(Pillow)는 다음 단계.
+            # render_avatars=True: 디코딩은 worker가 검증된 채팅 준비를 publish한 뒤에 시작한다.
             self.worker = self.context.Process(target=run_worker,
-                args=(self.commands, self.events, self.stop, read_only, False), daemon=True)
+                args=(self.commands, self.events, self.stop, read_only, True), daemon=True)
             self.worker.start()
 
     def poll(self):
@@ -114,6 +122,25 @@ class Sidecar:
         for pipe in (self.commands, self.events):
             pipe.cancel_join_thread()
             pipe.close()
+
+    def publish_avatars(self, result):
+        """profiles·participants의 data URI를 id로 바꾼다. 원본은 service 상태라 복사해서 고친다."""
+        for group in ("profiles", "participants"):
+            published = {}
+            for uid, profile in result[group].items():
+                profile = dict(profile)
+                uri = profile.pop("avatar", None)
+                if png(uri):
+                    avatar_id = hashlib.sha1(uri.encode("ascii")).hexdigest()[:16]
+                    self.avatar_images[avatar_id] = uri
+                    self.avatar_images.move_to_end(avatar_id)
+                    profile["avatar_id"] = avatar_id
+                published[uid] = profile
+            result[group] = published
+        while len(self.avatar_images) > MAX_AVATARS:
+            self.avatar_images.popitem(last=False)
+        result["avatar_stage"] = self.service.state.get("avatar_stage", "disabled")
+        result["avatar_error"] = self.service.state.get("avatar_error", "")
 
     def ui_settings(self):
         """저장값이 깨졌으면 기본값. 읽기 실패 시 None — 렌더러는 현재 값을 유지한다."""
@@ -162,10 +189,16 @@ class Sidecar:
                 result["reactions"] = self.service.take_reactions(result["lobby"],
                     args["reactions"] is True and not query and not self.closed)
             # TODO(2c): update/auto_merge/notification/language 서브시스템 배선
+            self.publish_avatars(result)
             settings = self.ui_settings()
             if settings is not None:
                 result["ui_settings"] = settings
             return result
+        if action == "avatars":
+            ids = args["ids"]
+            if not isinstance(ids, list) or len(ids) > MAX_AVATAR_REQUEST:
+                raise ValueError("invalid_query")
+            return {"images": {i: self.avatar_images[i] for i in ids if isinstance(i, str) and i in self.avatar_images}}
         if action == "send":
             # 사용자가 명시적으로 보낸 요청만 worker로 넘긴다. 자동 송신 경로는 없다.
             command = self.service.prepare(args["context"], args["text"])

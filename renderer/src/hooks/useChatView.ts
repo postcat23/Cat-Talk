@@ -10,6 +10,7 @@ import type { ReactionStack } from './useReactionStack';
 
 const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 재구성한다
 const MAX_SEEN_REACTIONS = 256;
+const MAX_AVATAR_REQUEST = 32;   // 사이드카 상한(64) 안에서 나눠 받는다. 남은 건 다음 폴링에
 
 export interface Toast { id: number; text: string }
 
@@ -36,6 +37,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [failed, setFailed] = useState(false);
   const [query, setQueryState] = useState('');
   const [toast, setToast] = useState<Toast | null>(null);
+  const [avatars, setAvatars] = useState<Record<string, string>>({});
 
   const viewRef = useRef<ViewResponse | null>(null);
   const queryRef = useRef('');
@@ -45,6 +47,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const signature = useRef('');
   const hydrated = useRef(false);
   const seenReactions = useRef(new Set<string>());
+  const requestedAvatars = useRef(new Set<string>());
   const nextToast = useRef(1);
   const reactionInput = useRef({ pushReaction, reactionsEnabled });
   useEffect(() => { reactionInput.current = { pushReaction, reactionsEnabled }; });
@@ -64,6 +67,19 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, []);
 
+  // view에는 id만 온다. 처음 보는 이미지만 받아 메모리에 둔다(디스크·localStorage에 쓰지 않는다).
+  const fetchAvatars = useCallback((data: ViewResponse) => {
+    const requested = requestedAvatars.current;
+    const ids = [...new Set(Object.values(data.participants).map((p) => p.avatar_id))]
+      .filter((id): id is string => Boolean(id) && !requested.has(id as string))
+      .slice(0, MAX_AVATAR_REQUEST);
+    if (ids.length === 0) return;
+    ids.forEach((id) => requested.add(id));
+    rpc<{ images: Record<string, string> }>('avatars', { ids })
+      .then(({ images }) => setAvatars((current) => ({ ...current, ...images })))
+      .catch(() => ids.forEach((id) => requested.delete(id)));   // 표시는 이모지 폴백, 다음 폴링에서 재시도
+  }, []);
+
   const poll = useCallback(async () => {
     if (busy.current) { again.current = true; return; }
     busy.current = true;
@@ -77,6 +93,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       if (sent !== version.current) return;
       setFailed(false);
       takeReactions(data, requestedAt);
+      fetchAvatars(data);
       viewRef.current = data;
       // 설정은 시작 시 1회만 받는다. 이후로는 렌더러가 값을 쥐고 저장만 요청한다(폴링이 조작을 되돌리지 않게).
       if (!hydrated.current) {
@@ -93,7 +110,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       busy.current = false;
       if (again.current) { again.current = false; void poll(); }
     }
-  }, [dispatch, takeReactions]);
+  }, [dispatch, fetchAvatars, takeReactions]);
 
   useEffect(() => {
     void poll();
@@ -145,8 +162,11 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const shown = failed ? null : view;
   const items = useMemo(() => (shown ? toChatItems(shown) : []), [shown]);
   const participants = useMemo(
-    () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중')),
-    [shown],
+    () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => ({
+      ...toParticipant(uid, p, '이름 확인 중'),
+      avatar: shown?.avatar_stage === 'ready' && p.avatar_id ? avatars[p.avatar_id] : undefined,
+    })),
+    [shown, avatars],
   );
   const account = shown?.context.account ?? '';
   const me = useMemo(
