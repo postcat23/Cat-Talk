@@ -31,6 +31,13 @@ ALLOWED_ERRORS = {
     "legal_unavailable", "invalid_steam_id", "steam_profile_unavailable", "steam_profile_failed",
     "block_unavailable",
 }
+# Cat-Talk 드로어 전용 설정(upstream 화이트리스트 밖): key -> (기본값, 검증). 창 배치는 window-state.json이 맡는다.
+UI_SETTINGS = {
+    "chat_opacity": (100, lambda value: type(value) is int and 20 <= value <= 100),
+    "presence_notices": (True, lambda value: type(value) is bool),
+    "clear_cats": (False, lambda value: type(value) is bool),
+    "auto_open_chest": (False, lambda value: type(value) is bool),
+}
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",
     "block_user", "open_steam_profile", "legal", "check_updates", "restart_update", "update_permission",
@@ -108,6 +115,18 @@ class Sidecar:
             pipe.cancel_join_thread()
             pipe.close()
 
+    def ui_settings(self):
+        """저장값이 깨졌으면 기본값. 읽기 실패 시 None — 렌더러는 현재 값을 유지한다."""
+        values = {}
+        try:
+            for key, (default, valid) in UI_SETTINGS.items():
+                value = self.store.setting(key, default=default)
+                values[key] = value if valid(value) else default
+        except (sqlite3.Error, OSError):
+            self.service.storage_error = True
+            return None
+        return values
+
     def request(self, args, size):
         try:
             if size > MAX_REQUEST:
@@ -143,6 +162,9 @@ class Sidecar:
                 result["reactions"] = self.service.take_reactions(result["lobby"],
                     args["reactions"] is True and not query and not self.closed)
             # TODO(2c): update/auto_merge/notification/language 서브시스템 배선
+            settings = self.ui_settings()
+            if settings is not None:
+                result["ui_settings"] = settings
             return result
         if action == "send":
             # 사용자가 명시적으로 보낸 요청만 worker로 넘긴다. 자동 송신 경로는 없다.
@@ -161,6 +183,11 @@ class Sidecar:
             self.store.draft(owner, args["lobby"], args["text"])
         elif action == "setting":
             key, value = args["key"], args["value"]
+            if key in UI_SETTINGS:
+                if not UI_SETTINGS[key][1](value):
+                    raise ValueError("invalid_setting")
+                self.store.setting(key, value)
+                return {"ok": True}
             if key == "language":
                 # TODO(2c): language 서브시스템(resolve_language·translations) 배선
                 if value not in LANGUAGES:

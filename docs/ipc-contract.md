@@ -42,7 +42,7 @@
 | `view` | `lobby?,account?,query?,before?,start?,seen?,limit?=100,reactions?,language?` | 아래 §3 전체 상태 객체 | `invalid_query` | 600ms 폴링. 검색·페이징·읽음 집계 |
 | `send` | `context,text` | `{id}` | `connection_changed`·`development_limit_50`·`control_character`·`storage_failed_before_send` | 워커 commands 큐로 전달 |
 | `draft` | `account,lobby,text` | `{ok:true}` | `account_changed` | 세션 한정(아래 §5) |
-| `setting` | `key,value` | `{ok:true}` | `invalid_setting` | key: `theme`/`collapsed`/`language`/`reactions_enabled`/`notification_flash`/`notification_toast` |
+| `setting` | `key,value` | `{ok:true}` | `invalid_setting` | key: `theme`/`collapsed`/`language`/`reactions_enabled`/`notification_flash`/`notification_toast`. Cat-Talk 추가: `chat_opacity`(정수 20~100)/`presence_notices`/`clear_cats`/`auto_open_chest`(bool) |
 | `delete` | `account,lobby?` | `{ok:true}` | `account_changed` | 현재 계정 기록 삭제 |
 | `refresh` | — | `{ok:true}` | — | 언어 재로드 + 저장소 복구 + 워커 refresh |
 | `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 원본은 차단 목록 영속. **Cat-Talk은 미구현** — `not_wired` 응답(D-009) |
@@ -84,6 +84,7 @@
 **설정·상태**
 - `theme`,`collapsed`,`language`,`language_preference`,`notifications{notification_flash,notification_toast}`,`reactions_enabled`
 - `storage_error`,`revision`(변경 감지용 단조 증가)
+- `ui_settings{chat_opacity,presence_notices,clear_cats,auto_open_chest}` — Cat-Talk 추가. 읽기 실패 회차에는 키가 없다
 - `translations`(요청 `language`가 현재와 다를 때만, `en`이면 사전)
 
 **추가분(dispatch)**
@@ -125,8 +126,10 @@
 | `receipts` | 자기-에코 중복제거(→messages CASCADE) | **휘발** |
 | `drafts` | 로비별 초안 | **휘발**(종료 시 삭제 확정) |
 | `presence_events` | 입·퇴장(→sessions CASCADE) | **휘발** |
-| `settings` | theme/collapsed/language/reactions_enabled/알림 | **영속(디스크, `settings.sqlite3`)** |
+| `settings` | theme/collapsed/language/reactions_enabled/알림 + Cat-Talk 드로어 설정(`chat_opacity`·`presence_notices`·`clear_cats`·`auto_open_chest`) | **영속(디스크, `settings.sqlite3`)** |
 | `blocked_users` | 계정별 채팅 차단 목록 | **무력화·비영속** (`blocked_users()`→`{}`, `set_blocked()` 무동작) |
+
+**설정 저장 역할 분리:** 앱 설정은 `settings.sqlite3`(사이드카), 창 배치(도크·높이·작업표시줄 숨김·모니터)는 `window-state.json`(Electron main)에 둔다. 창 배치는 창 생성 전에 필요해 사이드카를 기다릴 수 없고, 두 저장소가 같은 키를 갖지 않는다. 렌더러는 시작 시 첫 `view`로 앱 설정을 1회 받고, 이후 변경은 `setting`으로 저장만 한다.
 
 **구현: `sidecar/volatile_store.py`의 `VolatileStore(Store)` 글루.** upstream `Store`를 상속해 부모 연결을 `:memory:`로 연다 — 7개 테이블과 `timeline` 뷰가 전부 메모리 DB에 생기고(빈 `blocked_users` 포함), FK(messages→sessions, receipts→messages, presence_events→sessions)도 그 안에서 성립한다. `setting()`만 별도 디스크 연결(`settings.sqlite3`)로 돌린다. `store.py`는 수정하지 않는다(D-009) — upstream 스키마·메서드가 바뀌면 이 글루를 함께 점검한다.
 
