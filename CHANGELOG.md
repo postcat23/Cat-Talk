@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - compatibility 툴체인 import(tools/) + artifacts gitignore
 - store 휘발 분할(VolatileStore 글루) + 차단 무력화 (D-003)
 - 렌더러 Vite+React 스캐폴드 (툴체인·bridge 증명)
+- `renderer` — 목업 기반 UI 컴포넌트 포팅 (정적·목데이터, 브라우저 확인)
 
 ### Fixed
 
