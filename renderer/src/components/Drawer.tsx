@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useUi, type ChatHeight, type Settings, type Side, type Theme } from '../state/UiContext';
+import { OVERLAY_HEIGHT, useUi, type ChatHeight, type Settings, type Side, type Theme } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
 import Cat from './Cat';
 import styles from './Drawer.module.css';
@@ -47,7 +47,7 @@ export default function Drawer() {
   const [updateAvailable, setUpdateAvailable] = useState(UPDATE_AVAILABLE);
 
   return (
-    <aside className={overlays.drawerOpen ? `${styles.drawer} ${styles.show}` : styles.drawer} aria-label="메뉴">
+    <aside className={[styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' && styles.full].filter(Boolean).join(' ')} aria-label="메뉴">
       {/* 헤더 한 줄: 유저 프로필 … 닫기 */}
       <div className={styles.dhead}>
         <div className={styles.acct}>
