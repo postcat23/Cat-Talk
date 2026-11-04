@@ -17,7 +17,6 @@ const SWITCHES: { key: BoolKey; label: string }[] = [
   { key: 'catInteraction', label: '고양이 상호작용 표시' },
   { key: 'presence', label: '입퇴장 문구 표시' },
   { key: 'clearCats', label: '모든 고양이 투명화' },
-  // TODO(2e-2b): delegate to Electron main — 작업 표시줄 아이콘 숨김(setSkipTaskbar)
   { key: 'hideTaskbarIcon', label: '작업 표시줄에서 아이콘 숨기기' },
 ];
 

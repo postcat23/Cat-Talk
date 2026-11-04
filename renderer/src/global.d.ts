@@ -3,4 +3,11 @@ interface Window {
   bridge: {
     request(payload: string): Promise<string>;
   };
+  // 창 제어. Electron에서만 존재하고 브라우저 dev(npm run dev)에서는 undefined.
+  catTalk?: {
+    setDockSide(side: 'left' | 'right'): void;
+    setChatHeight(pct: 100 | 70 | 50): void;
+    setSkipTaskbar(hide: boolean): void;
+    setInteractive(interactive: boolean): void;
+  };
 }

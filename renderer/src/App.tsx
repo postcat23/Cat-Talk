@@ -1,6 +1,7 @@
-import { useCallback, useState, type CSSProperties } from 'react';
-import { MAX_CARDS, OVERLAY_HEIGHT, UiProvider, useUi } from './state/UiContext';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { MAX_CARDS, OVERLAY_HEIGHT, UiProvider, useUi, type ChatHeight } from './state/UiContext';
 import { useReactionStack } from './hooks/useReactionStack';
+import { useClickThrough } from './hooks/useClickThrough';
 import { CONNECTION, INITIAL_ITEMS, ME_ID, PARTICIPANTS, type ChatItem } from './mock/mockData';
 import CollapseTab from './components/CollapseTab';
 import TopBar from './components/TopBar';
@@ -8,6 +9,7 @@ import SearchBar from './components/SearchBar';
 import Conversation from './components/Conversation';
 import Composer from './components/Composer';
 
+const HEIGHT_PCT: Record<ChatHeight, 100 | 70 | 50> = { '100%': 100, '70%': 70, '50%': 50 };
 const SEND_ACK_MS = 700;   // 목업의 '전송 중…' → '전송됨' 시뮬레이션. 실제 send는 2e-2c
 
 function now() {
@@ -28,21 +30,29 @@ function Panel() {
     }, SEND_ACK_MS);
   }, []);
 
-  // TODO(2e-2b): delegate to Electron main — 채팅 높이·투명도·도크 위치를 BrowserWindow에 반영.
-  // 지금은 목업처럼 패널 CSS(height/opacity/data-side)로만 시뮬레이션한다.
+  // 도크 위치·채팅 높이·작업표시줄: Electron이면 창(BrowserWindow)이 맡고, 브라우저 dev면 패널 CSS로 시뮬레이션.
+  // 패널·탭이 어느 쪽에 오는지는 두 모드 모두 data-side가 정한다. --ovh·반응 카드 최대 수는 설정값 기준 공통.
+  const shell = window.catTalk;
+  useEffect(() => { shell?.setDockSide(settings.side); }, [shell, settings.side]);
+  useEffect(() => { shell?.setChatHeight(HEIGHT_PCT[settings.height]); }, [shell, settings.height]);
+  useEffect(() => { shell?.setSkipTaskbar(settings.hideTaskbarIcon); }, [shell, settings.hideTaskbarIcon]);
+  useClickThrough();
+
   const style = {
-    height: settings.height,
-    opacity: settings.opacity / 100,
+    height: shell ? undefined : settings.height,
     '--ovh': OVERLAY_HEIGHT[settings.height],
   } as CSSProperties;
 
   return (
     <section className={overlays.collapsed ? 'panel collapsed' : 'panel'} data-side={settings.side} style={style}>
       <CollapseTab />
-      <TopBar conn={CONNECTION} count={PARTICIPANTS.length} />
-      <SearchBar />
-      <Conversation items={items} reactions={reactions} />
-      <Composer disabled={CONNECTION !== 'good'} onSend={send} />
+      {/* 채팅 투명도는 창(setOpacity)이 아니라 본체 CSS opacity. 투명 창 위에서 데스크톱이 비친다 */}
+      <div className="panel-body" style={{ opacity: settings.opacity / 100 }}>
+        <TopBar conn={CONNECTION} count={PARTICIPANTS.length} />
+        <SearchBar />
+        <Conversation items={items} reactions={reactions} />
+        <Composer disabled={CONNECTION !== 'good'} onSend={send} />
+      </div>
     </section>
   );
 }

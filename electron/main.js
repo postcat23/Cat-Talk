@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -9,7 +9,17 @@ const DEV_URL = 'http://localhost:5173';   // vite.config.mts의 DEV_PORT와 맞
 let win = null, sidecar = null, nextId = 1, stdoutBuf = '';
 const pending = new Map();   // id -> {resolve, reject, timer}
 
+// 끝 도크 창: 패널 390 + 접기 탭 거터 34 + 탭 drop-shadow 여유 8(거터 쪽). 높이는 작업영역 비율.
+const WIN_WIDTH = 432;
+const HEIGHT_PCTS = [100, 70, 50];
+const dock = { side: 'right', heightPct: 100 };
+
 if (!app.requestSingleInstanceLock()) { app.quit(); }
+app.on('second-instance', () => {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+});
 
 function settle(id) {
   const p = pending.get(id);
@@ -53,15 +63,31 @@ function sidecarRequest(payloadString) {
   });
 }
 
+// 상단 기준: y = 작업영역 위, 높이만 비율로. 가로는 도크 쪽 작업영역 끝에 밀착.
+function dockBounds() {
+  const wa = screen.getPrimaryDisplay().workArea;
+  const height = Math.round(wa.height * dock.heightPct / 100);
+  const x = dock.side === 'right' ? wa.x + wa.width - WIN_WIDTH : wa.x;
+  return { x, y: wa.y, width: WIN_WIDTH, height };
+}
+
+function applyDock() {
+  if (win && !win.isDestroyed()) win.setBounds(dockBounds());
+}
+
 function createWindow() {
   win = new BrowserWindow({
-    width: 1240, height: 840, minWidth: 400, minHeight: 500, title: 'Cat-Talk (dev)',
+    ...dockBounds(), title: 'Cat-Talk (dev)',
     icon: path.join(__dirname, 'app-icon.ico'),   // 창·작업표시줄 아이콘
+    frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    alwaysOnTop: true, resizable: false, maximizable: false, fullscreenable: false, skipTaskbar: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false,
     },
   });
+  // 투명 영역은 기본 클릭 통과. 렌더러가 패널·탭 위 커서를 알리면 그때만 클릭을 받는다.
+  win.setIgnoreMouseEvents(true, { forward: true });
   // dev: Vite dev server(HMR). prod: vite build 산출물(renderer/dist)을 file://로 로딩.
   if (DEV) win.loadURL(DEV_URL);
   else win.loadFile(path.join(__dirname, '..', 'renderer', 'dist', 'index.html'));
@@ -72,7 +98,29 @@ ipcMain.handle('bridge-request', async (_e, payloadString) => {
   catch (e) { return JSON.stringify({ error: 'bridge_down' }); }
 });
 
-app.whenReady().then(() => { startSidecar(); createWindow(); });
+// 렌더러 설정 ↔ 창. 값은 화이트리스트로 검증하고 범위 밖이면 무시한다.
+ipcMain.on('window:set-dock-side', (_e, side) => {
+  if (side !== 'left' && side !== 'right') return;
+  dock.side = side; applyDock();
+});
+ipcMain.on('window:set-chat-height', (_e, pct) => {
+  if (!HEIGHT_PCTS.includes(pct)) return;
+  dock.heightPct = pct; applyDock();
+});
+ipcMain.on('window:set-skip-taskbar', (_e, hide) => {
+  if (typeof hide === 'boolean' && win) win.setSkipTaskbar(hide);
+});
+ipcMain.on('window:set-interactive', (_e, interactive) => {
+  if (typeof interactive !== 'boolean' || !win) return;
+  if (interactive) win.setIgnoreMouseEvents(false);
+  else win.setIgnoreMouseEvents(true, { forward: true });
+});
+
+app.whenReady().then(() => {
+  startSidecar(); createWindow();
+  // 작업표시줄 이동·해상도 변경 시 작업영역이 바뀌므로 도크를 다시 맞춘다.
+  screen.on('display-metrics-changed', applyDock);
+});
 // 강제 kill은 사이드카의 종료 정리(stop → worker join/terminate)를 건너뛰어 worker를 오펀으로 남긴다.
 // stdin EOF로 스스로 정리하게 하고, 정리 상한(join 3s + 2s)을 넘길 때만 kill한다.
 const SIDECAR_EXIT_GRACE_MS = 8000;
