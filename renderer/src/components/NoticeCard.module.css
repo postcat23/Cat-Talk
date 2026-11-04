@@ -1,0 +1,4 @@
+/* 카드 기본형은 ReactionStack.module.css의 .card/.rtxt. 이 파일이 뒤에 로드돼 덮어쓴다(NoticeCard.tsx import 순서) */
+.notice{background:var(--notice);color:var(--notice-fg);border-color:transparent;line-height:1.5}
+.rtxt{white-space:normal}
+.x{margin-left:auto;background:none;border:0;color:inherit;opacity:.6;cursor:pointer;font-size:16px;flex:none;padding:0 2px}

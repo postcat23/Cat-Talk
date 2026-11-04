@@ -1,0 +1,5 @@
+.search{height:0;overflow:hidden;transition:height .22s;background:var(--panel);border-bottom:1px solid transparent}
+.open{height:52px;border-bottom-color:var(--line)}
+.inner{display:flex;align-items:center;gap:8px;padding:9px 12px}
+.inner input{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:10px;padding:8px 11px;font:inherit;font-size:13px}
+.inner input:focus{outline:2px solid var(--accent)}

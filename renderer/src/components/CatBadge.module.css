@@ -1,0 +1,3 @@
+.cat{position:relative;z-index:0;width:42px;height:40px;font-size:31px;line-height:40px;text-align:center;flex:none}
+.cat .hat{position:absolute;left:0;right:0;top:-3px;font-size:14px;line-height:1}
+.clear{opacity:0;transition:opacity .2s}

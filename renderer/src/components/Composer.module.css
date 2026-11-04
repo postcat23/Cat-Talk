@@ -1,0 +1,9 @@
+.composer{border-top:1px solid var(--line);padding:10px 12px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));background:var(--panel)}
+.inrow{display:flex;align-items:flex-end;gap:8px}
+.inrow textarea{flex:1;resize:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:9px 12px;font:inherit;font-size:13.5px;max-height:96px;line-height:1.4}
+.inrow textarea:focus{outline:2px solid var(--accent)}
+.sendbtn{flex:none;width:40px;height:40px;border-radius:12px;border:0;cursor:pointer;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center}
+.sendbtn:disabled{opacity:.4;cursor:default}
+.sendbtn svg{width:18px;height:18px}
+.help{display:flex;justify-content:space-between;margin-top:6px;font-size:10.5px;color:var(--muted)}
+.c{font-family:var(--mono)}

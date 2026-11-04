@@ -1,0 +1,19 @@
+.msg{display:flex;flex-direction:column;max-width:82%}
+.lead{margin-top:16px}
+.peer{align-self:flex-start;align-items:flex-start}
+.me{align-self:flex-end;align-items:flex-end}
+/* 머리: 고양이 + 닉네임 (상대=고양이,닉 / 나=닉,고양이) */
+.head{display:flex;align-items:flex-end;gap:5px;position:relative;z-index:0}
+.me .head{flex-direction:row-reverse}
+.nm{font-weight:600;font-size:12.5px;color:var(--fg);padding-bottom:14px}
+/* 본문 행: 말풍선 + (안쪽 끝) 시간. lead에만 음수 마진으로 고양이 발을 말풍선 뒤로 */
+.row{display:flex;align-items:flex-end;gap:6px;max-width:100%}
+.lead .row{margin-top:-10px}
+.me .row{flex-direction:row-reverse}
+.bubble{position:relative;z-index:1;padding:8px 11px;border-radius:14px;font-size:13.5px;line-height:1.5;word-break:break-word}
+.peer .bubble{background:var(--peer);border-top-left-radius:5px}
+.me .bubble{background:var(--own);color:var(--own-fg);border-top-right-radius:5px}
+.binfo{display:flex;flex-direction:column;gap:1px;padding-bottom:2px;flex:none}
+.me .binfo{align-items:flex-end}
+.tm{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.status{font-size:10px;color:var(--muted);white-space:nowrap}

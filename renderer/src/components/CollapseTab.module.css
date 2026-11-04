@@ -1,0 +1,6 @@
+.tab{position:absolute;top:50%;translate:0 -50%;width:34px;height:132px;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  background:rgba(0,0,0,.7);color:#fff;border:0;filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)) drop-shadow(0 0 .75px rgba(255,255,255,.65));z-index:6;
+  writing-mode:vertical-rl;text-orientation:upright;font-size:12px;font-weight:700;letter-spacing:.22em;line-height:1.15;
+  text-shadow:-.5px -.5px 0 rgba(0,0,0,.6),.5px -.5px 0 rgba(0,0,0,.6),-.5px .5px 0 rgba(0,0,0,.6),.5px .5px 0 rgba(0,0,0,.6)}
+.right{left:-34px;clip-path:path("M34 0 L34 132 L8.5 116.25 Q0 111 0 101 L0 31 Q0 21 8.5 15.75 L34 0 Z")}
+.left{right:-34px;clip-path:path("M0 0 L0 132 L25.5 116.25 Q34 111 34 101 L34 31 Q34 21 25.5 15.75 L0 0 Z")}

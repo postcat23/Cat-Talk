@@ -1,42 +1,56 @@
-import { useEffect, useState } from 'react';
-import { rpc } from './rpc';
+import { useCallback, useState, type CSSProperties } from 'react';
+import { MAX_CARDS, OVERLAY_HEIGHT, UiProvider, useUi } from './state/UiContext';
+import { useReactionStack } from './hooks/useReactionStack';
+import { CONNECTION, INITIAL_ITEMS, ME_ID, PARTICIPANTS, ROOM_NAME, type ChatItem } from './mock/mockData';
+import CollapseTab from './components/CollapseTab';
+import TopBar from './components/TopBar';
+import SearchBar from './components/SearchBar';
+import Conversation from './components/Conversation';
+import Composer from './components/Composer';
 
-const POLL_MS = 600;   // 원본 렌더러의 600ms view 폴링 보존(D-007)
+const SEND_ACK_MS = 700;   // 목업의 '전송 중…' → '전송됨' 시뮬레이션. 실제 send는 2e-2c
 
-type View = { revision?: unknown } & Record<string, unknown>;
-type Status = { ok: boolean; text: string } | null;
+function now() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
 
-// 스텁: 600ms마다 view 폴링 → 라운드트립(렌더러->main->python->main->렌더러) 증명.
-export default function App() {
-  const [status, setStatus] = useState<Status>(null);
-  const [count, setCount] = useState(0);
-  const [view, setView] = useState<View | null>(null);
+function Panel() {
+  const { settings, overlays } = useUi();
+  const [items, setItems] = useState<ChatItem[]>(INITIAL_ITEMS);
+  const reactions = useReactionStack(MAX_CARDS[settings.height], settings.catInteraction);
 
-  useEffect(() => {
-    let alive = true;
-    async function refresh() {
-      try {
-        const v = await rpc<View>('view');
-        if (!alive) return;
-        setCount((c) => c + 1);
-        setView(v);
-        setStatus({ ok: true, text: '연결됨 (python 사이드카 응답)' });
-      } catch (e) {
-        if (!alive) return;
-        setStatus({ ok: false, text: '실패: ' + (e instanceof Error ? e.message : String(e)) });
-      }
-    }
-    refresh();
-    const timer = setInterval(refresh, POLL_MS);
-    return () => { alive = false; clearInterval(timer); };
+  const send = useCallback((text: string) => {
+    const id = 'local-' + Date.now();
+    setItems((xs) => [...xs, { kind: 'msg', id, sender: ME_ID, text, time: now(), status: '전송 중…' }]);
+    window.setTimeout(() => {
+      setItems((xs) => xs.map((x) => (x.id === id && x.kind === 'msg' ? { ...x, status: '전송됨' } : x)));
+    }, SEND_ACK_MS);
   }, []);
 
+  // TODO(2e-2b): delegate to Electron main — 채팅 높이·투명도·도크 위치를 BrowserWindow에 반영.
+  // 지금은 목업처럼 패널 CSS(height/opacity/data-side)로만 시뮬레이션한다.
+  const style = {
+    height: settings.height,
+    opacity: settings.opacity / 100,
+    '--ovh': OVERLAY_HEIGHT[settings.height],
+  } as CSSProperties;
+
   return (
-    <>
-      <h1>Cat-Talk 스텁 IPC 루프</h1>
-      <p>상태: <span className={status ? (status.ok ? 'ok' : 'bad') : ''}>{status ? status.text : '연결 중…'}</span></p>
-      <p>view 폴링 횟수: {count} / sidecar revision: {view ? String(view.revision) : '-'}</p>
-      <pre>{view ? JSON.stringify(view, null, 2) : ''}</pre>
-    </>
+    <section className={overlays.collapsed ? 'panel collapsed' : 'panel'} data-side={settings.side} style={style}>
+      <CollapseTab />
+      <TopBar room={ROOM_NAME} conn={CONNECTION} count={PARTICIPANTS.length} />
+      <SearchBar />
+      <Conversation items={items} reactions={reactions} />
+      <Composer disabled={CONNECTION !== 'good'} onSend={send} />
+    </section>
+  );
+}
+
+export default function App() {
+  return (
+    <UiProvider>
+      <Panel />
+    </UiProvider>
   );
 }

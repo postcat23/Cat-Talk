@@ -1,0 +1,19 @@
+/* 색 토큰: 라이트 기본 + 다크(시스템 @media / [data-theme="dark"]). .sw/cat-talk-mock.html :root 그대로 */
+:root{
+  --backdrop:#e7e9f0; --backdrop-2:#dcdfea;
+  --panel:#f6f6f9; --surface:#ffffff; --fg:#1b1b22; --muted:#6b6b7a;
+  --line:rgba(20,20,40,.10);
+  --accent:#6d4bd8; --accent-fg:#ffffff;
+  --peer:#ececef; --own:#6d4bd8; --own-fg:#ffffff;
+  --good:#2fa96b; --bad:#d8534f; --idle:#8a8a98;
+  --notice:#f0ecff; --notice-fg:#4a3aa0;
+  --ui:"Noto Sans KR",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --backdrop:#121319; --backdrop-2:#0d0e13; --panel:#1a1b22; --surface:#23242d; --fg:#ececf2; --muted:#9a9aac; --line:rgba(255,255,255,.10);
+  --accent:#a68bff; --accent-fg:#16131f; --peer:#2a2b35; --own:#6a4fd0; --own-fg:#f4f1ff;
+  --good:#4fd08a; --bad:#ff6b67; --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --backdrop:#121319; --backdrop-2:#0d0e13; --panel:#1a1b22; --surface:#23242d; --fg:#ececf2; --muted:#9a9aac; --line:rgba(255,255,255,.10);
+  --accent:#a68bff; --accent-fg:#16131f; --peer:#2a2b35; --own:#6a4fd0; --own-fg:#f4f1ff;
+  --good:#4fd08a; --bad:#ff6b67; --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; color-scheme:dark}
