@@ -1,10 +1,10 @@
-import { useUi } from '../state/UiContext';
+import { OVERLAY_HEIGHT, useUi } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
 import Cat from './Cat';
 import styles from './ParticipantModal.module.css';
 
 export default function ParticipantModal() {
-  const { overlays, dispatch } = useUi();
+  const { settings, overlays, dispatch } = useUi();
   const { participants, me } = useChat();
   // '나' 최상단 고정, 나머지는 한국어 로캘 정렬
   const sorted = [
@@ -12,7 +12,7 @@ export default function ParticipantModal() {
     ...participants.filter((p) => p.id !== me?.id).sort((a, b) => a.name.localeCompare(b.name, 'ko')),
   ];
   return (
-    <div className={overlays.modalOpen ? `${styles.modal} ${styles.show}` : styles.modal} aria-label="참여자">
+    <div className={[styles.modal, overlays.modalOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' && styles.full].filter(Boolean).join(' ')} aria-label="참여자">
       <div className={styles.mhead}>
         <button className={styles.close} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
         <h2><Cat /> 함께 있는 고양이</h2>

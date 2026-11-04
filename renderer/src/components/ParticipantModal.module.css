@@ -3,6 +3,8 @@
   border-radius:0 0 16px 16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.3);
   transform:translateY(-100%);visibility:hidden;transition:transform .24s cubic-bezier(.4,0,.2,1),visibility 0s linear .24s}
 .show{transform:translateY(0);visibility:visible;transition:transform .24s cubic-bezier(.4,0,.2,1)}
+/* 창이 작은 70%·50%: 내용 길이와 무관하게 창 전체를 덮는다. 둥근 모서리는 뒤 패널이 비쳐 없앤다 */
+.full{height:100%;border-radius:0}
 .mhead{padding:16px 16px 6px}
 .mhead h2{margin:0;font-size:17px;display:flex;align-items:center;gap:8px}
 .close{float:right;background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer}
