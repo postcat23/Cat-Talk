@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `renderer` — 참여자 실루엣·프로필/닫기 한 줄·오버레이 높이 규칙 반전
 - `renderer` — 참여자 실루엣 둥근 귀·소형 높이에서 오버레이 시 입력창 숨김
 
+### Changed
+
+- 앱 표시명을 'Cat Talk'로 변경 (상단바·창 제목·트레이 툴팁)
+
 ### Fixed
 
 - 에러코드 화이트리스트 upstream 정합 + ipc-contract §8 정정
