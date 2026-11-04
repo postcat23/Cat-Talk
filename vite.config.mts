@@ -24,5 +24,6 @@ export default defineConfig({
   base: './',   // Electron prod가 file://로 dist를 로딩하므로 상대 경로
   plugins: [react(), csp()],
   server: { port: DEV_PORT, strictPort: true },
-  build: { outDir: 'dist', emptyOutDir: true },   // root 기준 → renderer/dist
+  // root 기준 → renderer/dist. 작은 에셋도 data: URI로 인라인하지 않는다(prod CSP default-src 'self'가 data: 이미지·마스크를 막음)
+  build: { outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0 },
 });
