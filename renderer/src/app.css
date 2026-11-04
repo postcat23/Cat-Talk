@@ -1,0 +1,4 @@
+body { font-family: system-ui, sans-serif; margin: 24px; color: #e8e8e8; background: #1e2327; }
+h1 { font-size: 16px; }
+pre { background: #11151a; padding: 12px; border-radius: 8px; overflow: auto; }
+.ok { color: #7ac77a; } .bad { color: #e07a7a; }

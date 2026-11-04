@@ -3,6 +3,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const REQUEST_TIMEOUT_MS = 5000;
+const DEV = process.env.CATTALK_DEV === '1';
+const DEV_URL = 'http://localhost:5173';   // vite.config.mts의 DEV_PORT와 맞춘다
 
 let win = null, sidecar = null, nextId = 1, stdoutBuf = '';
 const pending = new Map();   // id -> {resolve, reject, timer}
@@ -59,7 +61,9 @@ function createWindow() {
       contextIsolation: true, nodeIntegration: false,
     },
   });
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // dev: Vite dev server(HMR). prod: vite build 산출물(renderer/dist)을 file://로 로딩.
+  if (DEV) win.loadURL(DEV_URL);
+  else win.loadFile(path.join(__dirname, '..', 'renderer', 'dist', 'index.html'));
 }
 
 ipcMain.handle('bridge-request', async (_e, payloadString) => {

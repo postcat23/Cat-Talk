@@ -5,9 +5,20 @@
   "description": "Bongo Cat 로비 채팅 데스크톱 메신저 (bongo-cat-chat 포크)",
   "main": "electron/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dev": "vite",
+    "build": "tsc -p renderer && vite build"
   },
   "devDependencies": {
-    "electron": "^45.2.1"
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "electron": "^45.2.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   }
 }
