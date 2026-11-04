@@ -8,7 +8,7 @@ export default function CatCount({ count, onClick }: { count: number; onClick: (
       <span className={styles.n}>{count}</span>
       <span className={styles.face}>
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M3 2l4.6 5.6A8.6 8.6 0 0 1 12 6.6c1.6 0 3.1.35 4.4 1L21 2l-.7 8.1c.45 1.1.7 2.3.7 3.5 0 4.1-4 7.4-9 7.4s-9-3.3-9-7.4c0-1.2.25-2.4.7-3.5L3 2z" />
+          <path d="M4 4.2C4 2.6 5.6 1.9 6.8 2.8L9.4 4.9C10.2 4.6 11.1 4.5 12 4.5s1.8.1 2.6.4l2.6-2.1c1.2-.9 2.8-.2 2.8 1.4 0 1.6-.3 3.1-.9 4.3 1 1.2 1.5 2.6 1.5 4.1 0 4.2-3.8 7.2-9 7.2S3 16.8 3 12.6c0-1.5.5-2.9 1.5-4.1C3.9 7.3 3.6 5.8 4 4.2Z" />
         </svg>
       </span>
     </button>

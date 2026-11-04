@@ -52,7 +52,8 @@ function Panel() {
         <TopBar conn={CONNECTION} count={PARTICIPANTS.length} />
         <SearchBar />
         <Conversation items={items} reactions={reactions} />
-        <Composer disabled={CONNECTION !== 'good'} onSend={send} />
+        {/* 창이 작은 70%·50%에서 오버레이를 열면 입력창을 숨겨 오버레이(--ovh 100%)가 창 전체를 덮게 한다 */}
+        <Composer disabled={CONNECTION !== 'good'} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen)} onSend={send} />
       </div>
     </section>
   );

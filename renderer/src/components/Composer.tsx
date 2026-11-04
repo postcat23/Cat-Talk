@@ -5,7 +5,8 @@ const MAX_LEN = 50;
 const MAX_HEIGHT = 120;
 
 // 보내기 버튼 없이 Enter로만 전송한다(목업 v34)
-export default function Composer({ disabled, onSend }: { disabled: boolean; onSend: (text: string) => void }) {
+// hidden이면 display:none으로만 가린다(언마운트하면 입력 중이던 글이 사라진다).
+export default function Composer({ disabled, hidden = false, onSend }: { disabled: boolean; hidden?: boolean; onSend: (text: string) => void }) {
   const [value, setValue] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const touched = useRef(false);
@@ -34,7 +35,7 @@ export default function Composer({ disabled, onSend }: { disabled: boolean; onSe
   }
 
   return (
-    <div className={styles.composer}>
+    <div className={styles.composer} hidden={hidden}>
       <div className={styles.inrow}>
         <textarea ref={input} rows={1} placeholder="메시지 입력" maxLength={MAX_LEN} disabled={disabled}
           value={value} onChange={(e) => { touched.current = true; setValue(e.target.value); }} onKeyDown={onKeyDown} />
