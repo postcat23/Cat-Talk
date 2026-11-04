@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `electron` — 끝 도크·프레임리스·항상위 창 + 설정 연동/클릭통과
 - `electron` — 트레이(작업표시줄 숨김 연동)·창 위치 영속
 - `renderer` — 참여자 실루엣·프로필/닫기 한 줄·오버레이 높이 규칙 반전
+- `renderer` — 참여자 실루엣 둥근 귀·소형 높이에서 오버레이 시 입력창 숨김
 
 ### Fixed
 
