@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 실제 worker 활성화 (spawn + poll 루프 + 종료 정리)
 - compatibility 툴체인 import(tools/) + artifacts gitignore
 - store 휘발 분할(VolatileStore 글루) + 차단 무력화 (D-003)
+- 렌더러 Vite+React 스캐폴드 (툴체인·bridge 증명)
 
 ### Fixed
 
