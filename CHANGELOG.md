@@ -37,3 +37,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 에러코드 화이트리스트 upstream 정합 + ipc-contract §8 정정
 - 사이드카 stdin 상속으로 worker 초기화가 멈추던 문제 수정
 - 사이드카 실행 실패·종료 시 대기 요청을 즉시 정리 (Python이 없어도 `bridge_down`으로 표시)
+- 고양이 위에 게임 모자 아이템 번호가 글자로 표시되던 문제 수정
+- 채팅 높이 70%·50%에서 드로어·참여자 모달이 창 전체를 덮도록 수정 (하단 여백·둥근 모서리 제거)
