@@ -6,7 +6,7 @@ import styles from './TopBar.module.css';
 
 const SPIN_MS = 600;
 
-export default function TopBar({ room, conn, count }: { room: string; conn: ConnState; count: number }) {
+export default function TopBar({ conn, count }: { conn: ConnState; count: number }) {
   const { dispatch } = useUi();
   const [spinning, setSpinning] = useState(false);
   const spinTimer = useRef<number>(undefined);
@@ -24,8 +24,9 @@ export default function TopBar({ room, conn, count }: { room: string; conn: Conn
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
       </button>
       <div className={styles.title}>
-        <div className={styles.room}>{room}</div>
-        <div className={styles.conn} data-state={conn}><i className={styles.dot} /><span>{CONN_LABEL[conn]}</span></div>
+        <span className={styles.logo} />
+        <span className={styles.brandname}>Cat-Talk</span>
+        <span className={styles.conn} data-state={conn}><i className={styles.dot} /><span>{CONN_LABEL[conn]}</span></span>
       </div>
       <CatCount count={count} onClick={() => dispatch({ type: 'toggleModal' })} />
       <button className={styles.iconbtn} aria-label="검색" onClick={() => dispatch({ type: 'toggleSearch' })}>

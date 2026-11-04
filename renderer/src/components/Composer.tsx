@@ -2,14 +2,15 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import styles from './Composer.module.css';
 
 const MAX_LEN = 50;
-const MAX_HEIGHT = 96;
+const MAX_HEIGHT = 120;
 
+// 보내기 버튼 없이 Enter로만 전송한다(목업 v34)
 export default function Composer({ disabled, onSend }: { disabled: boolean; onSend: (text: string) => void }) {
   const [value, setValue] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const touched = useRef(false);
 
-  // 내용에 맞춰 자동 높이(최대 96px). 목업과 같이 첫 입력 전에는 rows=1 기본 높이를 유지한다.
+  // 내용에 맞춰 자동 높이(최대 120px). 목업과 같이 첫 입력 전에는 기본 높이를 유지한다.
   useLayoutEffect(() => {
     const el = input.current;
     if (!el || !touched.current) return;
@@ -37,9 +38,6 @@ export default function Composer({ disabled, onSend }: { disabled: boolean; onSe
       <div className={styles.inrow}>
         <textarea ref={input} rows={1} placeholder="메시지 입력" maxLength={MAX_LEN} disabled={disabled}
           value={value} onChange={(e) => { touched.current = true; setValue(e.target.value); }} onKeyDown={onKeyDown} />
-        <button className={styles.sendbtn} aria-label="보내기" disabled={disabled || !value.trim()} onClick={send}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m4 3 17 9L4 21l3-9-3-9Zm3 9h14" /></svg>
-        </button>
       </div>
       <div className={styles.help}><span>Enter 전송 · Shift+Enter 줄바꿈</span><span className={styles.c}>{value.length}/{MAX_LEN}</span></div>
     </div>

@@ -1,7 +1,7 @@
 import { useCallback, useState, type CSSProperties } from 'react';
 import { MAX_CARDS, OVERLAY_HEIGHT, UiProvider, useUi } from './state/UiContext';
 import { useReactionStack } from './hooks/useReactionStack';
-import { CONNECTION, INITIAL_ITEMS, ME_ID, PARTICIPANTS, ROOM_NAME, type ChatItem } from './mock/mockData';
+import { CONNECTION, INITIAL_ITEMS, ME_ID, PARTICIPANTS, type ChatItem } from './mock/mockData';
 import CollapseTab from './components/CollapseTab';
 import TopBar from './components/TopBar';
 import SearchBar from './components/SearchBar';
@@ -39,7 +39,7 @@ function Panel() {
   return (
     <section className={overlays.collapsed ? 'panel collapsed' : 'panel'} data-side={settings.side} style={style}>
       <CollapseTab />
-      <TopBar room={ROOM_NAME} conn={CONNECTION} count={PARTICIPANTS.length} />
+      <TopBar conn={CONNECTION} count={PARTICIPANTS.length} />
       <SearchBar />
       <Conversation items={items} reactions={reactions} />
       <Composer disabled={CONNECTION !== 'good'} onSend={send} />

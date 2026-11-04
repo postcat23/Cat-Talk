@@ -42,7 +42,8 @@ export const PARTICIPANTS: Participant[] = [
 ];
 
 export const ME_ID = 'p8';
-export const ROOM_NAME = 'alt + F4';
+export const APP_VERSION = 'v1.0.0';
+export const UPDATE_AVAILABLE = false;
 export const CONNECTION: ConnState = 'good';
 export const CONN_LABEL: Record<ConnState, string> = { good: '연결', off: '연결 안 됨', nolobby: '로비 없음' };
 

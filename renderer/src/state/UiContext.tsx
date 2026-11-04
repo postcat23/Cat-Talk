@@ -14,6 +14,8 @@ export interface Settings {
   catInteraction: boolean;
   clearCats: boolean;
   presence: boolean;
+  hideTaskbarIcon: boolean; // 토글 UI만, 동작 연결은 2e-2b
+  autoOpenChest: boolean;   // 토글 UI만, 적용/해제 로직은 보류
 }
 
 export interface Overlays {
@@ -41,6 +43,7 @@ const initialState: UiState = {
   settings: {
     theme: 'system', side: 'right', height: '100%', opacity: 100,
     taskbarAlert: true, toastAlert: true, catInteraction: true, clearCats: false, presence: true,
+    hideTaskbarIcon: false, autoOpenChest: false,
   },
   overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false },
 };

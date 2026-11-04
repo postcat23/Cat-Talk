@@ -4,11 +4,9 @@
   padding:16px 16px 26px;gap:13px;overflow-y:auto}
 .show{transform:translateY(0);visibility:visible;transition:transform .28s cubic-bezier(.4,0,.2,1)}
 .drawer h3{margin:0;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
-.dhead{display:flex;align-items:center;justify-content:space-between}
-.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px}
+.dhead{display:flex;align-items:center;justify-content:flex-end}
 .dclose{background:none;border:0;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:8px}
 .dclose:hover{background:var(--line);color:var(--fg)}
-.logo{width:36px;height:36px;background:url(../assets/app-icon.png) center/contain no-repeat}
 .set{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px}
 .seg{display:flex;gap:3px;background:var(--line);padding:3px;border-radius:9px}
 .seg button{border:0;background:none;color:var(--muted);font:inherit;font-size:12px;padding:5px 9px;border-radius:7px;cursor:pointer}
@@ -17,7 +15,16 @@
 .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;transition:left .18s}
 .sw.on{background:var(--accent)}.sw.on::after{left:19px}
 .range{flex:1;max-width:160px;accent-color:var(--accent);cursor:pointer}
-.merge{display:flex;align-items:center;gap:10px;padding:10px;border-radius:11px;background:var(--line);opacity:.65;font-size:13px}
+.update{display:flex;flex-direction:column;gap:9px}
+.uhead{font-size:13.5px;font-weight:600}
+.urow{display:flex;align-items:center;gap:8px}
+.ubadge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(47,169,107,.18);color:var(--good)}
+.ubadge.avail{background:rgba(109,75,216,.18);color:var(--accent)}
+.uver{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.upbtn{margin-left:auto;display:inline-flex;font:inherit;font-size:12.5px;font-weight:600;border:0;border-radius:9px;padding:7px 12px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
+.chest{display:flex;align-items:center;gap:10px;font-size:13.5px}
+.cicon{font-size:18px}
+.ctitle{flex:1}
 .sub{font-size:11px;color:var(--muted)}
 .divider{height:1px;background:var(--line)}
 .acct{display:flex;align-items:center;gap:9px;font-size:13px}
