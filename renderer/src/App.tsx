@@ -18,7 +18,7 @@ function now() {
 }
 
 function Panel() {
-  const { settings, overlays } = useUi();
+  const { settings, overlays, dispatch } = useUi();
   const [items, setItems] = useState<ChatItem[]>(INITIAL_ITEMS);
   const reactions = useReactionStack(MAX_CARDS[settings.height], settings.catInteraction);
 
@@ -36,6 +36,7 @@ function Panel() {
   useEffect(() => { shell?.setDockSide(settings.side); }, [shell, settings.side]);
   useEffect(() => { shell?.setChatHeight(HEIGHT_PCT[settings.height]); }, [shell, settings.height]);
   useEffect(() => { shell?.setSkipTaskbar(settings.hideTaskbarIcon); }, [shell, settings.hideTaskbarIcon]);
+  useEffect(() => shell?.onExpand(() => dispatch({ type: 'expand' })), [shell, dispatch]);
   useClickThrough();
 
   const style = {
