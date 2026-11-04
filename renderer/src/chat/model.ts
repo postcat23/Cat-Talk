@@ -7,7 +7,7 @@ export interface Participant {
   id: string;
   name: string;
   color: string;   // 아바타 배경
-  hat: string;     // 고양이 모자(이모지 임시 표시). 없으면 ''
+  hat: string;     // 고양이 모자(이모지 임시 표시). 없거나 실제 아이템 번호면 ''
 }
 
 export interface ChatMessage {
@@ -34,7 +34,7 @@ export interface ViewContext { account: string; lobby: string; generation: strin
 export interface ViewProfile {
   name?: string;
   color?: string;  // 목업 데이터 전용. 실제 view에는 없다
-  hat?: string;    // 목업 데이터 전용. 실제 view에는 없다
+  hat?: string | number;   // 목업은 이모지 문자열, 실제 view는 게임 아이템 번호(벗으면 -1)라 표시하지 않는다
 }
 
 export interface ViewMessage {
@@ -95,7 +95,7 @@ function paletteColor(uid: string) {
 }
 
 export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string): Participant {
-  return { id: uid, name: profile?.name || fallbackName, color: profile?.color ?? paletteColor(uid), hat: profile?.hat ?? '' };
+  return { id: uid, name: profile?.name || fallbackName, color: profile?.color ?? paletteColor(uid), hat: typeof profile?.hat === 'string' ? profile.hat : '' };
 }
 
 // 목업 표기를 기준으로 하되, 목업에 없는 상태는 upstream 문구를 쓴다.
