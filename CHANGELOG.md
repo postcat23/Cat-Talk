@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `renderer` — 목업 기반 UI 컴포넌트 포팅 (정적·목데이터, 브라우저 확인)
 - 실제 앱 아이콘으로 창·favicon·드로어 로고 교체
 - `renderer` — 상단바 재구성 및 상자 자동 오픈 카드 추가
+- `renderer` — 상자 자동 오픈 켜기/끄기 버튼화
 
 ### Fixed
 
