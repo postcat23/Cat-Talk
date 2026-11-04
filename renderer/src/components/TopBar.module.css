@@ -5,7 +5,7 @@
 .iconbtn svg{width:20px;height:20px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinning svg{animation:spin .6s ease}
-/* 타이틀: 앱 아이콘 + Cat-Talk + 연결 뱃지 */
+/* 타이틀: 앱 아이콘 + Cat Talk + 연결 뱃지 */
 .title{flex:1;min-width:0;display:flex;align-items:center;gap:8px}
 /* 목업은 임시 로고에 흰 배경·그림자지만, 실제 앱 아이콘(투명)을 배경 없이 쓴다 */
 .logo{width:26px;height:26px;flex:none;background:url(../assets/app-icon.png) center/contain no-repeat}

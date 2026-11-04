@@ -25,7 +25,7 @@ export default function TopBar({ conn, count }: { conn: ConnState; count: number
       </button>
       <div className={styles.title}>
         <span className={styles.logo} />
-        <span className={styles.brandname}>Cat-Talk</span>
+        <span className={styles.brandname}>Cat Talk</span>
         <span className={styles.conn} data-state={conn}><i className={styles.dot} /><span>{CONN_LABEL[conn]}</span></span>
       </div>
       <CatCount count={count} onClick={() => dispatch({ type: 'toggleModal' })} />

@@ -127,7 +127,7 @@ function setTaskbarHidden(hide) {
   // 작업표시줄에서 숨기면 종료·복귀 수단이 없어지므로 트레이가 대신한다.
   if (hide && !tray) {
     tray = new Tray(ICON);
-    tray.setToolTip('Cat-Talk');
+    tray.setToolTip('Cat Talk');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: '열기/펼치기', click: openAndExpand },
       { type: 'separator' },
@@ -142,7 +142,7 @@ function setTaskbarHidden(hide) {
 function createWindow() {
   const display = savedDisplay();
   win = new BrowserWindow({
-    ...dockBounds(display), title: 'Cat-Talk (dev)',
+    ...dockBounds(display), title: 'Cat Talk (dev)',
     icon: ICON,   // 창·작업표시줄 아이콘
     frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
     alwaysOnTop: true, resizable: false, maximizable: false, fullscreenable: false, skipTaskbar: state.hideTaskbar,
