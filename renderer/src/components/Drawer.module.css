@@ -8,7 +8,7 @@
 .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px}
 .dclose{background:none;border:0;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:8px}
 .dclose:hover{background:var(--line);color:var(--fg)}
-.logo{width:36px;height:36px;border-radius:10px;background:#fff url(../assets/logo.png) center/contain no-repeat;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.logo{width:36px;height:36px;background:url(../assets/app-icon.png) center/contain no-repeat}
 .set{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px}
 .seg{display:flex;gap:3px;background:var(--line);padding:3px;border-radius:9px}
 .seg button{border:0;background:none;color:var(--muted);font:inherit;font-size:12px;padding:5px 9px;border-radius:7px;cursor:pointer}

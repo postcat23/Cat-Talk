@@ -56,6 +56,7 @@ function sidecarRequest(payloadString) {
 function createWindow() {
   win = new BrowserWindow({
     width: 1240, height: 840, minWidth: 400, minHeight: 500, title: 'Cat-Talk (dev)',
+    icon: path.join(__dirname, 'app-icon.ico'),   // 창·작업표시줄 아이콘
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false,
