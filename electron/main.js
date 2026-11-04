@@ -29,11 +29,20 @@ function settle(id) {
 function startSidecar() {
   // upstream 소스는 3.10+ 문법(`dict | None`)이라 기본은 py 런처의 3.11. CATTALK_PYTHON으로 override.
   const [py, ...pyArgs] = process.env.CATTALK_PYTHON ? [process.env.CATTALK_PYTHON] : ['py', '-3.11'];
-  sidecar = spawn(py, [...pyArgs, path.join(__dirname, '..', 'sidecar', 'server.py')], {
+  const child = spawn(py, [...pyArgs, path.join(__dirname, '..', 'sidecar', 'server.py')], {
     stdio: ['pipe', 'pipe', 'inherit'],
   });
-  sidecar.stdout.setEncoding('utf-8');
-  sidecar.stdout.on('data', (chunk) => {
+  sidecar = child;
+  // 사이드카가 없거나 죽어도 창은 살아 있어야 한다. 대기 요청을 끊어 렌더러가 bridge_down을 표시하게 한다.
+  const down = (reason) => {
+    for (const id of [...pending.keys()]) settle(id).reject(new Error(reason));
+    if (sidecar === child) sidecar = null;
+  };
+  // 실행 파일이 없으면(ENOENT) exit 없이 error만 온다. 정리하지 않으면 요청마다 타임아웃까지 기다린다.
+  child.on('error', () => down('sidecar_spawn_failed'));
+  child.stdin.on('error', () => down('sidecar_exited'));   // 종료 직후 write의 EPIPE
+  child.stdout.setEncoding('utf-8');
+  child.stdout.on('data', (chunk) => {
     stdoutBuf += chunk;
     let nl;
     while ((nl = stdoutBuf.indexOf('\n')) >= 0) {
@@ -44,10 +53,7 @@ function startSidecar() {
       if (p) p.resolve(JSON.stringify(msg.result));
     }
   });
-  sidecar.on('exit', () => {
-    for (const id of [...pending.keys()]) settle(id).reject(new Error('sidecar_exited'));
-    sidecar = null;
-  });
+  child.on('exit', () => down('sidecar_exited'));
 }
 
 function sidecarRequest(payloadString) {
