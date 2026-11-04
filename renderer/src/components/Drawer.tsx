@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { useUi, type ChatHeight, type Settings, type Side, type Theme } from '../state/UiContext';
-import { APP_VERSION, ME_ID, UPDATE_AVAILABLE, participantById } from '../mock/mockData';
+import { useChat } from '../hooks/useChatView';
 import Cat from './Cat';
 import styles from './Drawer.module.css';
+
+// 앱 업데이트 연결은 후속 단계(electron-updater). 그때까지 표시용 고정값.
+const APP_VERSION = 'v1.0.0';
+const UPDATE_AVAILABLE = false;
 
 type Option<T> = { value: T; label: string };
 
@@ -36,8 +40,9 @@ function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle:
 
 export default function Drawer() {
   const { settings, overlays, dispatch } = useUi();
-  const set = (patch: Partial<Settings>) => dispatch({ type: 'setSettings', patch });
-  const me = participantById(ME_ID);
+  const { me, accountStatus, saveSettings } = useChat();
+  const apply = (patch: Partial<Settings>) => dispatch({ type: 'setSettings', patch });
+  const set = (patch: Partial<Settings>) => { apply(patch); saveSettings(patch); };
   // 업데이트 확인·적용은 후속 단계. 지금은 목업처럼 버튼을 누르면 '최신'으로 돌아가는 것만.
   const [updateAvailable, setUpdateAvailable] = useState(UPDATE_AVAILABLE);
 
@@ -47,7 +52,7 @@ export default function Drawer() {
       <div className={styles.dhead}>
         <div className={styles.acct}>
           <span className={styles.av} style={{ background: me?.color }}><Cat /></span>
-          <div><strong>{me?.name}</strong><div className={styles.sub}>Bongo Cat 연결됨</div></div>
+          <div><strong>{me?.name ?? '계정 확인 중'}</strong><div className={styles.sub}>{accountStatus}</div></div>
         </div>
         <button className={styles.dclose} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
       </div>
@@ -59,7 +64,8 @@ export default function Drawer() {
       <div className={styles.set}>
         <span>채팅 투명도</span>
         <input className={styles.range} type="range" min={20} max={100} value={settings.opacity} aria-label="채팅 투명도"
-          onChange={(e) => set({ opacity: Number(e.target.value) })} />
+          onChange={(e) => apply({ opacity: Number(e.target.value) })}
+          onPointerUp={() => saveSettings({ opacity: settings.opacity })} onKeyUp={() => saveSettings({ opacity: settings.opacity })} />
       </div>
       {SWITCHES.map(({ key, label }) => (
         <div key={key} className={styles.set}>

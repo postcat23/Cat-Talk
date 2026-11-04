@@ -1,6 +1,7 @@
 // electron/preload.js가 contextBridge로 노출하는 bridge (원본 QWebChannel bridge.request와 같은 역할).
 interface Window {
-  bridge: {
+  // Electron에서만 존재. 브라우저 dev에서는 undefined라 rpc가 목업으로 폴백한다.
+  bridge?: {
     request(payload: string): Promise<string>;
   };
   // 창 제어. Electron에서만 존재하고 브라우저 dev(npm run dev)에서는 undefined.

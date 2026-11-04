@@ -1,18 +1,21 @@
 import { useRef, useState } from 'react';
 import { useUi } from '../state/UiContext';
-import { CONN_LABEL, type ConnState } from '../mock/mockData';
+import { useChat } from '../hooks/useChatView';
+import type { ConnState } from '../chat/model';
 import CatCount from './CatCount';
 import styles from './TopBar.module.css';
 
 const SPIN_MS = 600;
+const CONN_LABEL: Record<ConnState, string> = { good: '연결', off: '연결 안 됨', nolobby: '로비 없음', checking: '확인 중' };
 
-export default function TopBar({ conn, count }: { conn: ConnState; count: number }) {
+export default function TopBar() {
   const { dispatch } = useUi();
+  const { conn, participants, refresh: refreshChat } = useChat();
   const [spinning, setSpinning] = useState(false);
   const spinTimer = useRef<number>(undefined);
 
-  // 새로고침은 아이콘 회전만(실제 refresh 액션은 2e-2c)
   function refresh() {
+    void refreshChat();
     setSpinning(true);
     clearTimeout(spinTimer.current);
     spinTimer.current = window.setTimeout(() => setSpinning(false), SPIN_MS);
@@ -28,7 +31,7 @@ export default function TopBar({ conn, count }: { conn: ConnState; count: number
         <span className={styles.brandname}>Cat Talk</span>
         <span className={styles.conn} data-state={conn}><i className={styles.dot} /><span>{CONN_LABEL[conn]}</span></span>
       </div>
-      <CatCount count={count} onClick={() => dispatch({ type: 'toggleModal' })} />
+      <CatCount count={participants.length} onClick={() => dispatch({ type: 'toggleModal' })} />
       <button className={styles.iconbtn} aria-label="검색" onClick={() => dispatch({ type: 'toggleSearch' })}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="10.7" cy="10.7" r="7.3" /><path d="m16 16 5 5" /></svg>
       </button>

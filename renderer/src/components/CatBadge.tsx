@@ -1,5 +1,5 @@
 import { useUi } from '../state/UiContext';
-import type { Participant } from '../mock/mockData';
+import type { Participant } from '../chat/model';
 import Cat from './Cat';
 import styles from './CatBadge.module.css';
 

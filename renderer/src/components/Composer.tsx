@@ -6,10 +6,11 @@ const MAX_HEIGHT = 120;
 
 // 보내기 버튼 없이 Enter로만 전송한다(목업 v34)
 // hidden이면 display:none으로만 가린다(언마운트하면 입력 중이던 글이 사라진다).
-export default function Composer({ disabled, hidden = false, onSend }: { disabled: boolean; hidden?: boolean; onSend: (text: string) => void }) {
+export default function Composer({ disabled, hidden = false, onSend }: { disabled: boolean; hidden?: boolean; onSend: (text: string) => Promise<boolean> }) {
   const [value, setValue] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const touched = useRef(false);
+  const sending = useRef(false);
 
   // 내용에 맞춰 자동 높이(최대 120px). 목업과 같이 첫 입력 전에는 기본 높이를 유지한다.
   useLayoutEffect(() => {
@@ -19,11 +20,14 @@ export default function Composer({ disabled, hidden = false, onSend }: { disable
     el.style.height = Math.min(el.scrollHeight, MAX_HEIGHT) + 'px';
   }, [value]);
 
-  function send() {
+  // 전송이 거부되면 글을 남겨 다시 보낼 수 있게 한다. 응답을 기다리는 동안 이어 쓴 글도 지우지 않는다.
+  async function send() {
     const text = value.trim();
-    if (!text || disabled) return;
-    onSend(text);
-    setValue('');
+    if (!text || disabled || sending.current) return;
+    sending.current = true;
+    const ok = await onSend(text);
+    sending.current = false;
+    if (ok) setValue((current) => (current === value ? '' : current));
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {

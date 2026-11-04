@@ -1,16 +1,16 @@
 import { useUi } from '../state/UiContext';
-import { ME_ID, PARTICIPANTS } from '../mock/mockData';
+import { useChat } from '../hooks/useChatView';
 import Cat from './Cat';
 import styles from './ParticipantModal.module.css';
 
-// '나' 최상단 고정, 나머지는 한국어 로캘 정렬
-const SORTED = [
-  ...PARTICIPANTS.filter((p) => p.id === ME_ID),
-  ...PARTICIPANTS.filter((p) => p.id !== ME_ID).sort((a, b) => a.name.localeCompare(b.name, 'ko')),
-];
-
 export default function ParticipantModal() {
   const { overlays, dispatch } = useUi();
+  const { participants, me } = useChat();
+  // '나' 최상단 고정, 나머지는 한국어 로캘 정렬
+  const sorted = [
+    ...participants.filter((p) => p.id === me?.id),
+    ...participants.filter((p) => p.id !== me?.id).sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+  ];
   return (
     <div className={overlays.modalOpen ? `${styles.modal} ${styles.show}` : styles.modal} aria-label="참여자">
       <div className={styles.mhead}>
@@ -19,11 +19,11 @@ export default function ParticipantModal() {
         <p>탭하면 Steam 프로필을 열 수 있어요.</p>
       </div>
       <div className={styles.mlist}>
-        {SORTED.map((p) => (
+        {sorted.map((p) => (
           <div key={p.id} className={styles.prow}>
             <span className={styles.av} style={{ background: p.color }}><Cat /></span>
             <span className={styles.nm}>{p.name}</span>
-            {p.id === ME_ID
+            {p.id === me?.id
               ? <span className={styles.meBadge}>나</span>
               : <button className={styles.dots} aria-label="메뉴">⋯</button>}
           </div>

@@ -1,16 +1,15 @@
-import type { ChatMessage, Participant } from '../mock/mockData';
+import type { ChatMessage } from '../chat/model';
 import CatBadge from './CatBadge';
 import styles from './Message.module.css';
 
 interface Props {
   message: ChatMessage;
-  sender: Participant;
-  mine: boolean;
   lead: boolean;   // 발화 묶음 첫 메시지: 고양이+닉 머리를 붙인다
 }
 
-export default function Message({ message, sender, mine, lead }: Props) {
-  const cls = [styles.msg, mine ? styles.me : styles.peer, lead && styles.lead].filter(Boolean).join(' ');
+export default function Message({ message, lead }: Props) {
+  const sender = message.author;
+  const cls = [styles.msg, message.own ? styles.me : styles.peer, lead && styles.lead].filter(Boolean).join(' ');
   return (
     <div className={cls}>
       {lead && (
