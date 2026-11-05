@@ -4,19 +4,21 @@
 @keyframes drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.card{animation:none}}
 .leaving{transition:opacity .2s;opacity:0}
-/* 발신자 고양이: 배경 없이. 이모지 폴백은 26px 칸 */
-.rcat{width:26px;height:26px;display:grid;place-items:center;font-size:15px;flex:none}
-/* 실아바타: 드로어 프로필처럼 콘텐츠 bbox 박스(가로폭 --sprite-w)를 카드 아래 안쪽 경계에 닿게(카드 아래 패딩 8px 상쇄).
+/* 발신자 고양이: 배경 없이. 이모지 폴백은 18px 칸 */
+.rcat{width:18px;height:18px;display:grid;place-items:center;font-size:11px;flex:none}
+/* 실아바타: 드로어 프로필처럼 콘텐츠 bbox 박스(가로폭 --sprite-w)를 카드 아래 안쪽 경계에 닿게(카드 아래 패딩 2px 상쇄).
    수치는 스크린샷 확인 후 확정 */
-.stand{--sprite-w:36px;width:auto;height:auto;align-self:flex-end;margin-bottom:-8px;font-size:0;line-height:0}
+.stand{--sprite-w:18px;width:auto;height:auto;align-self:flex-end;margin-bottom:-2px;font-size:0;line-height:0}
 /* emote 이미지(게임 이모티콘). 수치는 스크린샷 확인 후 확정 */
-.emote{width:24px;height:24px;object-fit:contain;flex:none}
+.emote{width:16px;height:16px;object-fit:contain;flex:none}
 .rtxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rtxt b{font-weight:600}
-/* 반응 카드만(안내 카드 제외): 아바타→닉네임 14px, 닉네임→상호작용(야옹 문구·이모티콘) 10px, 닉네임 14px.
-   이모티콘은 카드 gap, 야옹 문구는 .act 왼쪽 여백으로 같은 10px. 수치는 스크린샷 확인 후 확정 */
-.reaction{gap:10px}
-.reaction .rcat{margin-right:4px}
-.reaction .rtxt b{font-size:14px}
-.act{margin-left:10px}
-.mul{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted);flex:none}
+/* 반응 카드만(안내 카드 제외): 카드 높이 약 23px(종전 46px의 절반). 아바타→닉네임 7px, 닉네임→상호작용(야옹 문구·이모티콘) 5px,
+   닉네임 12px, 카드 사이 3px(.stack gap 6px 상쇄). 이모티콘은 카드 gap, 야옹 문구는 .act 왼쪽 여백으로 같은 5px.
+   높이가 바뀌면 UiContext의 MAX_CARDS도 다시 계산한다. 수치는 스크린샷 확인 후 확정 */
+.reaction{gap:5px;padding:2px 8px;border-radius:8px;box-shadow:0 3px 10px rgba(0,0,0,.18);font-size:11px}
+.reaction + .reaction{margin-top:-3px}
+.reaction .rcat{margin-right:2px}
+.reaction .rtxt b{font-size:12px}
+.act{margin-left:5px}
+.mul{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);flex:none}

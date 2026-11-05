@@ -39,7 +39,8 @@ export type UiAction =
 // 채팅 높이에 연동되는 값: 드로어·모달 최대 높이(--ovh), 반응 카드 최대 개수.
 // 100%는 뒤 채팅이 보이게 70%로 캡, 창이 작은 70%·50%는 오버레이가 창 전체 높이를 채운다.
 export const OVERLAY_HEIGHT: Record<ChatHeight, string> = { '100%': '70%', '70%': '100%', '50%': '100%' };
-export const MAX_CARDS: Record<ChatHeight, number> = { '100%': 5, '70%': 4, '50%': 3 };
+// 반응 카드 22px + 간격 3px 기준. 카드가 46px일 때 5·4·3장이 차지하던 높이를 그대로 쓴다
+export const MAX_CARDS: Record<ChatHeight, number> = { '100%': 10, '70%': 8, '50%': 6 };
 
 // Electron이면 메인이 디스크에서 읽은 창 설정으로 시작한다(기본값이 복원된 창을 덮어쓰지 않게).
 const saved = window.catTalk?.initial;

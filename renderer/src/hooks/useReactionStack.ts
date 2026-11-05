@@ -21,7 +21,8 @@ export interface ReactionStack {
 const LIFETIME_MS = 4500;
 const FADE_MS = 200;
 
-// 같은 sender+kind+content(+emote 이미지)면 ×N 누적, 다르면 맨 위에 새 카드. 초과분·만료분은 페이드 후 제거.
+// 맨 위 카드와 sender+kind+content(+emote 이미지)가 같을 때만 ×N 누적(연속 중복만), 다르면 맨 위에 새 카드.
+// 초과분·만료분은 페이드 후 제거.
 export function useReactionStack(maxCards: number, enabled: boolean): ReactionStack {
   const [cards, setCards] = useState<ReactionCard[]>([]);
   const live = useRef<ReactionCard[]>([]);   // 페이드 중이 아닌 카드, 최신순
@@ -46,8 +47,8 @@ export function useReactionStack(maxCards: number, enabled: boolean): ReactionSt
 
   const push = useCallback((sender: string, kind: ReactionKind, content = '', avatar?: string, image?: string) => {
     if (!enabled) return;
-    const ex = live.current.find((c) => c.sender === sender && c.kind === kind && c.content === content && c.image === image);
-    if (ex) {
+    const ex = live.current[0];
+    if (ex && ex.sender === sender && ex.kind === kind && ex.content === content && ex.image === image) {
       const n = ++ex.n;
       setCards((cs) => cs.map((c) => (c.id === ex.id ? { ...c, n } : c)));
       arm(ex.id);
