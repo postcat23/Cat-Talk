@@ -29,5 +29,5 @@
 .me .bubble{background:var(--own);color:var(--own-fg);border-top-right-radius:5px}
 .binfo{display:flex;flex-direction:column;gap:1px;padding-bottom:2px;flex:none}
 .me .binfo{align-items:flex-end}
-.tm{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:10px;color:var(--muted);white-space:nowrap}
+.tm{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);white-space:nowrap}
 .status{font-size:10px;color:var(--muted);white-space:nowrap}
