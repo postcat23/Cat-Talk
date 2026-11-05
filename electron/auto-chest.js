@@ -96,7 +96,7 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
   }
 
   // 게임이 꺼져 있을 때만 호출한다. 백업(clean일 때만) → 구조검증·패치(별도 파일) → verify → 교체 → 재검증.
-  // 교체 후 실패하면 복원하고, onReplaced로 호출자가 이후 실패 시 복원할 수 있게 알린다.
+  // onReplaced로 교체 사실을 알려, 호출자가 이후 실패 시 백업으로 복원하게 한다.
   async function patchInstalled(game, onReplaced) {
     const { dll, flag } = paths(game);
     let r = await patcher('inspect', dll);
@@ -161,10 +161,11 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     }
   }
 
-  async function countdown() {
+  // kind: 'install'(켜기) | 'reapply'(업데이트로 패치 소실). 흐름은 같고 문구만 다르다.
+  async function countdown(kind) {
     cancelled = false;
     for (let s = COUNTDOWN_SECONDS; s > 0; s--) {
-      notify({ phase: 'countdown', seconds: s });
+      notify({ phase: 'countdown', seconds: s, kind });
       await sys.sleep(1000);
       if (cancelled) { notify({ phase: 'cancelled' }); return false; }
     }
@@ -183,7 +184,7 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       const game = await sys.findGame();
       if (current.state === 'on') return { ok: true };
       if (current.state === 'off') { fs.writeFileSync(paths(game).flag, ''); return { ok: true }; }
-      if (!(await countdown())) return { ok: false, reason: 'cancelled' };
+      if (!(await countdown('install'))) return { ok: false, reason: 'cancelled' };
       return install(game);
     },
 
@@ -194,24 +195,15 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       return { ok: true };
     },
 
-    // 업데이트로 패치가 사라졌을 때 게임이 꺼진 틈에 재적용(재실행 없음). 구조가 바뀌었으면 incompatible.
+    // 재적용: 업데이트로 패치가 사라졌을 때. 켜기와 같은 카운트다운·설치 흐름이다(조용히 패치하지 않는다).
+    // 재적용이 필요한 상태가 아니면(구조가 바뀌어 호환 안 됨 포함) 아무것도 하지 않는다.
     async reapply() {
       if (busy) return { ok: false, reason: 'busy' };
+      const current = await status(true);
+      if (current.state !== 'needs_reapply') return { ok: false, reason: current.state };
       const game = await sys.findGame();
-      if (!game) return { ok: false, reason: 'no_game' };
-      if (await sys.gameRunning()) return { ok: false, reason: 'game_running' };
-      let replaced = false;
-      busy = true;
-      try {
-        await patchInstalled(game, () => { replaced = true; });
-        fs.writeFileSync(paths(game).flag, '');
-        return { ok: true };
-      } catch (e) {
-        const reason = e instanceof Failure ? e.message : 'unexpected';
-        return { ok: false, reason, rolledBack: replaced ? await rollback(game) : false };
-      } finally {
-        busy = false;
-      }
+      if (!(await countdown('reapply'))) return { ok: false, reason: 'cancelled' };
+      return install(game);
     },
   };
 }

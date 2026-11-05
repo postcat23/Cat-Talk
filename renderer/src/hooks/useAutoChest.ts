@@ -40,7 +40,7 @@ export function useAutoChest(wanted: boolean): AutoChest | null {
     });
   }, [chest, dispatch]);
 
-  // 설정이 ON인데 패치가 사라졌으면(업데이트) 게임이 꺼진 틈에 한 번 재적용을 시도한다. 게임이 켜져 있으면 거부되고 표시만 남는다.
+  // 설정이 ON인데 패치가 사라졌으면(업데이트) 켜기와 같은 카운트다운으로 재적용한다. 취소하면 이 실행에서는 다시 묻지 않는다.
   useEffect(() => {
     if (!chest) return;
     void (async () => {
@@ -48,8 +48,9 @@ export function useAutoChest(wanted: boolean): AutoChest | null {
       setState(current);
       if (wanted && current === 'needs_reapply' && !reapplied.current) {
         reapplied.current = true;
-        await chest.reapply();
-        await refresh(wanted);
+        setBusy(true);
+        try { await chest.reapply(); }
+        finally { setBusy(false); await refresh(wanted); }
       }
     })();
   }, [chest, wanted, refresh]);
