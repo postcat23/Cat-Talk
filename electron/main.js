@@ -178,6 +178,11 @@ function createWindow() {
   });
   // 생성 직후에도 한 번 맞춘다(혼합 배율에서 생성 좌표가 어긋날 수 있다).
   dockTo(display);
+  // 작업표시줄로 최소화했다 복원한 뒤 최상위가 풀린다는 보고가 있어 복원·표시 때마다 다시 건다.
+  // 생성 옵션(alwaysOnTop: true)과 같은 기본 레벨. Windows에선 레벨과 무관하게 HWND_TOPMOST다.
+  const keepOnTop = () => { if (win && !win.isDestroyed()) win.setAlwaysOnTop(true); };
+  win.on('restore', keepOnTop);
+  win.on('show', keepOnTop);
   setTaskbarHidden(state.hideTaskbar);
   win.on('move', onMove);
   // 투명 영역은 기본 클릭 통과. 렌더러가 패널·탭 위 커서를 알리면 그때만 클릭을 받는다.
