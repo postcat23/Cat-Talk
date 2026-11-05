@@ -117,9 +117,9 @@ const STATUS_LABEL: Record<string, string> = {
   pending: '전송 중…',
   accepted: '전송됨',
   failed: '전송 실패',
-  unknown: '전송 결과 확인 불가 · 자동 재전송 안 함',
+  unknown: '전송 결과를 알 수 없습니다',
 };
-const UNSAVED_LABEL = '이 기록은 저장되지 않았어요';
+const UNSAVED_LABEL = '이 기록은 저장되지 않았습니다';
 
 function clock(received: number) {
   const d = new Date(received * 1000);

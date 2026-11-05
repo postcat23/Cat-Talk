@@ -16,7 +16,7 @@ export default function ParticipantModal() {
       <div className={styles.mhead}>
         <button className={styles.close} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
         <h2><span className={styles.sil} aria-hidden="true" />함께 있는 고양이</h2>
-        <p>탭하면 Steam 프로필을 열 수 있어요.</p>
+        <p>더보기에서 Steam 프로필을 열 수 있습니다.</p>
       </div>
       <div className={styles.mlist}>
         {sorted.map((p) => (

@@ -6,7 +6,7 @@ import CatCount from './CatCount';
 import styles from './TopBar.module.css';
 
 const SPIN_MS = 600;
-const CONN_LABEL: Record<ConnState, string> = { good: '연결', off: '연결 안 됨', nolobby: '로비 없음', checking: '확인 중' };
+const CONN_LABEL: Record<ConnState, string> = { good: '연결됨', off: '연결 안 됨', nolobby: '로비 없음', checking: '확인 중' };
 
 export default function TopBar() {
   const { dispatch } = useUi();

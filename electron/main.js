@@ -181,7 +181,7 @@ function setTaskbarHidden(hide) {
 function createWindow() {
   const display = savedDisplay();
   win = new BrowserWindow({
-    ...dockBounds(display), title: 'Cat Talk (dev)',
+    ...dockBounds(display), title: 'Cat Talk',
     icon: ICON,   // 창·작업표시줄 아이콘
     frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
     alwaysOnTop: true, resizable: false, maximizable: false, fullscreenable: false, skipTaskbar: state.hideTaskbar,
