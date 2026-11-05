@@ -9,6 +9,18 @@
 /* 본문 행: 말풍선 + (안쪽 끝) 시간. lead에만 음수 마진으로 고양이 발을 말풍선 뒤로 */
 .row{display:flex;align-items:flex-end;gap:6px;max-width:100%}
 .lead .row{margin-top:-10px}
+/* 실아바타: 고양이 박스 = 콘텐츠 bbox(Cat sprite)라 투명 여백 보정이 필요 없다.
+   --sprite-w: 모든 스킨 공통 콘텐츠 가로폭(모달과 같은 정규화), --sprite-tuck: 말풍선 뒤로 숨는 양(0 = 그림 바닥이 말풍선 상단에 밀착),
+   --sprite-inset: 그림 가장자리와 말풍선 시작 모서리 사이 거리. 닉네임은 말풍선 위 4px.
+   수치는 스크린샷 확인 후 확정 */
+.sprite{--sprite-w:42px;--sprite-tuck:0px;--sprite-inset:4px}
+.sprite .row{margin-top:calc(-1 * var(--sprite-tuck))}
+.sprite .nm{padding-bottom:calc(var(--sprite-tuck) + 4px)}
+/* 각자 말풍선의 시작 모서리 쪽(상대=왼쪽, 나=오른쪽). 첫 자식이 고양이 */
+.peer.sprite .head > :first-child{margin-left:var(--sprite-inset)}
+.me.sprite .head > :first-child{margin-right:var(--sprite-inset)}
+/* 입퇴장 공지 바로 다음 묶음은 공지의 아래 마진이 간격을 맡는다(공지 위아래 대칭) */
+.lead.afterNotice{margin-top:0}
 .me .row{flex-direction:row-reverse}
 .bubble{position:relative;z-index:1;padding:8px 11px;border-radius:14px;font-size:13.5px;line-height:1.5;word-break:break-word}
 .peer .bubble{background:var(--peer);border-top-left-radius:5px}

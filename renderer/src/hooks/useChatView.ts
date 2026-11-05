@@ -4,13 +4,16 @@ import { useUi, type Settings } from '../state/UiContext';
 import { errorText, noticeText, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
   accountStatus, connState, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
-  type ChatItem, type ConnState, type Participant, type ViewResponse,
+  type AvatarLookup, type ChatItem, type ConnState, type Participant, type ViewResponse,
 } from '../chat/model';
 import type { ReactionStack } from './useReactionStack';
 
 const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 재구성한다
 const MAX_SEEN_REACTIONS = 256;
 const MAX_AVATAR_REQUEST = 32;   // 사이드카 상한(64) 안에서 나눠 받는다. 남은 건 다음 폴링에
+
+// 반응 이미지는 PNG data URI만 그린다(upstream app.js와 같은 검사)
+const png = (uri: string | undefined) => (uri?.startsWith('data:image/png;base64,') ? uri : undefined);
 
 export interface Toast { id: number; text: string }
 
@@ -63,14 +66,17 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       seen.add(event.id);
       if (seen.size > MAX_SEEN_REACTIONS) seen.delete(seen.values().next().value as string);
       // 늦게 도착한 응답이 만료된 반응을 되살리지 않게 한다
-      if (event.expires_in_ms > performance.now() - requestedAt) reactionInput.current.pushReaction(event.sender, event.kind, event.text ?? '');
+      if (event.expires_in_ms > performance.now() - requestedAt) {
+        reactionInput.current.pushReaction(event.sender, event.kind, event.text ?? '', png(event.avatar), png(event.image));
+      }
     }
   }, []);
 
   // view에는 id만 온다. 처음 보는 이미지만 받아 메모리에 둔다(디스크·localStorage에 쓰지 않는다).
   const fetchAvatars = useCallback((data: ViewResponse) => {
     const requested = requestedAvatars.current;
-    const ids = [...new Set(Object.values(data.participants).map((p) => p.avatar_id))]
+    // 메시지 작성자는 나간 뒤에도 profiles에 남으므로 둘 다 본다
+    const ids = [...new Set([...Object.values(data.participants), ...Object.values(data.profiles)].map((p) => p.avatar_id))]
       .filter((id): id is string => Boolean(id) && !requested.has(id as string))
       .slice(0, MAX_AVATAR_REQUEST);
     if (ids.length === 0) return;
@@ -160,18 +166,17 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   }, [dispatch, showError]);
 
   const shown = failed ? null : view;
-  const items = useMemo(() => (shown ? toChatItems(shown) : []), [shown]);
+  const ready = shown?.avatar_stage === 'ready';
+  const avatarOf = useCallback<AvatarLookup>((id) => (ready && id ? avatars[id] : undefined), [ready, avatars]);
+  const items = useMemo(() => (shown ? toChatItems(shown, avatarOf) : []), [shown, avatarOf]);
   const participants = useMemo(
-    () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => ({
-      ...toParticipant(uid, p, '이름 확인 중'),
-      avatar: shown?.avatar_stage === 'ready' && p.avatar_id ? avatars[p.avatar_id] : undefined,
-    })),
-    [shown, avatars],
+    () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf)),
+    [shown, avatarOf],
   );
   const account = shown?.context.account ?? '';
   const me = useMemo(
-    () => (account && shown?.profiles[account] ? toParticipant(account, shown.profiles[account], '계정 확인 중') : null),
-    [account, shown],
+    () => (account && shown?.profiles[account] ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf) : null),
+    [account, shown, avatarOf],
   );
   const lookup = useMemo(() => new Map(participants.map((p) => [p.id, p])), [participants]);
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);

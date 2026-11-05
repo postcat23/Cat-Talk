@@ -1,5 +1,8 @@
-.catcount{position:relative;width:40px;height:34px;flex:none;background:none;border:0;cursor:pointer;padding:0;color:var(--fg)}
+/* 상단바 하단에 붙인다: 상단바 아래 패딩(10px)만큼 내려 버튼 바닥 = 상단바 아래 경계, 실루엣은 바닥 기준 */
+.catcount{position:relative;width:40px;height:34px;flex:none;background:none;border:0;cursor:pointer;padding:0;color:var(--fg);
+  align-self:flex-end;margin-bottom:-10px}
 .catcount:hover{filter:brightness(1.08)}
-.n{position:absolute;top:-1px;left:0;right:0;text-align:center;font:700 11px var(--mono);color:var(--fg);z-index:2;line-height:1}
+/* 숫자는 우측 아이콘(34px 버튼)과 같은 중심선: 버튼이 10px 내려가 있으므로 중심 = 17 - 10 = 7px, 줄높이 1 */
+.n{--n-size:13px;position:absolute;top:calc(7px - var(--n-size) / 2);left:0;right:0;text-align:center;font:700 var(--n-size) var(--mono);color:var(--fg);z-index:2;line-height:1}
 .face{position:absolute;left:0;right:0;top:11px;bottom:0}
-.sil{--m:url(../assets/cat-silhouette.png) center/contain no-repeat;position:absolute;inset:1px 6px;background:var(--fg);-webkit-mask:var(--m);mask:var(--m)}
+.sil{--m:url(../assets/cat-silhouette.png) center bottom/contain no-repeat;position:absolute;inset:1px 6px 0;background:var(--fg);-webkit-mask:var(--m);mask:var(--m)}

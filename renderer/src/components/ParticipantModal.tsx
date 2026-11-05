@@ -21,7 +21,7 @@ export default function ParticipantModal() {
       <div className={styles.mlist}>
         {sorted.map((p) => (
           <div key={p.id} className={styles.prow}>
-            <span className={styles.av} style={{ background: p.color }}>{p.avatar ? <img className={styles.avimg} src={p.avatar} alt="" /> : <Cat />}</span>
+            <span className={styles.av} style={{ background: p.color }}><Cat src={p.avatar} framing="face" /></span>
             <span className={styles.nm}>{p.name}</span>
             {p.id === me?.id
               ? <span className={styles.meBadge}>나</span>

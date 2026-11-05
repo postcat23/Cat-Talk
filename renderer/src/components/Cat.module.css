@@ -1,0 +1,7 @@
+/* 실아바타는 256px 합성(실측: 그림 x 31~242·y 40~210, 모자 높이는 스킨마다 다르고 몸 아래 끝은 y≈210 고정) */
+.full{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+/* 프로필 틀: 크기·위치는 콘텐츠 bbox로 계산한 인라인 스타일(Cat.tsx Face). 정사각 틀 기준 */
+.frame{position:relative;display:block;width:100%;height:100%}
+.face{position:absolute;height:auto;aspect-ratio:1;max-width:none;pointer-events:none}
+/* 서 있는 고양이: 콘텐츠 bbox 박스. 가로는 부모의 --sprite-w, 세로는 인라인 aspect-ratio */
+.spriteBox{position:relative;display:block;width:var(--sprite-w,42px);height:auto;overflow:hidden}

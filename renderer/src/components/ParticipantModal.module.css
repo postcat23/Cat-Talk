@@ -12,8 +12,7 @@
 .mlist{flex:1;min-height:0;overflow-y:auto;padding:8px 8px 22px}
 .prow{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:11px}
 .prow:hover{background:var(--line)}
-.av{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-size:18px;flex:none;overflow:hidden}
-.avimg{width:100%;height:100%;object-fit:contain}
+.av{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;font-size:18px;flex:none;overflow:hidden}
 /* 목업에선 전역 .nm(600·fg)이 함께 적용되므로 굵기·색을 같이 둔다 */
 .nm{flex:1;min-width:0;font-weight:600;color:var(--fg);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0}
 .meBadge{font-size:11px;background:var(--accent);color:var(--accent-fg);border-radius:6px;padding:2px 7px;font-family:var(--mono)}

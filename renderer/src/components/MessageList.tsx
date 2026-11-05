@@ -39,7 +39,7 @@ export default function MessageList() {
         // 직전 항목이 같은 발신자의 메시지가 아니면 묶음의 첫 메시지(lead)
         const prev = items[i - 1];
         const lead = !(prev && prev.kind === 'msg' && prev.sender === item.sender);
-        return <Message key={item.id} message={item} lead={lead} />;
+        return <Message key={item.id} message={item} lead={lead} afterNotice={settings.presence && prev?.kind === 'presence'} />;
       })}
     </div>
   );

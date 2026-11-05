@@ -1,3 +1,5 @@
-.scroll{flex:1;overflow-y:auto;padding:12px 14px 6px;display:flex;flex-direction:column;gap:4px}
-.presence{align-self:center;font-size:11.5px;color:var(--muted);background:var(--line);padding:3px 10px;border-radius:999px;margin:6px 0}
+/* 아래 여백 14px: 마지막 말풍선이 입력창(또는 70·50%에서 그 자리)에 붙지 않게 */
+.scroll{flex:1;overflow-y:auto;padding:12px 14px 14px;display:flex;flex-direction:column;gap:4px}
+/* 위아래 마진 대칭. 바로 다음 묶음은 lead 마진을 빼서(Message .afterNotice) 위아래 간격이 같다 */
+.presence{align-self:center;font-size:11.5px;color:var(--muted);background:var(--line);padding:3px 10px;border-radius:999px;margin:12px 0}
 .empty{margin:auto}

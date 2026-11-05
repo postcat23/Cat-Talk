@@ -48,10 +48,10 @@ export default function Drawer() {
 
   return (
     <aside className={[styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' && styles.full].filter(Boolean).join(' ')} aria-label="메뉴">
-      {/* 헤더 한 줄: 유저 프로필 … 닫기 */}
-      <div className={styles.dhead}>
+      {/* 헤더 한 줄: 유저 프로필 … 닫기. 실아바타는 배경 없이 아래 구분선 위에 서 있다 */}
+      <div className={me?.avatar ? `${styles.dhead} ${styles.standing}` : styles.dhead}>
         <div className={styles.acct}>
-          <span className={styles.av} style={{ background: me?.color }}><Cat /></span>
+          <span className={me?.avatar ? `${styles.av} ${styles.stand}` : styles.av}><Cat src={me?.avatar} framing="sprite" /></span>
           <div><strong>{me?.name ?? '계정 확인 중'}</strong><div className={styles.sub}>{accountStatus}</div></div>
         </div>
         <button className={styles.dclose} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
@@ -73,8 +73,8 @@ export default function Drawer() {
           <Switch on={settings[key]} label={label} onToggle={() => set({ [key]: !settings[key] })} />
         </div>
       ))}
-      <div className={styles.divider} />
-      {/* 켜기 = 패치 적용 겸 재동기화(켜져 있어도 다시 눌러 현재 게임 버전에 재적용), 끄기 = 원본 복원.
+      {/* 구분선은 프로필↔설정, 설정 영역↔앱 업데이트 2개뿐. 상자 카드는 자체 배경이 구분 역할.
+          켜기 = 패치 적용 겸 재동기화(켜져 있어도 다시 눌러 현재 게임 버전에 재적용), 끄기 = 원본 복원.
           TODO: 상자 자동 오픈 적용/복원(IL 패치, 게임 버전 재동기화). 디스크 수정 방식 확정 후.
           게임 디스크 파일 미수정 원칙(D-005)과 충돌 소지 */}
       <div className={styles.chest}>

@@ -18,8 +18,9 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
         const p = byId(c.sender);
         return (
           <div key={c.id} className={c.leaving ? `${styles.card} ${styles.leaving}` : styles.card}>
-            <span className={styles.rcat} style={{ background: p?.color }}><Cat /></span>
+            <span className={styles.rcat} style={{ background: p?.color }}><Cat src={c.avatar ?? p?.avatar} framing="face" /></span>
             <span className={styles.rtxt}><b>{p?.name ?? c.sender}</b> {c.kind === 'meow' ? '야옹~' : c.content}</span>
+            {c.kind === 'emote' && c.image && <img className={styles.emote} src={c.image} alt="" draggable={false} />}
             <span className={styles.mul}>{c.n > 1 ? `×${c.n}` : ''}</span>
           </div>
         );

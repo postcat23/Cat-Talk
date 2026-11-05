@@ -1,12 +1,15 @@
 /* 헤더 아래에서 내려오는 오버레이. 최대 높이는 채팅 높이에 연동(--ovh) */
 .drawer{position:absolute;top:0;left:0;right:0;max-height:var(--ovh,70%);z-index:7;background:var(--surface);border-radius:0 0 16px 16px;box-shadow:0 12px 30px rgba(0,0,0,.3);
   transform:translateY(-100%);visibility:hidden;transition:transform .28s cubic-bezier(.4,0,.2,1),visibility 0s linear .28s;display:flex;flex-direction:column;
-  padding:16px 16px 26px;gap:13px;overflow-y:auto}
+  padding:10px 16px 26px;gap:13px;overflow-y:auto}
 .show{transform:translateY(0);visibility:visible;transition:transform .28s cubic-bezier(.4,0,.2,1)}
 /* 창이 작은 70%·50%: 내용 길이와 무관하게 창 전체를 덮는다. 둥근 모서리는 뒤 패널이 비쳐 없앤다 */
 .full{height:100%;border-radius:0}
 .drawer h3{margin:0;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
 .dhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+/* 실아바타: 헤더 바닥을 바로 아래 구분선에 붙인다(드로어 gap 13px 상쇄). 아바타가 선 위에 서고,
+   이름 블록·×는 헤더(=아바타 높이) 기준 가운데. 이모지 폴백은 기존 간격 유지 */
+.standing{margin-bottom:-13px}
 .dclose{background:none;border:0;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:8px}
 .dclose:hover{background:var(--line);color:var(--fg)}
 .set{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px}
@@ -24,13 +27,19 @@
 .ubadge.avail{background:rgba(109,75,216,.18);color:var(--accent)}
 .uver{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
 .upbtn{margin-left:auto;display:inline-flex;font:inherit;font-size:12.5px;font-weight:600;border:0;border-radius:9px;padding:7px 12px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
-.chest{display:flex;align-items:center;gap:10px;font-size:13.5px}
-.cicon{font-size:18px}
+/* 라운드 카드. 배경은 드로어(--surface)에서 전경색 쪽으로 한 단계(라이트·다크 공통 토큰 혼합) */
+.chest{display:flex;align-items:center;gap:10px;font-size:13.5px;line-height:1.2;
+  background:color-mix(in srgb, var(--fg) 8%, var(--surface));border-radius:12px;padding:10px 12px}
+.cicon{font-size:18px;line-height:1;display:flex}
 .ctitle{flex:1}
-.cbtns{display:flex;gap:6px;margin-left:auto}
+.cbtns{display:flex;align-items:center;gap:6px;margin-left:auto}
 .cbtn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:none;color:var(--muted);border-radius:8px;padding:5px 11px;cursor:pointer}
 .cbtn.active{background:var(--accent);color:var(--accent-fg);border-color:transparent}
 .sub{font-size:11px;color:var(--muted)}
-.divider{height:1px;background:var(--line)}
+/* 드로어가 max-height로 넘치면 내용 없는 구분선이 flex-shrink로 0px이 되어 사라지므로 줄지 않게 한다 */
+.divider{height:1px;flex:none;background:var(--line)}
 .acct{display:flex;align-items:center;gap:9px;font-size:13px}
-.av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center}
+.av{width:30px;height:30px;display:grid;place-items:center;flex:none}
+/* 실아바타: 배경 없이 콘텐츠 bbox 박스(Cat sprite, 가로폭 --sprite-w). 박스 바닥 = 그림 바닥 = 헤더 바닥 = 구분선.
+   수치는 스크린샷 확인 후 확정 */
+.stand{--sprite-w:66px;width:auto;height:auto;font-size:0;line-height:0}

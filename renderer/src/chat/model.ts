@@ -56,7 +56,9 @@ export interface ViewReaction {
   id: string;
   sender: string;
   kind: 'meow' | 'emote';
-  text?: string;
+  text?: string;     // meow 문구
+  avatar?: string;   // 발신자 정지 PNG data URI(반응 시점 외형). 반응은 1회만 실려 id로 바꾸지 않는다
+  image?: string;    // emote 이미지 PNG data URI
   expires_in_ms: number;
 }
 
@@ -98,8 +100,15 @@ function paletteColor(uid: string) {
   return PALETTE[hash % PALETTE.length];
 }
 
-export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string): Participant {
-  return { id: uid, name: profile?.name || fallbackName, color: profile?.color ?? paletteColor(uid), hat: typeof profile?.hat === 'string' ? profile.hat : '' };
+// avatar_id → 받아 둔 data URI. 아직 없거나 아바타가 준비 전이면 undefined(이모지 폴백)
+export type AvatarLookup = (avatarId: string | undefined) => string | undefined;
+
+export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string, avatarOf?: AvatarLookup): Participant {
+  return {
+    id: uid, name: profile?.name || fallbackName, color: profile?.color ?? paletteColor(uid),
+    hat: typeof profile?.hat === 'string' ? profile.hat : '',
+    avatar: avatarOf?.(profile?.avatar_id),
+  };
 }
 
 // 목업 표기를 기준으로 하되, 목업에 없는 상태는 upstream 문구를 쓴다.
@@ -116,7 +125,7 @@ function clock(received: number) {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
-export function toChatItems(view: ViewResponse): ChatItem[] {
+export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatItem[] {
   return view.messages.map((m): ChatItem => {
     if (m.kind === 'member_joined' || m.kind === 'member_left') {
       const name = m.name || '이름 확인 중';
@@ -126,7 +135,7 @@ export function toChatItems(view: ViewResponse): ChatItem[] {
     return {
       kind: 'msg', id: m.id, sender: m.sender, own, text: m.body, time: clock(m.received),
       // 나간 참여자는 profiles에 없어도 메시지에 남은 이름으로 표시한다
-      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중')),
+      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf),
       status: m.unsaved ? UNSAVED_LABEL : STATUS_LABEL[m.status],
     };
   });
