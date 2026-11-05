@@ -18,9 +18,10 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
     <div className={styles.stack}>
       {stack.cards.map((c) => {
         const p = byId(c.sender);
+        const avatar = c.avatar ?? p?.avatar;
         return (
           <div key={c.id} className={c.leaving ? `${styles.card} ${styles.leaving}` : styles.card}>
-            <span className={styles.rcat} style={{ background: p?.color }}><Cat src={c.avatar ?? p?.avatar} framing="face" /></span>
+            <span className={avatar ? `${styles.rcat} ${styles.stand}` : styles.rcat}><Cat src={avatar} framing="sprite" /></span>
             <span className={styles.rtxt}><b>{p?.name ?? c.sender}</b> {c.kind === 'meow' ? c.content || MEOW_FALLBACK : c.content}</span>
             {c.kind === 'emote' && c.image && <img className={styles.emote} src={c.image} alt="" draggable={false} />}
             <span className={styles.mul}>{c.n > 1 ? `×${c.n}` : ''}</span>
