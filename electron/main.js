@@ -11,6 +11,7 @@ const DEV = process.env.CATTALK_DEV === '1';
 const DEV_URL = 'http://localhost:5173';   // vite.config.mts의 DEV_PORT와 맞춘다
 const ICON = path.join(__dirname, 'app-icon.ico');
 const APP_ID = 'CatTalk.Desktop';   // Windows 토스트 발신자
+const WINDOW_APP_ID = 'CatTalk.Window';   // 작업표시줄용. 레지스트리에 등록하지 않는다(registerToastIdentity 참고)
 
 let win = null, tray = null, sidecar = null, nextId = 1, stdoutBuf = '';
 const pending = new Map();   // id -> {resolve, reject, timer}
@@ -233,13 +234,8 @@ function createWindow() {
       backgroundThrottling: false,   // 최소화 중에도 폴링이 늦어지지 않아야 알림이 제때 뜬다
     },
   });
-  // 앱 ID를 지정하면 작업표시줄이 창 아이콘 대신 exe 아이콘을 쓴다. 창 속성으로 아이콘·이름을 직접 준다.
-  if (process.platform === 'win32') {
-    win.setAppDetails({
-      appId: APP_ID, appIconPath: ICON, relaunchDisplayName: 'Cat Talk',
-      relaunchCommand: `"${process.execPath}" "${app.getAppPath()}"`,
-    });
-  }
+  // 등록된 앱 ID를 쓰면 작업표시줄이 창 아이콘 대신 exe 아이콘을 보여 준다. 창에는 등록하지 않은 ID를 따로 준다.
+  if (process.platform === 'win32') win.setAppDetails({ appId: WINDOW_APP_ID });
   // 생성 직후에도 한 번 맞춘다(혼합 배율에서 생성 좌표가 어긋날 수 있다).
   dockTo(display);
   // 작업표시줄로 최소화했다 복원한 뒤 최상위가 풀린다는 보고가 있어 복원·표시 때마다 다시 건다.
