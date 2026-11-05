@@ -4,18 +4,20 @@ import { useUi, type Settings } from '../state/UiContext';
 import { errorText, noticeText, PROFILE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
   accountStatus, connState, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
-  type AvatarLookup, type ChatItem, type ConnState, type Participant, type ViewResponse,
+  type AvatarLookup, type ChatItem, type ConnState, type Participant, type ViewContext, type ViewResponse,
 } from '../chat/model';
 import type { ReactionStack } from './useReactionStack';
 
 const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 재구성한다
 const MAX_SEEN_REACTIONS = 256;
 const MAX_AVATAR_REQUEST = 32;   // 사이드카 상한(64) 안에서 나눠 받는다. 남은 건 다음 폴링에
+const DRAFT_SAVE_MS = 300;
 
 // 반응 이미지는 PNG data URI만 그린다(upstream app.js와 같은 검사)
 const png = (uri: string | undefined) => (uri?.startsWith('data:image/png;base64,') ? uri : undefined);
 
 export interface Toast { id: number; text: string }
+export interface RestoredDraft { text: string }   // 같은 글이어도 복원마다 새 객체라 입력창이 다시 받는다
 
 export interface Chat {
   items: ChatItem[];
@@ -27,6 +29,7 @@ export interface Chat {
   toast: Toast | null;
   canSend: boolean;
   incoming: number | undefined;
+  restoredDraft: RestoredDraft | null;
   query: string;
   byId(uid: string): Participant | undefined;
   setQuery(query: string): void;
@@ -34,6 +37,7 @@ export interface Chat {
   openProfile(uid: string): Promise<void>;
   refresh(): Promise<void>;
   saveSettings(patch: Partial<Settings>): void;
+  saveDraft(text: string, now?: boolean): void;
 }
 
 export function useChatView(pushReaction: ReactionStack['push'], reactionsEnabled: boolean): Chat {
@@ -43,6 +47,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [query, setQueryState] = useState('');
   const [toast, setToast] = useState<Toast | null>(null);
   const [avatars, setAvatars] = useState<Record<string, string>>({});
+  const [restoredDraft, setRestoredDraft] = useState<RestoredDraft | null>(null);
 
   const viewRef = useRef<ViewResponse | null>(null);
   const queryRef = useRef('');
@@ -55,6 +60,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const requestedAvatars = useRef(new Set<string>());
   const nextToast = useRef(1);
   const openingProfile = useRef(false);
+  const draftScope = useRef<Pick<ViewContext, 'account' | 'lobby'> | null>(null);   // 입력창 글이 속한 계정·로비
+  const pendingDraft = useRef<{ text: string; timer: number } | null>(null);
   const reactionInput = useRef({ pushReaction, reactionsEnabled });
   useEffect(() => { reactionInput.current = { pushReaction, reactionsEnabled }; });
 
@@ -89,6 +96,30 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       .catch(() => ids.forEach((id) => requested.delete(id)));   // 표시는 이모지 폴백, 다음 폴링에서 재시도
   }, []);
 
+  const flushDraft = useCallback(() => {
+    const pending = pendingDraft.current, scope = draftScope.current;
+    if (!pending || !scope) return;
+    clearTimeout(pending.timer);
+    pendingDraft.current = null;
+    rpc('draft', { ...scope, text: pending.text }).catch(showError);
+  }, [showError]);
+
+  const saveDraft = useCallback((text: string, now = false) => {
+    if (pendingDraft.current) clearTimeout(pendingDraft.current.timer);
+    pendingDraft.current = { text, timer: window.setTimeout(flushDraft, DRAFT_SAVE_MS) };
+    if (now) flushDraft();
+  }, [flushDraft]);
+
+  // 처음 들어왔거나 계정·로비가 바뀌면 입력창을 그 로비의 초안으로 바꾼다. 쓰던 글은 이전 로비에 먼저 저장한다.
+  // 같은 로비에서는 폴링이 입력 중인 글을 덮지 않게 다시 넣지 않는다. 로비가 비는 구간(재연결 등)도 글을 유지한다.
+  const takeDraft = useCallback((data: ViewResponse) => {
+    const { account, lobby } = data.context, scope = draftScope.current;
+    if (!account || !lobby || (scope?.account === account && scope.lobby === lobby)) return;
+    flushDraft();
+    draftScope.current = { account, lobby };
+    setRestoredDraft({ text: data.draft ?? '' });
+  }, [flushDraft]);
+
   const poll = useCallback(async () => {
     if (busy.current) { again.current = true; return; }
     busy.current = true;
@@ -103,6 +134,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       setFailed(false);
       takeReactions(data, requestedAt);
       fetchAvatars(data);
+      takeDraft(data);
       viewRef.current = data;
       // 설정은 시작 시 1회만 받는다. 이후로는 렌더러가 값을 쥐고 저장만 요청한다(폴링이 조작을 되돌리지 않게).
       if (!hydrated.current) {
@@ -110,7 +142,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
         dispatch({ type: 'setSettings', patch: settingsFromView(data) });
       }
       // revision은 하트비트마다 오르므로 비교에서 뺀다. 내용이 같으면 다시 그리지 않는다.
-      const { revision: _revision, reactions: _reactions, ...content } = data;
+      const { revision: _revision, reactions: _reactions, draft: _draft, ...content } = data;
       const next = JSON.stringify(content);
       if (next !== signature.current) { signature.current = next; setView(data); }
     } catch {
@@ -119,7 +151,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       busy.current = false;
       if (again.current) { again.current = false; void poll(); }
     }
-  }, [dispatch, fetchAvatars, takeReactions]);
+  }, [dispatch, fetchAvatars, takeDraft, takeReactions]);
 
   useEffect(() => {
     void poll();
@@ -203,7 +235,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, query, toast, byId, setQuery, send, openProfile, refresh, saveSettings,
+    items, participants, me, query, toast, restoredDraft, byId, setQuery, send, openProfile, refresh, saveSettings, saveDraft,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),

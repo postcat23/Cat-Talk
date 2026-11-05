@@ -12,6 +12,7 @@ let theme: Theme = 'system';
 const notifications = { notification_flash: true, notification_toast: true };
 let reactionsEnabled = true;
 const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clear_cats: false, auto_open_chest: false };
+const drafts = new Map<string, string>();
 
 const CONTEXT = { account: ME_ID, lobby: 'mock-lobby', generation: 'mock' };
 
@@ -23,6 +24,7 @@ function view(query: string): ViewResponse {
     messages: needle ? messages.filter((m) => !m.kind && m.body.toLowerCase().includes(needle)) : messages.map((m) => ({ ...m })),
     profiles: PROFILES, participants: PROFILES,
     theme, notifications: { ...notifications }, reactions_enabled: reactionsEnabled, ui_settings: { ...uiSettings }, reactions: [],
+    draft: drafts.get(CONTEXT.lobby) ?? '',
   };
 }
 
@@ -48,6 +50,7 @@ function dispatch(args: Record<string, unknown>) {
     case 'view': return view((args.query as string | undefined) ?? '');
     case 'send': return send(args.text as string);
     case 'setting': return setting(args.key as string, args.value);
+    case 'draft': drafts.set(args.lobby as string, args.text as string); return { ok: true };
     case 'refresh': return { ok: true };
     case 'open_steam_profile': return { ok: true };
     default: return { error: 'not_wired' };

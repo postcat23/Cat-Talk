@@ -50,7 +50,8 @@ function Panel() {
             <SearchBar />
             <Conversation reactions={reactions} />
             {/* 창이 작은 70%·50%에서 오버레이를 열면 입력창을 숨겨 오버레이(--ovh 100%)가 창 전체를 덮게 한다 */}
-            <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen)} onSend={chat.send} />
+            <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen)}
+              restored={chat.restoredDraft} onSend={chat.send} onDraft={chat.saveDraft} />
           </div>
         </section>
       </AutoChestContext.Provider>

@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import type { RestoredDraft } from '../hooks/useChatView';
 import styles from './Composer.module.css';
 
 const MAX_LEN = 50;
@@ -6,11 +7,30 @@ const MAX_HEIGHT = 120;
 
 // 보내기 버튼 없이 Enter로만 전송한다(목업 v34)
 // hidden이면 display:none으로만 가린다(언마운트하면 입력 중이던 글이 사라진다).
-export default function Composer({ disabled, hidden = false, onSend }: { disabled: boolean; hidden?: boolean; onSend: (text: string) => Promise<boolean> }) {
+export default function Composer({ disabled, hidden = false, restored, onSend, onDraft }: {
+  disabled: boolean;
+  hidden?: boolean;
+  restored: RestoredDraft | null;
+  onSend: (text: string) => Promise<boolean>;
+  onDraft: (text: string, now?: boolean) => void;
+}) {
   const [value, setValue] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const touched = useRef(false);
   const sending = useRef(false);
+  const latest = useRef('');
+
+  function show(text: string) {
+    latest.current = text;
+    setValue(text);
+  }
+
+  // 복원은 사용자 입력이 아니라서 다시 저장하지 않는다. 글이 있으면 첫 입력 때처럼 높이를 맞춘다.
+  useEffect(() => {
+    if (!restored) return;
+    if (restored.text) touched.current = true;
+    show(restored.text);
+  }, [restored]);
 
   // 내용에 맞춰 자동 높이(최대 120px). 목업과 같이 첫 입력 전에는 기본 높이를 유지한다.
   useLayoutEffect(() => {
@@ -27,7 +47,10 @@ export default function Composer({ disabled, hidden = false, onSend }: { disable
     sending.current = true;
     const ok = await onSend(text);
     sending.current = false;
-    if (ok) setValue((current) => (current === value ? '' : current));
+    if (ok && latest.current === value) {
+      show('');
+      onDraft('', true);
+    }
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -42,7 +65,7 @@ export default function Composer({ disabled, hidden = false, onSend }: { disable
     <div className={styles.composer} hidden={hidden}>
       <div className={styles.inrow}>
         <textarea ref={input} rows={1} placeholder="메시지 입력" maxLength={MAX_LEN} disabled={disabled}
-          value={value} onChange={(e) => { touched.current = true; setValue(e.target.value); }} onKeyDown={onKeyDown} />
+          value={value} onChange={(e) => { touched.current = true; show(e.target.value); onDraft(e.target.value); }} onKeyDown={onKeyDown} />
       </div>
       <div className={styles.help}><span>Enter 전송 · Shift+Enter 줄바꿈</span><span className={styles.c}>{value.length}/{MAX_LEN}</span></div>
     </div>
