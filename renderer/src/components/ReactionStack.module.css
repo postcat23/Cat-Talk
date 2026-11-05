@@ -7,8 +7,8 @@
 /* 발신자 고양이: 배경 없이. 이모지 폴백은 26px 칸 */
 .rcat{width:26px;height:26px;display:grid;place-items:center;font-size:15px;flex:none}
 /* 실아바타: 드로어 프로필처럼 콘텐츠 bbox 박스(가로폭 --sprite-w)를 카드 아래 안쪽 경계에 닿게(카드 아래 패딩 8px 상쇄).
-   수치는 스크린샷 확인 후 확정 */
-.stand{--sprite-w:36px;width:auto;height:auto;align-self:flex-end;margin-bottom:-8px;font-size:0;line-height:0}
+   채팅의 상대 고양이처럼 좌우 반전해 오른쪽을 본다. 수치는 스크린샷 확인 후 확정 */
+.stand{--sprite-w:36px;width:auto;height:auto;align-self:flex-end;margin-bottom:-8px;font-size:0;line-height:0;transform:scaleX(-1)}
 /* emote 이미지(게임 이모티콘). 수치는 스크린샷 확인 후 확정 */
 .emote{width:24px;height:24px;object-fit:contain;flex:none}
 .rtxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
