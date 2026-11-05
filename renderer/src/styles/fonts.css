@@ -1,0 +1,6 @@
+/* 기본 폰트: 나눔바른고딕(로컬 번들, 오프라인 동작). 전체 한글 음절 포함 — 서브셋하지 않는다. 라이선스는 assets/fonts/LICENSE */
+@font-face{font-family:'NanumBarunGothic';font-weight:400;font-style:normal;font-display:swap;
+  src:url(../assets/fonts/NanumBarunGothic-Regular.woff2) format('woff2')}
+/* 파일 내부 usWeightClass는 600이지만 700으로 선언해 bold(700) 요청에 이 파일을 쓴다 */
+@font-face{font-family:'NanumBarunGothic';font-weight:700;font-style:normal;font-display:swap;
+  src:url(../assets/fonts/NanumBarunGothic-Bold.woff2) format('woff2')}

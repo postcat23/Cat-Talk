@@ -7,7 +7,9 @@
   --peer:#ececef; --own:#6d4bd8; --own-fg:#ffffff;
   --good:#2fa96b; --bad:#d8534f; --idle:#8a8a98;
   --notice:#f0ecff; --notice-fg:#4a3aa0;
-  --ui:"Noto Sans KR",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+  --ui:"NanumBarunGothic","Noto Sans KR",system-ui,sans-serif;
+  /* 숫자 표시(시각·인원·카운터·버전)도 단일 폰트로. 나눔바른고딕 숫자는 폭이 모두 같아(583/1000) 고정폭처럼 정렬된다 */
+  --mono:var(--ui);
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --backdrop:#121319; --backdrop-2:#0d0e13; --panel:#1a1b22; --surface:#23242d; --fg:#ececf2; --muted:#9a9aac; --line:rgba(255,255,255,.10);
