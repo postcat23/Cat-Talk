@@ -22,11 +22,13 @@ async function findGame() {
   const reg = await run('reg', ['query', 'HKCU\\Software\\Valve\\Steam', '/v', 'SteamPath']);
   const steam = /SteamPath\s+REG_SZ\s+(.+)/.exec(reg.stdout)?.[1]?.trim();
   if (!steam) return null;
-  const roots = [steam];
+  // 레지스트리 SteamPath는 소문자·슬래시 표기라(실측) 정식 표기인 라이브러리 설정을 먼저 쓴다. 플래그 리터럴이 이 경로로 들어간다.
+  const roots = [];
   try {
     const vdf = fs.readFileSync(path.join(steam, 'steamapps', 'libraryfolders.vdf'), 'utf-8');
     for (const m of vdf.matchAll(/"path"\s+"([^"]+)"/g)) roots.push(m[1].replace(/\\\\/g, '\\'));
   } catch { /* 기본 라이브러리만 */ }
+  roots.push(steam);
   for (const lib of new Set(roots)) {
     const apps = path.join(lib, 'steamapps');
     let names = [];
@@ -57,6 +59,9 @@ function defaultSys(openExternal) {
 
 class Failure extends Error {}
 
+// Windows 경로는 대소문자를 구분하지 않는다. 표기만 다른 경로를 '게임이 옮겨졌다'로 오판하지 않게 한다.
+const samePath = (a, b) => typeof a === 'string' && path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
+
 function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, notify }) {
   const home = path.join(dataDir, 'auto_chest');
   const backupDir = path.join(home, 'backup');
@@ -83,7 +88,7 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     if (r.code === 2) return { state: 'incompatible', reason: r.json.reason };
     if (r.code !== 0) return { state: 'error', reason: r.json.reason };
     if (r.json.state === 'clean') return { state: wanted ? 'needs_reapply' : 'not_installed' };
-    if (r.json.flag !== flag) return { state: 'needs_reapply', reason: 'flag_path_changed' };   // 게임 경로가 바뀜
+    if (!samePath(r.json.flag, flag)) return { state: 'needs_reapply', reason: 'flag_path_changed' };   // 게임 경로가 바뀜
     return { state: fs.existsSync(flag) ? 'on' : 'off' };
   }
 

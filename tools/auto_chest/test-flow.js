@@ -25,7 +25,7 @@ function world(name, opts = {}) {
   fs.copyFileSync(copy, dll);
   const w = { root, dll, flag: path.join(root, FLAG_NAME), log: [], notes: [], running: !!opts.running, steam: !!opts.running, data: path.join(base, 'data') };
   const sys = {
-    findGame: async () => (opts.noGame ? null : { root, appId: '1' }),
+    findGame: async () => (opts.noGame ? null : { root: w.lowerRoot ? root.toLowerCase() : root, appId: '1' }),
     gameRunning: async () => w.running,
     closeGame: async () => { w.log.push('closeGame'); if (!opts.closeHangs) { w.running = false; if (!opts.steamStuck) w.steam = false; } },
     steamRunning: async () => w.steam && !w.workerStopped ? true : w.steamHeld(),
@@ -140,6 +140,14 @@ const before = (log, a, b) => log.includes(a) && log.includes(b) && log.indexOf(
   check('12 다른 경로로 패치된 DLL -> 재적용 필요', (await w2.chest.status(true)).state === 'needs_reapply');
   r = await w2.chest.reapply();
   check('12b 재적용이 새 경로 리터럴로 고침', r.ok && (await w2.chest.status(true)).state === 'on', JSON.stringify(r));
+
+  w = world('case');
+  await w.chest.enable();
+  await w.chest.disable();
+  w.lowerRoot = true;   // 레지스트리 SteamPath처럼 소문자로 찾아진 경로(실측)
+  check('14 경로 대소문자만 다르면 재적용 아님(꺼짐)', (await w.chest.status(false)).state === 'off');
+  r = await w.chest.enable();
+  check('14b 켜기 -> 플래그만, 설치 흐름 안 탐', r.ok && fs.existsSync(w.flag) && w.log.filter((x) => x === 'launch').length === 1 && !w.notes.slice(-1)[0].phase.startsWith('count'), JSON.stringify(r));
 
   w = world('nogame', { noGame: true });
   check('13 게임 없음', (await w.chest.status(false)).state === 'no_game');
