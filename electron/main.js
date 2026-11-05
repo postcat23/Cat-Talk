@@ -185,8 +185,7 @@ function setTaskbarHidden(hide) {
 // ── 새 메시지 알림 ──
 // 안 읽은 수는 렌더러가 세어 넘긴다(안 보는 동안 받은 타인 메시지. 다시 보면 0).
 const TOAST_BODY = '새 메시지가 있습니다';   // 발신자·내용은 넣지 않는다
-const FLASH_MS = 1200;   // 새 메시지마다 잠깐만 깜빡인다
-let unread = 0, showBadge = false, toast = null, trayDot = null, flashTimer = null;
+let unread = 0, showBadge = false, toast = null, trayDot = null;
 
 // 아이콘이 작업표시줄에 있으면 숫자 배지, 숨겼으면 트레이 빨간 점. 읽으면(0) 원래대로.
 function applyTaskbarAlert() {
@@ -197,13 +196,6 @@ function applyTaskbarAlert() {
     if (on && !trayDot) trayDot = dotIcon(ICON);
     tray.setImage(on ? trayDot : ICON);
   }
-}
-
-function flashOnce() {
-  if (!win || win.isDestroyed() || state.hideTaskbar) return;
-  clearTimeout(flashTimer);
-  win.flashFrame(true);
-  flashTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.flashFrame(false); }, FLASH_MS);
 }
 
 // 패키징 전 exe는 Windows가 토스트 발신자를 'Electron'으로 표시한다. 앱 ID에 이름·아이콘을 등록한다(HKCU, 관리자 권한 불필요).
@@ -241,6 +233,13 @@ function createWindow() {
       backgroundThrottling: false,   // 최소화 중에도 폴링이 늦어지지 않아야 알림이 제때 뜬다
     },
   });
+  // 앱 ID를 지정하면 작업표시줄이 창 아이콘 대신 exe 아이콘을 쓴다. 창 속성으로 아이콘·이름을 직접 준다.
+  if (process.platform === 'win32') {
+    win.setAppDetails({
+      appId: APP_ID, appIconPath: ICON, relaunchDisplayName: 'Cat Talk',
+      relaunchCommand: `"${process.execPath}" "${app.getAppPath()}"`,
+    });
+  }
   // 생성 직후에도 한 번 맞춘다(혼합 배율에서 생성 좌표가 어긋날 수 있다).
   dockTo(display);
   // 작업표시줄로 최소화했다 복원한 뒤 최상위가 풀린다는 보고가 있어 복원·표시 때마다 다시 건다.
@@ -313,7 +312,6 @@ ipcMain.on('alert:unread', (_e, alert) => {
   unread = alert.count;
   showBadge = alert.taskbar === true;
   if (grew && alert.toast === true) showToast();
-  if (grew && showBadge && alert.flash === true) flashOnce();
   if (unread === 0 && toast) { toast.close(); toast = null; }
   applyTaskbarAlert();
 });

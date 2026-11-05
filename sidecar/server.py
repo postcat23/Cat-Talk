@@ -45,7 +45,6 @@ UI_SETTINGS = {
     "presence_notices": (True, lambda value: type(value) is bool),
     "clear_cats": (False, lambda value: type(value) is bool),
     "auto_open_chest": (False, lambda value: type(value) is bool),
-    "taskbar_flash": (True, lambda value: type(value) is bool),
 }
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",

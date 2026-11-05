@@ -10,7 +10,6 @@ export interface Settings {
   height: ChatHeight;
   opacity: number;          // 20~100
   taskbarAlert: boolean;
-  taskbarFlash: boolean;
   toastAlert: boolean;
   catInteraction: boolean;
   clearCats: boolean;
@@ -49,7 +48,7 @@ const SAVED_HEIGHT: Record<number, ChatHeight> = { 100: '100%', 70: '70%', 50: '
 const initialState: UiState = {
   settings: {
     theme: 'system', side: saved?.side ?? 'right', height: (saved && SAVED_HEIGHT[saved.heightPct]) ?? '100%', opacity: 100,
-    taskbarAlert: true, taskbarFlash: true, toastAlert: true, catInteraction: true, clearCats: false, presence: true,
+    taskbarAlert: true, toastAlert: true, catInteraction: true, clearCats: false, presence: true,
     hideTaskbarIcon: saved?.hideTaskbar ?? false, autoOpenChest: false,
   },
   overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false },

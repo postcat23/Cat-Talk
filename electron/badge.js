@@ -5,7 +5,7 @@ const SIZE = 32;
 const RED = [0x2f, 0x2f, 0xe5];     // BGR
 const WHITE = [0xff, 0xff, 0xff];
 const TRAY_DOT_RADIUS = 8;          // 16px로 줄면 지름 8px. 숫자는 읽히지 않아 점만 쓴다
-const MAX_COUNT = 9;
+const MAX_COUNT = 99;
 const TEXT_SCALE = 2;              // 5×7 글자를 2배로. 16px로 줄면 원래 5×7이 된다
 
 // 5×7 글자
@@ -21,6 +21,11 @@ const GLYPHS = {
   8: ['01110', '10001', '10001', '01110', '10001', '10001', '01110'],
   9: ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
   '+': ['00000', '00100', '00100', '11111', '00100', '00100', '00000'],
+};
+// 3×5 글자. '99+'는 5×7로 원에 들어가지 않는다
+const SMALL_GLYPHS = {
+  9: ['111', '101', '111', '001', '111'],
+  '+': ['000', '010', '111', '010', '000'],
 };
 
 function blend(pixels, x, y, color, alpha) {
@@ -39,14 +44,16 @@ function circle(pixels, center, radius) {
 }
 
 function text(pixels, label) {
-  const width = (label.length * 6 - 1) * TEXT_SCALE;
-  const left = Math.floor((SIZE - width) / 2), top = Math.floor((SIZE - 7 * TEXT_SCALE) / 2);
+  const glyphs = label.length > 2 ? SMALL_GLYPHS : GLYPHS;
+  const glyphWidth = glyphs['+'][0].length, advance = glyphWidth + 1;
+  const width = (label.length * advance - 1) * TEXT_SCALE;
+  const left = Math.floor((SIZE - width) / 2), top = Math.floor((SIZE - glyphs['+'].length * TEXT_SCALE) / 2);
   [...label].forEach((char, index) => {
-    GLYPHS[char].forEach((row, y) => {
+    glyphs[char].forEach((row, y) => {
       [...row].forEach((bit, x) => {
         if (bit !== '1') return;
         for (let dy = 0; dy < TEXT_SCALE; dy++) {
-          for (let dx = 0; dx < TEXT_SCALE; dx++) blend(pixels, left + (index * 6 + x) * TEXT_SCALE + dx, top + y * TEXT_SCALE + dy, WHITE, 1);
+          for (let dx = 0; dx < TEXT_SCALE; dx++) blend(pixels, left + (index * advance + x) * TEXT_SCALE + dx, top + y * TEXT_SCALE + dy, WHITE, 1);
         }
       });
     });
@@ -55,7 +62,7 @@ function text(pixels, label) {
 
 const toImage = (pixels) => nativeImage.createFromBitmap(pixels, { width: SIZE, height: SIZE });
 
-// 작업표시줄 오버레이 배지. 10 이상은 '9+'
+// 작업표시줄 오버레이 배지. 100 이상은 '99+'
 function countBadge(count) {
   const pixels = Buffer.alloc(SIZE * SIZE * 4);
   circle(pixels, SIZE / 2, SIZE / 2);

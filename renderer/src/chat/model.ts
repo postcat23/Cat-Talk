@@ -67,7 +67,6 @@ export interface UiSettings {
   presence_notices: boolean;
   clear_cats: boolean;
   auto_open_chest: boolean;
-  taskbar_flash: boolean;
 }
 
 export interface ViewResponse {
@@ -161,7 +160,6 @@ export const SETTING_KEYS: Partial<Record<keyof Settings, string>> = {
   theme: 'theme',
   opacity: 'chat_opacity',
   taskbarAlert: 'notification_flash',
-  taskbarFlash: 'taskbar_flash',
   toastAlert: 'notification_toast',
   catInteraction: 'reactions_enabled',
   presence: 'presence_notices',
@@ -176,6 +174,6 @@ export function settingsFromView(view: ViewResponse): Partial<Settings> {
     taskbarAlert: view.notifications.notification_flash,
     toastAlert: view.notifications.notification_toast,
     catInteraction: view.reactions_enabled,
-    ...(ui && { opacity: ui.chat_opacity, presence: ui.presence_notices, clearCats: ui.clear_cats, autoOpenChest: ui.auto_open_chest, taskbarFlash: ui.taskbar_flash }),
+    ...(ui && { opacity: ui.chat_opacity, presence: ui.presence_notices, clearCats: ui.clear_cats, autoOpenChest: ui.auto_open_chest }),
   };
 }

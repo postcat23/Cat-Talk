@@ -32,7 +32,7 @@ function Panel() {
   useEffect(() => { shell?.setSkipTaskbar(settings.hideTaskbarIcon); }, [shell, settings.hideTaskbarIcon]);
   useEffect(() => shell?.onExpand(() => dispatch({ type: 'expand' })), [shell, dispatch]);
   useClickThrough();
-  useMessageAlerts(chat.incoming, overlays.collapsed, { toast: settings.toastAlert, taskbar: settings.taskbarAlert, flash: settings.taskbarFlash });
+  useMessageAlerts(chat.incoming, overlays.collapsed, settings.toastAlert, settings.taskbarAlert);
 
   const style = {
     height: shell ? undefined : settings.height,

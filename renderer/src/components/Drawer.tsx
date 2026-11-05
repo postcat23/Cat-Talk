@@ -19,7 +19,6 @@ const HEIGHTS: Option<ChatHeight>[] = [{ value: '100%', label: '100%' }, { value
 type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
 const SWITCHES: { key: BoolKey; label: string }[] = [
   { key: 'taskbarAlert', label: '작업 표시줄 알림' },
-  { key: 'taskbarFlash', label: '작업 표시줄 깜빡임' },
   { key: 'toastAlert', label: '팝업 알림' },
   { key: 'catInteraction', label: '고양이 상호작용 표시' },
   { key: 'presence', label: '입퇴장 문구 표시' },
