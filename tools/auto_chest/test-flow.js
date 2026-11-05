@@ -81,22 +81,23 @@ const before = (log, a, b) => log.includes(a) && log.includes(b) && log.indexOf(
   w = world('update');
   await w.chest.enable();
   r = await w.chest.reapply();
-  check('6 패치돼 있으면 재적용 안 함', r.ok === false && r.reason === 'on' && !w.notes.some((n) => n.kind === 'reapply'), JSON.stringify(r));
+  check('6 패치돼 있으면 재적용 안 함', r.ok === false && r.reason === 'on', JSON.stringify(r));
   w.running = false; w.log.length = 0;
   fs.copyFileSync(copy, w.dll);   // Steam 업데이트로 패치 소실
   check('6a 설정 ON + clean -> 재적용 필요', (await w.chest.status(true)).state === 'needs_reapply');
-  w.onSleep = () => { if (w.notes.some((n) => n.kind === 'reapply' && n.seconds === 3)) w.chest.cancel(); };
+  // 토스트 [X]: 플래그 삭제, 설정 끄기 -> 판정이 미설치가 되어 토스트가 다시 뜨지 않는다. 게임·worker·DLL은 그대로
+  await w.chest.disable();
+  check('6b [X] -> 플래그 없음, 설정 OFF면 미설치, 게임·worker·DLL 그대로', !fs.existsSync(w.flag) && (await w.chest.status(false)).state === 'not_installed' && w.log.length === 0 && sha(w.dll) === origSha);
+  // [재시작](게임 꺼짐): 카운트다운 없이 바로 패치 -> 재실행 -> 플래그
+  w.notes.length = 0;
   r = await w.chest.reapply();
-  check('6b 재적용 카운트다운 취소 -> 아무것도 안 함', r.reason === 'cancelled' && w.log.length === 0 && sha(w.dll) === origSha, JSON.stringify(r));
-  w.onSleep = null; w.notes.length = 0;
-  r = await w.chest.reapply();
-  check('6c 재적용: 카운트다운 후 켜기와 같은 흐름', r.ok && w.notes.filter((n) => n.kind === 'reapply').length === 5 && before(w.log, 'stopWorker', 'launch') && before(w.log, 'launch', 'startWorker'), JSON.stringify(r) + ' ' + w.log.join(','));
+  check('6c [재시작] 게임 꺼짐: 카운트다운 없음, 패치 -> 재실행 -> 플래그', r.ok && !w.notes.some((n) => n.phase === 'countdown') && !w.log.includes('closeGame') && before(w.log, 'stopWorker', 'launch') && before(w.log, 'launch', 'startWorker'), JSON.stringify(r) + ' ' + w.log.join(','));
   check('6d 재적용 후 상태 = 켜짐', fs.existsSync(w.flag) && (await w.chest.status(true)).state === 'on');
-  w.log.length = 0;
+  w.log.length = 0; w.notes.length = 0;
   fs.copyFileSync(copy, w.dll);   // 게임이 켜진 채로 패치 소실
   w.steam = true;
   r = await w.chest.reapply();
-  check('6e 게임 실행 중 재적용: worker -> 게임 종료 -> 재실행', r.ok && before(w.log, 'stopWorker', 'closeGame') && before(w.log, 'closeGame', 'launch'), JSON.stringify(r) + ' ' + w.log.join(','));
+  check('6e [재시작] 게임 켜짐: 카운트다운 없음, worker -> 게임 종료 -> 재실행', r.ok && !w.notes.some((n) => n.phase === 'countdown') && before(w.log, 'stopWorker', 'closeGame') && before(w.log, 'closeGame', 'launch'), JSON.stringify(r) + ' ' + w.log.join(','));
   w.log.length = 0; w.notes.length = 0;
   fs.copyFileSync(path.join(path.dirname(patcherExe), 'Mono.Cecil.dll'), w.dll);   // 구조가 바뀐 업데이트
   r = await w.chest.reapply();

@@ -5,7 +5,6 @@ export interface ChestResult { ok: boolean; reason?: string; rolledBack?: boolea
 export interface ChestProgress {
   phase: 'countdown' | 'cancelled' | 'stopping_worker' | 'closing_game' | 'patching' | 'launching' | 'verifying' | 'done' | 'failed';
   seconds?: number;
-  kind?: 'install' | 'reapply';   // countdown: 켜기 설치 / 업데이트 후 재적용
   reason?: string;
   rolledBack?: boolean;
 }
@@ -31,10 +30,7 @@ const FAILURE: Record<string, string> = {
 
 export function progressText(p: ChestProgress) {
   switch (p.phase) {
-    case 'countdown':
-      return p.kind === 'reapply'
-        ? `업데이트로 패치가 사라졌어요. ${p.seconds}초 후 다시 적용합니다.`
-        : `${p.seconds}초 뒤 게임을 종료하고 상자 자동 오픈을 설치합니다.`;
+    case 'countdown': return `${p.seconds}초 뒤 게임을 종료하고 상자 자동 오픈을 설치합니다.`;
     case 'stopping_worker': return '채팅 연결을 잠시 끊는 중이에요.';
     case 'closing_game': return '게임을 종료하는 중이에요.';
     case 'patching': return '상자 자동 오픈을 설치하는 중이에요.';

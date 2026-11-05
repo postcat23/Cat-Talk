@@ -161,11 +161,10 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     }
   }
 
-  // kind: 'install'(켜기) | 'reapply'(업데이트로 패치 소실). 흐름은 같고 문구만 다르다.
-  async function countdown(kind) {
+  async function countdown() {
     cancelled = false;
     for (let s = COUNTDOWN_SECONDS; s > 0; s--) {
-      notify({ phase: 'countdown', seconds: s, kind });
+      notify({ phase: 'countdown', seconds: s });
       await sys.sleep(1000);
       if (cancelled) { notify({ phase: 'cancelled' }); return false; }
     }
@@ -184,7 +183,7 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       const game = await sys.findGame();
       if (current.state === 'on') return { ok: true };
       if (current.state === 'off') { fs.writeFileSync(paths(game).flag, ''); return { ok: true }; }
-      if (!(await countdown('install'))) return { ok: false, reason: 'cancelled' };
+      if (!(await countdown())) return { ok: false, reason: 'cancelled' };
       return install(game);
     },
 
@@ -195,15 +194,13 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       return { ok: true };
     },
 
-    // 재적용: 업데이트로 패치가 사라졌을 때. 켜기와 같은 카운트다운·설치 흐름이다(조용히 패치하지 않는다).
+    // 재적용: 업데이트로 패치가 사라졌을 때 토스트의 [재시작]으로만 불린다(버튼이 곧 확인이라 카운트다운 없음).
     // 재적용이 필요한 상태가 아니면(구조가 바뀌어 호환 안 됨 포함) 아무것도 하지 않는다.
     async reapply() {
       if (busy) return { ok: false, reason: 'busy' };
       const current = await status(true);
       if (current.state !== 'needs_reapply') return { ok: false, reason: current.state };
-      const game = await sys.findGame();
-      if (!(await countdown('reapply'))) return { ok: false, reason: 'cancelled' };
-      return install(game);
+      return install(await sys.findGame());
     },
   };
 }

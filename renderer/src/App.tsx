@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useCallback, useEffect, type CSSProperties } from 'react';
 import { MAX_CARDS, OVERLAY_HEIGHT, UiProvider, useUi, type ChatHeight } from './state/UiContext';
 import { useReactionStack } from './hooks/useReactionStack';
 import { useClickThrough } from './hooks/useClickThrough';
@@ -16,7 +16,12 @@ function Panel() {
   const { settings, overlays, dispatch } = useUi();
   const reactions = useReactionStack(MAX_CARDS[settings.height], settings.catInteraction);
   const chat = useChatView(reactions.push, settings.catInteraction);
-  const chest = useAutoChest(settings.autoOpenChest);
+  const { saveSettings } = chat;
+  const chestOff = useCallback(() => {
+    dispatch({ type: 'setSettings', patch: { autoOpenChest: false } });
+    saveSettings({ autoOpenChest: false });
+  }, [dispatch, saveSettings]);
+  const chest = useAutoChest(settings.autoOpenChest, chestOff);
 
   // 도크 위치·채팅 높이·작업표시줄: Electron이면 창(BrowserWindow)이 맡고, 브라우저 dev면 패널 CSS로 시뮬레이션.
   // 패널·탭이 어느 쪽에 오는지는 두 모드 모두 data-side가 정한다. --ovh·반응 카드 최대 수는 설정값 기준 공통.

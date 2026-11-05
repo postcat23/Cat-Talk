@@ -196,9 +196,9 @@ Cat-Talk 전송 계층 추가 코드: `not_wired`(사이드카 미배선 액션)
 | `chest:status(wanted)` | invoke | `{state, reason?}`. 판정만 한다(쓰기 없음). `wanted`는 설정 `auto_open_chest` 값 |
 | `chest:enable()` | invoke | 설치돼 있으면 플래그만 생성. 아니면 카운트다운 후 설치. `{ok, reason?, rolledBack?}` |
 | `chest:disable()` | invoke | 플래그 삭제 |
-| `chest:reapply()` | invoke | 업데이트로 패치가 사라졌을 때. `chest:enable`과 같은 카운트다운·설치 흐름(취소 가능). 재적용이 필요한 상태가 아니면 아무것도 하지 않는다 |
+| `chest:reapply()` | invoke | 재적용 토스트의 [재시작]. 카운트다운 없이 바로 설치 흐름. 재적용이 필요한 상태가 아니면 아무것도 하지 않는다. 토스트 [X]는 `chest:disable` + 설정 끄기 |
 | `chest:cancel` | send | 카운트다운 취소 |
-| `chest:progress` | main → 렌더러 | `{phase, seconds?, kind?, reason?, rolledBack?}`. `kind`는 카운트다운의 `install`/`reapply` |
+| `chest:progress` | main → 렌더러 | `{phase, seconds?, reason?, rolledBack?}` |
 
 - `state`: `not_installed`·`on`·`off`·`incompatible`·`needs_reapply`·`installing`·`no_game`·`error`.
 - `phase`: `countdown`·`cancelled`·`stopping_worker`·`closing_game`·`patching`·`launching`·`verifying`·`done`·`failed`.
