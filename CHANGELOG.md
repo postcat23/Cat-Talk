@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 기본 폰트를 Pretendard(로컬 번들 Regular·SemiBold·Bold, SIL OFL 1.1)로 변경, 숫자 표시도 같은 폰트(고정폭 숫자)로 통일
 - 내 말풍선 배경을 뮤트 바이올렛으로 톤다운 (라이트 #64589f·다크 #6b5fa6, 흰 글자 대비 4:1 이상)
 - 채팅에서 상대방 고양이를 좌우 반전해 말풍선 쪽을 보도록 변경 (내 고양이·모달·드로어·반응 카드는 그대로)
+- 참여자 모달 제목의 고양이 아이콘을 상단바와 같은 실루엣으로 변경
 
 ### Fixed
 
