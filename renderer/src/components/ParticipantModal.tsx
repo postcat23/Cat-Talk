@@ -15,7 +15,7 @@ export default function ParticipantModal() {
     <div className={[styles.modal, overlays.modalOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' && styles.full].filter(Boolean).join(' ')} aria-label="참여자">
       <div className={styles.mhead}>
         <button className={styles.close} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
-        <h2><Cat /> 함께 있는 고양이</h2>
+        <h2><span className={styles.sil} aria-hidden="true" />함께 있는 고양이</h2>
         <p>탭하면 Steam 프로필을 열 수 있어요.</p>
       </div>
       <div className={styles.mlist}>
