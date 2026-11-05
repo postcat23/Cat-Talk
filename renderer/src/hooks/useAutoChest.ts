@@ -26,6 +26,8 @@ export function useAutoChest(wanted: boolean, onTurnedOff: () => void): AutoChes
   const [progress, setProgress] = useState<ChestProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const linger = useRef<number | undefined>(undefined);
+  const wantedRef = useRef(wanted);
+  useEffect(() => { wantedRef.current = wanted; }, [wanted]);
 
   const refresh = useCallback(async (on: boolean) => {
     if (chest) setState((await chest.status(on)).state);
@@ -55,8 +57,10 @@ export function useAutoChest(wanted: boolean, onTurnedOff: () => void): AutoChes
   const enable = useCallback(async (): Promise<ChestResult> => {
     if (!chest) return { ok: false };
     setBusy(true);
-    try { return await chest.enable(); }
-    finally { setBusy(false); await refresh(true); }
+    let result: ChestResult = { ok: false };
+    try { result = await chest.enable(); return result; }
+    // 취소·실패면 설정은 그대로이므로 실제 설정값으로 판정한다
+    finally { setBusy(false); await refresh(result.ok || wantedRef.current); }
   }, [chest, refresh]);
 
   const disable = useCallback(async (): Promise<ChestResult> => {
