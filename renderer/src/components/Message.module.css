@@ -18,6 +18,8 @@
 .sprite .nm{padding-bottom:calc(var(--sprite-tuck) + 4px)}
 /* 각자 말풍선의 시작 모서리 쪽(상대=왼쪽, 나=오른쪽). 첫 자식이 고양이 */
 .peer.sprite .head > :first-child{margin-left:var(--sprite-inset)}
+/* 상대 고양이는 좌우 반전해 말풍선 쪽(오른쪽)을 보게 한다. 박스 = 콘텐츠 bbox라 중심 기준 반전으로 위치·크기 불변 */
+.peer .head > :first-child{transform:scaleX(-1)}
 .me.sprite .head > :first-child{margin-right:var(--sprite-inset)}
 /* 입퇴장 공지 바로 다음 묶음은 공지의 아래 마진이 간격을 맡는다(공지 위아래 대칭) */
 .lead.afterNotice{margin-top:0}
