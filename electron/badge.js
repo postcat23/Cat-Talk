@@ -34,10 +34,10 @@ function blend(pixels, x, y, color, alpha) {
   pixels[i + 3] = Math.round(255 * alpha + pixels[i + 3] * (1 - alpha));
 }
 
-function circle(pixels, center, radius) {
+function circle(pixels, cx, cy, radius) {
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      const alpha = Math.min(1, Math.max(0, radius + 0.5 - Math.hypot(x + 0.5 - center, y + 0.5 - center)));
+      const alpha = Math.min(1, Math.max(0, radius + 0.5 - Math.hypot(x + 0.5 - cx, y + 0.5 - cy)));
       if (alpha > 0) blend(pixels, x, y, RED, alpha);
     }
   }
@@ -65,15 +65,15 @@ const toImage = (pixels) => nativeImage.createFromBitmap(pixels, { width: SIZE, 
 // 작업표시줄 오버레이 배지. 100 이상은 '99+'
 function countBadge(count) {
   const pixels = Buffer.alloc(SIZE * SIZE * 4);
-  circle(pixels, SIZE / 2, SIZE / 2);
+  circle(pixels, SIZE / 2, SIZE / 2, SIZE / 2);
   text(pixels, count > MAX_COUNT ? `${MAX_COUNT}+` : String(count));
   return toImage(pixels);
 }
 
-// 트레이 아이콘 오른쪽 아래에 빨간 점
+// 트레이 아이콘 오른쪽 위에 빨간 점. 모서리에 붙이되 잘리지 않게 안쪽으로 맞춘다
 function dotIcon(iconPath) {
   const pixels = Buffer.from(nativeImage.createFromPath(iconPath).resize({ width: SIZE, height: SIZE }).toBitmap());
-  circle(pixels, SIZE - TRAY_DOT_RADIUS, TRAY_DOT_RADIUS);
+  circle(pixels, SIZE - TRAY_DOT_RADIUS, TRAY_DOT_RADIUS, TRAY_DOT_RADIUS);
   return toImage(pixels);
 }
 
