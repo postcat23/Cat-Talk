@@ -96,13 +96,14 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       .catch(() => ids.forEach((id) => requested.delete(id)));   // 표시는 이모지 폴백, 다음 폴링에서 재시도
   }, []);
 
+  // 배경 저장이라 실패해도 알리지 않는다. 글은 입력창에 남아 있고 다음 입력 때 다시 저장한다.
   const flushDraft = useCallback(() => {
     const pending = pendingDraft.current, scope = draftScope.current;
     if (!pending || !scope) return;
     clearTimeout(pending.timer);
     pendingDraft.current = null;
-    rpc('draft', { ...scope, text: pending.text }).catch(showError);
-  }, [showError]);
+    rpc('draft', { ...scope, text: pending.text }).catch(() => {});
+  }, []);
 
   const saveDraft = useCallback((text: string, now = false) => {
     if (pendingDraft.current) clearTimeout(pendingDraft.current.timer);
