@@ -5,6 +5,7 @@ const SIZE = 32;
 const RED = [0x2f, 0x2f, 0xe5];     // BGR
 const WHITE = [0xff, 0xff, 0xff];
 const TRAY_DOT_RADIUS = 8;          // 16px로 줄면 지름 8px. 숫자는 읽히지 않아 점만 쓴다
+const TRAY_ICON_SIZE = 28;          // 점이 캔버스 끝을 넘지 않으면서 고양이 바깥쪽에 오도록 아이콘을 줄여 왼쪽 아래에 둔다
 const MAX_COUNT = 99;
 const TEXT_SCALE = 2;              // 5×7 글자를 2배로. 16px로 줄면 원래 5×7이 된다
 
@@ -70,9 +71,12 @@ function countBadge(count) {
   return toImage(pixels);
 }
 
-// 트레이 아이콘 오른쪽 위에 빨간 점. 모서리에 붙이되 잘리지 않게 안쪽으로 맞춘다
+// 트레이 아이콘 오른쪽 위에 빨간 점
 function dotIcon(iconPath) {
-  const pixels = Buffer.from(nativeImage.createFromPath(iconPath).resize({ width: SIZE, height: SIZE }).toBitmap());
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE }).toBitmap();
+  const pixels = Buffer.alloc(SIZE * SIZE * 4);
+  const top = SIZE - TRAY_ICON_SIZE;
+  for (let y = 0; y < TRAY_ICON_SIZE; y++) icon.copy(pixels, (y + top) * SIZE * 4, y * TRAY_ICON_SIZE * 4, (y + 1) * TRAY_ICON_SIZE * 4);
   circle(pixels, SIZE - TRAY_DOT_RADIUS, TRAY_DOT_RADIUS, TRAY_DOT_RADIUS);
   return toImage(pixels);
 }
