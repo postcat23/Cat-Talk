@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 - 앱 표시명을 'Cat Talk'로 변경 (상단바·창 제목·트레이 툴팁)
 - 기본 폰트를 Pretendard(로컬 번들 Regular·SemiBold·Bold, SIL OFL 1.1)로 변경, 숫자 표시도 같은 폰트(고정폭 숫자)로 통일
+- 내 말풍선 배경을 뮤트 바이올렛으로 톤다운 (라이트 #64589f·다크 #6b5fa6, 흰 글자 대비 4:1 이상)
 
 ### Fixed
 
