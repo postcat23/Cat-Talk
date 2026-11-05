@@ -87,7 +87,7 @@
 **설정·상태**
 - `theme`,`collapsed`,`language`,`language_preference`,`notifications{notification_flash,notification_toast}`,`reactions_enabled`
 - `storage_error`,`revision`(변경 감지용 단조 증가)
-- `ui_settings{chat_opacity,presence_notices,clear_cats,auto_open_chest}` — Cat-Talk 추가. 읽기 실패 회차에는 키가 없다
+- `ui_settings{chat_opacity,presence_notices,clear_cats,auto_open_chest,taskbar_flash}` — Cat-Talk 추가. 읽기 실패 회차에는 키가 없다
 - `translations`(요청 `language`가 현재와 다를 때만, `en`이면 사전)
 
 **추가분(dispatch)**
@@ -172,7 +172,7 @@
 | `QDialog`+`QTextBrowser`(legal 문서) | 렌더러 모달 또는 별도 BrowserWindow |
 | `QLockFile`(단일 인스턴스) | `app.requestSingleInstanceLock()` |
 | OTR `QWebEngineProfile`(채팅 비영속) | `webPreferences`로 채팅 영속 금지 + 파일 접근 화이트리스트 |
-| `WindowsToast`(WinRT, 고정 AUMID) | Electron `Notification` + AUMID 재배선 |
+| `WindowsToast`(WinRT, 고정 AUMID) | Electron `Notification` + AUMID(`CatTalk.Desktop`, 표시 이름·아이콘은 시작 시 `HKCU\Software\Classes\AppUserModelId`에 등록). 렌더러가 `view.incoming_count`(Cat-Talk 추가 필드) 증가로 안 읽은 수를 세어 `alert:unread`로 main에 넘기고, 다시 보면 0을 보낸다. 작업표시줄은 `setOverlayIcon` 숫자 배지+짧은 `flashFrame`, 아이콘 숨김이면 트레이 빨간 점 |
 | `QWebEngineUrlRequestInterceptor`(file/qrc 화이트리스트) | Electron `webRequest`/CSP로 로컬 자원만 허용 |
 | `QTimer`(100ms poll, 600ms view) | main 루프/렌더러 `setInterval` |
 

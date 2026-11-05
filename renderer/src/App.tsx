@@ -2,6 +2,7 @@ import { useCallback, useEffect, type CSSProperties } from 'react';
 import { MAX_CARDS, OVERLAY_HEIGHT, UiProvider, useUi, type ChatHeight } from './state/UiContext';
 import { useReactionStack } from './hooks/useReactionStack';
 import { useClickThrough } from './hooks/useClickThrough';
+import { useMessageAlerts } from './hooks/useMessageAlerts';
 import { ChatContext, useChatView } from './hooks/useChatView';
 import { AutoChestContext, useAutoChest } from './hooks/useAutoChest';
 import CollapseTab from './components/CollapseTab';
@@ -31,6 +32,7 @@ function Panel() {
   useEffect(() => { shell?.setSkipTaskbar(settings.hideTaskbarIcon); }, [shell, settings.hideTaskbarIcon]);
   useEffect(() => shell?.onExpand(() => dispatch({ type: 'expand' })), [shell, dispatch]);
   useClickThrough();
+  useMessageAlerts(chat.incoming, overlays.collapsed, { toast: settings.toastAlert, taskbar: settings.taskbarAlert, flash: settings.taskbarFlash });
 
   const style = {
     height: shell ? undefined : settings.height,

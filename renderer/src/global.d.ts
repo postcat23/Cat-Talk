@@ -12,6 +12,7 @@ interface Window {
     setChatHeight(pct: 100 | 70 | 50): void;
     setSkipTaskbar(hide: boolean): void;
     setInteractive(interactive: boolean): void;
+    setUnread(alert: { count: number; toast: boolean; taskbar: boolean; flash: boolean }): void;
     chest: {
       status(wanted: boolean): Promise<import('./chat/autoChest').ChestStatus>;
       enable(): Promise<import('./chat/autoChest').ChestResult>;

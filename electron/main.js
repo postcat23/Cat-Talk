@@ -1,14 +1,16 @@
-const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, Notification, screen, shell, Tray, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const windowState = require('./window-state');
 const { createAutoChest, defaultSys } = require('./auto-chest');
+const { countBadge, dotIcon } = require('./badge');
 
 const REQUEST_TIMEOUT_MS = 5000;
 const DEV = process.env.CATTALK_DEV === '1';
 const DEV_URL = 'http://localhost:5173';   // vite.config.mts의 DEV_PORT와 맞춘다
 const ICON = path.join(__dirname, 'app-icon.ico');
+const APP_ID = 'CatTalk.Desktop';   // Windows 토스트 발신자
 
 let win = null, tray = null, sidecar = null, nextId = 1, stdoutBuf = '';
 const pending = new Map();   // id -> {resolve, reject, timer}
@@ -20,6 +22,7 @@ const MOVE_SETTLE_MS = 200;
 const state = windowState.load();
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
+app.setAppUserModelId(APP_ID);
 app.on('second-instance', () => openAndExpand());
 process.stderr.on('error', () => {});   // 콘솔 없이 실행되면 쓰기가 실패할 수 있다. 사이드카는 계속 돈다.
 
@@ -176,6 +179,53 @@ function setTaskbarHidden(hide) {
   } else if (!hide && tray) {
     tray.destroy(); tray = null;
   }
+  applyTaskbarAlert();
+}
+
+// ── 새 메시지 알림 ──
+// 안 읽은 수는 렌더러가 세어 넘긴다(안 보는 동안 받은 타인 메시지. 다시 보면 0).
+const TOAST_BODY = '새 메시지가 있습니다';   // 발신자·내용은 넣지 않는다
+const FLASH_MS = 1200;   // 새 메시지마다 잠깐만 깜빡인다
+let unread = 0, showBadge = false, toast = null, trayDot = null, flashTimer = null;
+
+// 아이콘이 작업표시줄에 있으면 숫자 배지, 숨겼으면 트레이 빨간 점. 읽으면(0) 원래대로.
+function applyTaskbarAlert() {
+  if (!win || win.isDestroyed()) return;
+  const on = showBadge && unread > 0;
+  win.setOverlayIcon(on && !state.hideTaskbar ? countBadge(unread) : null, on ? `새 메시지 ${unread}개` : '');
+  if (tray) {
+    if (on && !trayDot) trayDot = dotIcon(ICON);
+    tray.setImage(on ? trayDot : ICON);
+  }
+}
+
+function flashOnce() {
+  if (!win || win.isDestroyed() || state.hideTaskbar) return;
+  clearTimeout(flashTimer);
+  win.flashFrame(true);
+  flashTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.flashFrame(false); }, FLASH_MS);
+}
+
+// 패키징 전 exe는 Windows가 토스트 발신자를 'Electron'으로 표시한다. 앱 ID에 이름·아이콘을 등록한다(HKCU, 관리자 권한 불필요).
+function registerToastIdentity() {
+  if (process.platform !== 'win32') return;
+  const key = `HKCU\\Software\\Classes\\AppUserModelId\\${APP_ID}`;
+  const iconFile = path.join(windowState.dataDir(), 'toast-icon.png');
+  try {
+    fs.mkdirSync(path.dirname(iconFile), { recursive: true });
+    fs.writeFileSync(iconFile, nativeImage.createFromPath(ICON).toPNG());
+  } catch (e) { return; }
+  for (const [name, value] of [['DisplayName', 'Cat Talk'], ['IconUri', iconFile]]) {
+    execFile('reg', ['add', key, '/v', name, '/t', 'REG_EXPAND_SZ', '/d', value, '/f'], { windowsHide: true }, () => {});
+  }
+}
+
+// 토스트는 다시 볼 때까지 1회만 띄운다.
+function showToast() {
+  if (toast || !Notification.isSupported()) return;
+  toast = new Notification({ title: 'Cat Talk', body: TOAST_BODY, icon: ICON });
+  toast.on('click', openAndExpand);
+  toast.show();
 }
 
 function createWindow() {
@@ -188,6 +238,7 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false,
+      backgroundThrottling: false,   // 최소화 중에도 폴링이 늦어지지 않아야 알림이 제때 뜬다
     },
   });
   // 생성 직후에도 한 번 맞춘다(혼합 배율에서 생성 좌표가 어긋날 수 있다).
@@ -256,6 +307,16 @@ ipcMain.on('window:set-chat-height', (_e, pct) => {
 ipcMain.on('window:set-skip-taskbar', (_e, hide) => {
   if (typeof hide === 'boolean') setTaskbarHidden(hide);
 });
+ipcMain.on('alert:unread', (_e, alert) => {
+  if (!Number.isInteger(alert?.count) || alert.count < 0) return;
+  const grew = alert.count > unread;
+  unread = alert.count;
+  showBadge = alert.taskbar === true;
+  if (grew && alert.toast === true) showToast();
+  if (grew && showBadge && alert.flash === true) flashOnce();
+  if (unread === 0 && toast) { toast.close(); toast = null; }
+  applyTaskbarAlert();
+});
 ipcMain.on('window:set-interactive', (_e, interactive) => {
   if (typeof interactive !== 'boolean' || !win) return;
   if (interactive) win.setIgnoreMouseEvents(false);
@@ -263,6 +324,7 @@ ipcMain.on('window:set-interactive', (_e, interactive) => {
 });
 
 app.whenReady().then(() => {
+  registerToastIdentity();
   startSidecar(); createWindow();
   // 해상도·배율·작업표시줄 변화: 현재 디스플레이 기준으로 재도크. 그 디스플레이가 빠지면 남은 쪽으로.
   const redock = () => { if (win && !win.isDestroyed()) dockTo(currentDisplay()); };

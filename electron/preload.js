@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('catTalk', {
   setChatHeight: (pct) => ipcRenderer.send('window:set-chat-height', pct),
   setSkipTaskbar: (hide) => ipcRenderer.send('window:set-skip-taskbar', hide),
   setInteractive: (interactive) => ipcRenderer.send('window:set-interactive', interactive),
+  // 안 읽은 수({count, toast, taskbar, flash}). 수와 토글은 렌더러가 정하고, 표시는 main이 맡는다.
+  setUnread: (alert) => ipcRenderer.send('alert:unread', alert),
   // 상자 자동 오픈(D-019). status는 판정만(쓰기 없음), wanted = 설정 ON 여부.
   chest: {
     status: (wanted) => ipcRenderer.invoke('chest:status', wanted),

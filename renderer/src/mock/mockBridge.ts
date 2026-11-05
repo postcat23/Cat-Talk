@@ -11,7 +11,7 @@ let revision = 1;
 let theme: Theme = 'system';
 const notifications = { notification_flash: true, notification_toast: true };
 let reactionsEnabled = true;
-const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clear_cats: false, auto_open_chest: false };
+const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clear_cats: false, auto_open_chest: false, taskbar_flash: true };
 
 const CONTEXT = { account: ME_ID, lobby: 'mock-lobby', generation: 'mock' };
 

@@ -45,6 +45,7 @@ UI_SETTINGS = {
     "presence_notices": (True, lambda value: type(value) is bool),
     "clear_cats": (False, lambda value: type(value) is bool),
     "auto_open_chest": (False, lambda value: type(value) is bool),
+    "taskbar_flash": (True, lambda value: type(value) is bool),
 }
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",
@@ -67,6 +68,7 @@ class Sidecar:
         self.known_accounts = set()
         self.avatar_images = OrderedDict()   # id -> data URI
         self.default_avatar = None   # (id, data URI): 게임 기본 고양이. 아바타 미해결 시 렌더러 플레이스홀더
+        self.incoming_count = 0   # 수락된 타인 메시지 누적 수. 렌더러가 증가를 보고 알림을 판단한다
         self.worker = None
         self.closed = False
         self.last_prune = time.monotonic()
@@ -95,7 +97,8 @@ class Sidecar:
                         self.known_accounts.add(event["account"])
                     self.service.update(event)
                 elif event.get("type") == "message":
-                    self.service.receive(event)
+                    if self.service.receive(event):
+                        self.incoming_count += 1
                 elif event.get("type") == "reaction":
                     self.service.receive_reaction(event)
                 elif event.get("type") == "default_avatar":
@@ -199,6 +202,7 @@ class Sidecar:
                     args["reactions"] is True and not query and not self.closed)
             # TODO(2c): update/auto_merge/notification/language 서브시스템 배선
             self.publish_avatars(result)
+            result["incoming_count"] = self.incoming_count
             settings = self.ui_settings()
             if settings is not None:
                 result["ui_settings"] = settings

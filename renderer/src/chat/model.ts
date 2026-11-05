@@ -67,6 +67,7 @@ export interface UiSettings {
   presence_notices: boolean;
   clear_cats: boolean;
   auto_open_chest: boolean;
+  taskbar_flash: boolean;
 }
 
 export interface ViewResponse {
@@ -90,6 +91,7 @@ export interface ViewResponse {
   avatar_error?: string;
   default_avatar_id?: string; // 게임 기본 고양이. 아바타 미해결·스킨 변경 중 플레이스홀더(사이드카 경로만)
   reactions?: ViewReaction[];
+  incoming_count?: number;    // 수락된 타인 메시지 누적 수(사이드카 경로만)
 }
 
 // view에 색 정보가 없어 uid 해시로 목업 팔레트에서 고른다. 같은 uid는 항상 같은 색.
@@ -159,6 +161,7 @@ export const SETTING_KEYS: Partial<Record<keyof Settings, string>> = {
   theme: 'theme',
   opacity: 'chat_opacity',
   taskbarAlert: 'notification_flash',
+  taskbarFlash: 'taskbar_flash',
   toastAlert: 'notification_toast',
   catInteraction: 'reactions_enabled',
   presence: 'presence_notices',
@@ -173,6 +176,6 @@ export function settingsFromView(view: ViewResponse): Partial<Settings> {
     taskbarAlert: view.notifications.notification_flash,
     toastAlert: view.notifications.notification_toast,
     catInteraction: view.reactions_enabled,
-    ...(ui && { opacity: ui.chat_opacity, presence: ui.presence_notices, clearCats: ui.clear_cats, autoOpenChest: ui.auto_open_chest }),
+    ...(ui && { opacity: ui.chat_opacity, presence: ui.presence_notices, clearCats: ui.clear_cats, autoOpenChest: ui.auto_open_chest, taskbarFlash: ui.taskbar_flash }),
   };
 }

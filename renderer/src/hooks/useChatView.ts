@@ -26,6 +26,7 @@ export interface Chat {
   notice: string;
   toast: Toast | null;
   canSend: boolean;
+  incoming: number | undefined;
   query: string;
   byId(uid: string): Participant | undefined;
   setQuery(query: string): void;
@@ -207,6 +208,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),
     canSend: shown?.can_send === true,
+    incoming: shown?.incoming_count,
   };
 }
 
