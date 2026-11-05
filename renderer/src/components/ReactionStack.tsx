@@ -20,9 +20,12 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
         const p = byId(c.sender);
         const avatar = c.avatar ?? p?.avatar;
         return (
-          <div key={c.id} className={c.leaving ? `${styles.card} ${styles.leaving}` : styles.card}>
+          <div key={c.id} className={[styles.card, styles.reaction, c.leaving && styles.leaving].filter(Boolean).join(' ')}>
             <span className={avatar ? `${styles.rcat} ${styles.stand}` : styles.rcat}><Cat src={avatar} framing="sprite" /></span>
-            <span className={styles.rtxt}><b>{p?.name ?? c.sender}</b> {c.kind === 'meow' ? c.content || MEOW_FALLBACK : c.content}</span>
+            <span className={styles.rtxt}>
+              <b>{p?.name ?? c.sender}</b>
+              {c.kind === 'meow' ? <span className={styles.act}>{c.content || MEOW_FALLBACK}</span> : c.content && <span className={styles.act}>{c.content}</span>}
+            </span>
             {c.kind === 'emote' && c.image && <img className={styles.emote} src={c.image} alt="" draggable={false} />}
             <span className={styles.mul}>{c.n > 1 ? `×${c.n}` : ''}</span>
           </div>

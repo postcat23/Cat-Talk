@@ -13,4 +13,10 @@
 .emote{width:24px;height:24px;object-fit:contain;flex:none}
 .rtxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rtxt b{font-weight:600}
+/* 반응 카드만(안내 카드 제외): 아바타→닉네임 14px, 닉네임→상호작용(야옹 문구·이모티콘) 10px, 닉네임 14px.
+   이모티콘은 카드 gap, 야옹 문구는 .act 왼쪽 여백으로 같은 10px. 수치는 스크린샷 확인 후 확정 */
+.reaction{gap:10px}
+.reaction .rcat{margin-right:4px}
+.reaction .rtxt b{font-size:14px}
+.act{margin-left:10px}
 .mul{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted);flex:none}
