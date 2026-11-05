@@ -76,7 +76,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const fetchAvatars = useCallback((data: ViewResponse) => {
     const requested = requestedAvatars.current;
     // 메시지 작성자는 나간 뒤에도 profiles에 남으므로 둘 다 본다
-    const ids = [...new Set([...Object.values(data.participants), ...Object.values(data.profiles)].map((p) => p.avatar_id))]
+    const ids = [...new Set([...Object.values(data.participants), ...Object.values(data.profiles)].map((p) => p.avatar_id).concat(data.default_avatar_id))]
       .filter((id): id is string => Boolean(id) && !requested.has(id as string))
       .slice(0, MAX_AVATAR_REQUEST);
     if (ids.length === 0) return;
@@ -167,7 +167,10 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
 
   const shown = failed ? null : view;
   const ready = shown?.avatar_stage === 'ready';
-  const avatarOf = useCallback<AvatarLookup>((id) => (ready && id ? avatars[id] : undefined), [ready, avatars]);
+  // 아바타가 아직 없거나(스킨 변경 중 포함) 받기 전이면 게임 기본 고양이. 그것도 없으면(브라우저 dev 등) 이모지
+  const placeholder = ready && shown?.default_avatar_id ? avatars[shown.default_avatar_id] : undefined;
+  const avatarOf = useCallback<AvatarLookup>(
+    (id) => (ready ? (id && avatars[id]) || placeholder : undefined), [ready, avatars, placeholder]);
   const items = useMemo(() => (shown ? toChatItems(shown, avatarOf) : []), [shown, avatarOf]);
   const participants = useMemo(
     () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf)),

@@ -80,6 +80,7 @@
 **프로필·참여자·차단**
 - `profiles{uid:{name,avatar_id,…}}`(허용된 발신자+본인), `participants{uid:{…,blocked}}` — Cat-Talk은 data URI 대신 `avatar_id`를 싣는다(폴링 크기). 아바타가 없으면 키가 없다
 - `avatar_stage`(`disabled`/`loading`/`ready`/`unavailable`), `avatar_error` — Cat-Talk 추가
+- `default_avatar_id` — Cat-Talk 추가. 게임 기본 고양이(장착 해제 스킨 `Cat`, 모자 없음)를 worker가 1회 렌더한 이미지의 id. `avatars`로 받는다. 렌더러는 아바타 미해결·스킨 변경 중 플레이스홀더로 쓴다. 렌더 전·실패 시 키가 없다
 - `profile_targets[]`(Steam 프로필 열기 허용 대상)
 - `blocks_ready`, `blocked_users[{steam_id,name}]`
 
@@ -154,6 +155,7 @@
 | `message` | `service.receive` → 알림 | `id,context{account,lobby,generation},sender,text,received` |
 | `reaction` | `service.receive_reaction` | `id,sender,kind('meow'/'emote'),avatar,text,image,observed,context` |
 | `result` | `service.result` | `id,status('accepted'/'failed'/'unknown')` |
+| `default_avatar` | 사이드카 보관(LRU 밖) → `view.default_avatar_id` | `avatar`(PNG data URI) — Cat-Talk 글루(`sidecar/default_avatar.py`)가 보낸다 |
 
 **commands(controller→worker)**: `{type:'send',id,text,context}`, `{type:'refresh'}`.
 **큐 사양**: commands `maxsize=64`, events `maxsize=2048`, `stop`은 Event. spawn 컨텍스트.

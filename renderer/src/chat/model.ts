@@ -88,6 +88,7 @@ export interface ViewResponse {
   ui_settings?: UiSettings;   // 사이드카가 설정을 읽지 못한 회차에는 없다
   avatar_stage?: string;      // disabled·loading·ready·unavailable
   avatar_error?: string;
+  default_avatar_id?: string; // 게임 기본 고양이. 아바타 미해결·스킨 변경 중 플레이스홀더(사이드카 경로만)
   reactions?: ViewReaction[];
 }
 

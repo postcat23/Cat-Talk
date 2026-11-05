@@ -1,7 +1,7 @@
 """Cat-Talk 사이드카: stdin/stdout JSON 라인으로 upstream ChatService/Store를 노출한다.
 
 dispatch/request/poll/close는 src/bongo_chat/desktop.py의 Controller에서 Qt·updates·
-notifications·merger를 뺀 포팅이다. worker는 run_worker를 spawn한다(아바타 제외).
+notifications·merger를 뺀 포팅이다. worker는 run_worker를 기본 아바타 글루(default_avatar)로 감싸 spawn한다.
 요청: {"id": <int>, "args": {"action": "...", ...}}  응답: {"id": <int>, "result": {...}}
 """
 from collections import OrderedDict
@@ -21,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from bongo_chat.reactions import png
 from bongo_chat.service import ChatService, NOTIFICATION_KEYS
-from bongo_chat.worker import run_worker, unavailable
+from bongo_chat.worker import unavailable
+from default_avatar import run_worker_with_default
 from volatile_store import VolatileStore
 
 MAX_REQUEST = 32768
@@ -65,6 +66,7 @@ class Sidecar:
         self.service = ChatService(self.store)
         self.known_accounts = set()
         self.avatar_images = OrderedDict()   # id -> data URI
+        self.default_avatar = None   # (id, data URI): 게임 기본 고양이. 아바타 미해결 시 렌더러 플레이스홀더
         self.worker = None
         self.closed = False
         self.last_prune = time.monotonic()
@@ -76,7 +78,7 @@ class Sidecar:
             self.service.update(unavailable("offline"))
         else:
             # render_avatars=True: 디코딩은 worker가 검증된 채팅 준비를 publish한 뒤에 시작한다.
-            self.worker = self.context.Process(target=run_worker,
+            self.worker = self.context.Process(target=run_worker_with_default,
                 args=(self.commands, self.events, self.stop, read_only, True), daemon=True)
             self.worker.start()
 
@@ -96,6 +98,10 @@ class Sidecar:
                     self.service.receive(event)
                 elif event.get("type") == "reaction":
                     self.service.receive_reaction(event)
+                elif event.get("type") == "default_avatar":
+                    uri = event.get("avatar")
+                    if png(uri):
+                        self.default_avatar = (hashlib.sha1(uri.encode("ascii")).hexdigest()[:16], uri)
                 elif event.get("type") == "result":
                     self.service.result(event["id"], event["status"])
             if self.worker and not self.worker.is_alive() and self.service.state.get("notice") != "worker_stopped":
@@ -139,6 +145,9 @@ class Sidecar:
             result[group] = published
         while len(self.avatar_images) > MAX_AVATARS:
             self.avatar_images.popitem(last=False)
+        # 기본 고양이는 LRU 밖에 따로 둔다(밀려나면 플레이스홀더가 다시 이모지가 된다)
+        if self.default_avatar:
+            result["default_avatar_id"] = self.default_avatar[0]
         result["avatar_stage"] = self.service.state.get("avatar_stage", "disabled")
         result["avatar_error"] = self.service.state.get("avatar_error", "")
 
@@ -198,7 +207,10 @@ class Sidecar:
             ids = args["ids"]
             if not isinstance(ids, list) or len(ids) > MAX_AVATAR_REQUEST:
                 raise ValueError("invalid_query")
-            return {"images": {i: self.avatar_images[i] for i in ids if isinstance(i, str) and i in self.avatar_images}}
+            images = {i: self.avatar_images[i] for i in ids if isinstance(i, str) and i in self.avatar_images}
+            if self.default_avatar and self.default_avatar[0] in ids:
+                images[self.default_avatar[0]] = self.default_avatar[1]
+            return {"images": images}
         if action == "send":
             # 사용자가 명시적으로 보낸 요청만 worker로 넘긴다. 자동 송신 경로는 없다.
             command = self.service.prepare(args["context"], args["text"])
