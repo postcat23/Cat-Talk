@@ -25,7 +25,7 @@
 .urow{display:flex;align-items:center;gap:8px}
 .ubadge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(47,169,107,.18);color:var(--good)}
 .ubadge.avail{background:rgba(109,75,216,.18);color:var(--accent)}
-.uver{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.uver{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--muted)}
 .upbtn{margin-left:auto;display:inline-flex;font:inherit;font-size:12.5px;font-weight:600;border:0;border-radius:9px;padding:7px 12px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
 /* 라운드 카드. 배경은 드로어(--surface)에서 전경색 쪽으로 한 단계(라이트·다크 공통 토큰 혼합) */
 .chest{display:flex;align-items:center;gap:10px;font-size:13.5px;line-height:1.2;
@@ -39,7 +39,7 @@
 /* 드로어가 max-height로 넘치면 내용 없는 구분선이 flex-shrink로 0px이 되어 사라지므로 줄지 않게 한다 */
 .divider{height:1px;flex:none;background:var(--line)}
 .acct{display:flex;align-items:center;gap:9px;font-size:13px}
-/* <strong> 기본값 bolder는 본문 300 기준 400이 되므로 강조(Bold)를 명시 */
+/* 강조(Bold)를 명시한다(<strong> 기본값 bolder는 본문 굵기에 따라 달라진다) */
 .acct strong{font-weight:700}
 .av{width:30px;height:30px;display:grid;place-items:center;flex:none}
 /* 실아바타: 배경 없이 콘텐츠 bbox 박스(Cat sprite, 가로폭 --sprite-w). 박스 바닥 = 그림 바닥 = 헤더 바닥 = 구분선.

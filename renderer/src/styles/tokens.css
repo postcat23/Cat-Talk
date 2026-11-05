@@ -7,8 +7,8 @@
   --peer:#ececef; --own:#6d4bd8; --own-fg:#ffffff;
   --good:#2fa96b; --bad:#d8534f; --idle:#8a8a98;
   --notice:#f0ecff; --notice-fg:#4a3aa0;
-  --ui:"NanumBarunGothic","Noto Sans KR",system-ui,sans-serif;
-  /* 숫자 표시(시각·인원·카운터·버전)도 단일 폰트로. 나눔바른고딕 숫자는 폭이 모두 같아(583/1000) 고정폭처럼 정렬된다 */
+  --ui:"Pretendard","Noto Sans KR",system-ui,sans-serif;
+  /* 숫자 표시(시각·인원·카운터·버전)도 단일 폰트로. Pretendard 숫자는 비례폭이라 쓰는 곳에서 tabular-nums(tnum)로 고정 */
   --mono:var(--ui);
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){

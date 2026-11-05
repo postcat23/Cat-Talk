@@ -1,8 +1,8 @@
-/* 기본 폰트: 나눔바른고딕(로컬 번들, 오프라인 동작). 전체 한글 음절 포함 — 서브셋하지 않는다. 라이선스는 assets/fonts/LICENSE
-   본문 기본 굵기는 Light(300, base.css), 강조는 Bold(600·700 → 700 파일). Regular(400)는 쓰는 곳이 없어 번들하지 않는다
-   (400 요청이 생기면 매칭 규칙상 300으로 대체된다) */
-@font-face{font-family:'NanumBarunGothic';font-weight:300;font-style:normal;font-display:swap;
-  src:url(../assets/fonts/NanumBarunGothic-Light.woff2) format('woff2')}
-/* 파일 내부 usWeightClass는 600이지만 700으로 선언해 bold(700) 요청에 이 파일을 쓴다 */
-@font-face{font-family:'NanumBarunGothic';font-weight:700;font-style:normal;font-display:swap;
-  src:url(../assets/fonts/NanumBarunGothic-Bold.woff2) format('woff2')}
+/* 기본 폰트: Pretendard(로컬 번들, 오프라인 동작). 전체 한글 음절 포함 — 서브셋하지 않는다. 라이선스는 assets/fonts/LICENSE.txt
+   본문 기본 굵기는 Regular(400, base.css), 강조는 SemiBold(600)·Bold(700) */
+@font-face{font-family:'Pretendard';font-weight:400;font-style:normal;font-display:swap;
+  src:url(../assets/fonts/Pretendard-Regular.woff2) format('woff2')}
+@font-face{font-family:'Pretendard';font-weight:600;font-style:normal;font-display:swap;
+  src:url(../assets/fonts/Pretendard-SemiBold.woff2) format('woff2')}
+@font-face{font-family:'Pretendard';font-weight:700;font-style:normal;font-display:swap;
+  src:url(../assets/fonts/Pretendard-Bold.woff2) format('woff2')}

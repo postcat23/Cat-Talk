@@ -10,4 +10,4 @@
 .emote{width:24px;height:24px;object-fit:contain;flex:none}
 .rtxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rtxt b{font-weight:600}
-.mul{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted);flex:none}
+.mul{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted);flex:none}

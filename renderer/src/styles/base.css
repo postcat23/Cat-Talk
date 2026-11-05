@@ -1,7 +1,7 @@
 *{box-sizing:border-box}
 html,body{height:100%}
-/* 본문 기본 굵기 Light(300). 강조는 각 컴포넌트가 600·700으로 지정(→ Bold 파일) */
-body{margin:0;font-family:var(--ui);font-weight:300;color:var(--fg);overflow:hidden;
+/* 본문 기본 굵기 Regular(400). 강조는 각 컴포넌트가 600(SemiBold)·700(Bold)으로 지정 */
+body{margin:0;font-family:var(--ui);font-weight:400;color:var(--fg);overflow:hidden;
   background:radial-gradient(120% 90% at 20% 10%, var(--backdrop) 0%, var(--backdrop-2) 70%)}
 /* Electron 투명 창: 데스크톱이 비치도록 배경을 비운다. color-scheme:dark가 캔버스를 칠하지 않게 html도 명시 */
 :root[data-shell="electron"],:root[data-shell="electron"] body{background:transparent}
