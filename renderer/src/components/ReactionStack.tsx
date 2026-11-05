@@ -32,7 +32,7 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
               {c.kind === 'meow' ? <span className={styles.act}>{c.content || MEOW_FALLBACK}</span> : c.content && <span className={styles.act}>{c.content}</span>}
             </span>
             {c.kind === 'emote' && c.image && <img className={styles.emote} src={c.image} alt="" draggable={false} />}
-            <span className={styles.mul}>{c.n > 1 ? `×${c.n}` : ''}</span>
+            {c.n > 1 && <span className={styles.mul}>×{c.n}</span>}
           </div>
         );
       })}
