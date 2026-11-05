@@ -48,7 +48,7 @@ UI_SETTINGS = {
 }
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",
-    "block_user", "open_steam_profile", "legal", "check_updates", "restart_update", "update_permission",
+    "block_user", "legal", "check_updates", "restart_update", "update_permission",
 }
 
 
@@ -203,6 +203,9 @@ class Sidecar:
             if settings is not None:
                 result["ui_settings"] = settings
             return result
+        if action == "open_steam_profile":
+            # 대상 검증과 URI 생성만 한다. 실제로 여는 일은 Electron main이 맡는다.
+            return {"uri": self.service.profile_uri(args.get("steam_id"), args.get("context"))}
         if action == "avatars":
             ids = args["ids"]
             if not isinstance(ids, list) or len(ids) > MAX_AVATAR_REQUEST:

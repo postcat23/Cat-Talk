@@ -206,8 +206,21 @@ function createWindow() {
   else win.loadFile(path.join(__dirname, '..', 'renderer', 'dist', 'index.html'));
 }
 
+// 프로필 열기: 사이드카가 대상을 검증해 준 URI를 main이 연다. URI는 렌더러로 넘기지 않는다.
+async function openSteamProfile(payloadString) {
+  const result = JSON.parse(await sidecarRequest(payloadString));
+  if (result.error) return JSON.stringify(result);
+  if (!/^steam:\/\/url\/SteamIDPage\/[0-9]+$/.test(result.uri)) return JSON.stringify({ error: 'steam_profile_failed' });
+  try { await shell.openExternal(result.uri); }
+  catch (e) { return JSON.stringify({ error: 'steam_profile_failed' }); }
+  return JSON.stringify({ ok: true });
+}
+
 ipcMain.handle('bridge-request', async (_e, payloadString) => {
-  try { return await sidecarRequest(payloadString); }
+  try {
+    if (JSON.parse(payloadString).action === 'open_steam_profile') return await openSteamProfile(payloadString);
+    return await sidecarRequest(payloadString);
+  }
   catch (e) { return JSON.stringify({ error: 'bridge_down' }); }
 });
 

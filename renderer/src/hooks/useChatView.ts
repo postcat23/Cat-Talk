@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { rpc } from '../rpc';
 import { useUi, type Settings } from '../state/UiContext';
-import { errorText, noticeText, VIEW_UNAVAILABLE } from '../chat/messages';
+import { errorText, noticeText, PROFILE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
   accountStatus, connState, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
   type AvatarLookup, type ChatItem, type ConnState, type Participant, type ViewResponse,
@@ -30,6 +30,7 @@ export interface Chat {
   byId(uid: string): Participant | undefined;
   setQuery(query: string): void;
   send(text: string): Promise<boolean>;
+  openProfile(uid: string): Promise<void>;
   refresh(): Promise<void>;
   saveSettings(patch: Partial<Settings>): void;
 }
@@ -52,6 +53,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const seenReactions = useRef(new Set<string>());
   const requestedAvatars = useRef(new Set<string>());
   const nextToast = useRef(1);
+  const openingProfile = useRef(false);
   const reactionInput = useRef({ pushReaction, reactionsEnabled });
   useEffect(() => { reactionInput.current = { pushReaction, reactionsEnabled }; });
 
@@ -146,6 +148,21 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, [poll, showError]);
 
+  const openProfile = useCallback(async (uid: string) => {
+    if (openingProfile.current) return;
+    openingProfile.current = true;
+    // 토스트는 모달 아래에 깔리므로 닫아서 보이게 한다. 실패하면 에러 토스트가 이 자리를 대신한다
+    dispatch({ type: 'closeOverlays' });
+    setToast({ id: nextToast.current++, text: PROFILE_OPENING });
+    try {
+      await rpc('open_steam_profile', { steam_id: uid, context: viewRef.current?.context });
+    } catch (error) {
+      showError(error);
+    } finally {
+      openingProfile.current = false;
+    }
+  }, [dispatch, showError]);
+
   const refresh = useCallback(async () => {
     try { await rpc('refresh'); }
     catch (error) { showError(error); }
@@ -185,7 +202,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, query, toast, byId, setQuery, send, refresh, saveSettings,
+    items, participants, me, query, toast, byId, setQuery, send, openProfile, refresh, saveSettings,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),

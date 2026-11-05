@@ -19,3 +19,7 @@
 .nm{flex:1;min-width:0;font-weight:600;color:var(--fg);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0}
 .meBadge{font-size:11px;background:var(--accent);color:var(--accent-fg);border-radius:6px;padding:2px 7px;font-family:var(--mono);font-variant-numeric:tabular-nums}
 .dots{background:none;border:0;color:var(--muted);cursor:pointer;font-size:18px;padding:2px 6px}
+/* 더보기 메뉴: 높이는 MENU_HEIGHT(ParticipantModal.tsx)와 맞춘다 */
+.menu{position:absolute;z-index:1;height:40px;padding:4px;background:var(--surface);border:1px solid color-mix(in srgb, var(--fg) 22%, var(--surface));border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.16)}
+.menu button{height:100%;padding:0 10px;border:0;border-radius:7px;background:none;color:var(--fg);font:inherit;font-size:13px;white-space:nowrap;cursor:pointer}
+.menu button:hover{background:var(--line)}

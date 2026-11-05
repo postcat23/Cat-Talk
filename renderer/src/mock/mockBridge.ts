@@ -49,6 +49,7 @@ function dispatch(args: Record<string, unknown>) {
     case 'send': return send(args.text as string);
     case 'setting': return setting(args.key as string, args.value);
     case 'refresh': return { ok: true };
+    case 'open_steam_profile': return { ok: true };
     default: return { error: 'not_wired' };
   }
 }

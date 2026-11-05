@@ -47,7 +47,7 @@
 | `delete` | `account,lobby?` | `{ok:true}` | `account_changed` | 현재 계정 기록 삭제 |
 | `refresh` | — | `{ok:true}` | — | 언어 재로드 + 저장소 복구 + 워커 refresh |
 | `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 원본은 차단 목록 영속. **Cat-Talk은 미구현** — `not_wired` 응답(D-009) |
-| `open_steam_profile` | `steam_id,context` | `{ok:true}` | `steam_profile_unavailable`·`steam_profile_failed` | 네이티브 `QDesktopServices.openUrl` → Electron `shell.openExternal` |
+| `open_steam_profile` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_profile_failed` | 네이티브 `QDesktopServices.openUrl` → Electron `shell.openExternal`. 사이드카는 검증 후 `{uri}`를 main에 주고, main이 열어 렌더러에는 `{ok:true}`만 돌려준다 |
 | `check_updates` | — | `{ok:true}` | — | |
 | `restart_update` | — | `{ok:true}` / `{ok:false,reason}` | — | reason: `auto_merge`·`unavailable`·`storage`·`sending` |
 | `update_permission` | `allowed` | `{ok:true}` / `{error:update_permission_failed}` | — | |

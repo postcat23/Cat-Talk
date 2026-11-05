@@ -20,6 +20,8 @@ const ERROR_TEXT: Record<string, string> = {
   request_failed: REQUEST_FAILED,
 };
 
+export const PROFILE_OPENING = 'Steam 프로필을 여는 중입니다.';
+
 export function errorText(error: unknown) {
   const code = error instanceof Error ? error.message : '';
   return ERROR_TEXT[code] ?? REQUEST_FAILED;
