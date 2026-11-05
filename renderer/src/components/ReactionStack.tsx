@@ -4,7 +4,7 @@ import Cat from './Cat';
 import NoticeCard from './NoticeCard';
 import styles from './ReactionStack.module.css';
 
-const DEV_NOTICE = '개발판 · 켜져 있는 동안의 대화만 보관하고 종료하면 지웁니다.';
+const DEV_NOTICE = '켜져 있는 동안의 대화만 보관하고 종료하면 지웁니다.';
 const DEV_NOTICE_MS = 10000;   // 최초 1회
 const TOAST_MS = 4000;         // upstream 토스트와 같은 시간
 
