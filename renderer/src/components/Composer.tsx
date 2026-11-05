@@ -37,7 +37,8 @@ export default function Composer({ disabled, hidden = false, restored, onSend, o
     const el = input.current;
     if (!el || !touched.current) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, MAX_HEIGHT) + 'px';
+    // box-sizing:border-box라 scrollHeight에 없는 테두리를 더한다(없으면 내용이 맞아도 스크롤바가 뜬다)
+    el.style.height = Math.min(el.scrollHeight + el.offsetHeight - el.clientHeight, MAX_HEIGHT) + 'px';
   }, [value]);
 
   // 전송이 거부되면 글을 남겨 다시 보낼 수 있게 한다. 응답을 기다리는 동안 이어 쓴 글도 지우지 않는다.
