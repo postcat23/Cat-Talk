@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `auto-chest` — 상자 자동 오픈 IL 패처(inspect·patch·verify·backup·restore)와 게임 DLL 사본 검증 스크립트
 - `auto-chest` — 상자 자동 오픈 앱 내 기능: 설치 흐름·상태 표시·켜기/끄기 드로어 UI
 - `auto-chest` — 업데이트로 패치가 사라지면 재적용 토스트 표시, [재시작]으로 재적용·[X]로 설정 끄기
+- `renderer` — 참여자 모달 ⋯ 더보기 메뉴에서 Steam 프로필 열기 연결 (여는 중 안내, 실패 시 에러 안내)
 
 ### Changed
 
