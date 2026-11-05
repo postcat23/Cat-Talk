@@ -15,7 +15,6 @@ Cat-Talk은 upstream [misosiruda/bongo-cat-chat](https://github.com/misosiruda/b
 - 스택: Electron(셸) + React(렌더러) + Python 사이드카(네이티브·서비스·저장 계층 유지). Windows 전용. Flutter는 모바일 부재·웹 UI 재사용 손실로 제외.
 - IPC 계약: renderer↔controller(요청/응답, 600ms `view` 폴링)와 controller↔worker(큐) 2층 경계를 dev21 소스에서 실측해 문서화.
 - 저장 모델: 채팅·초안·세션은 휘발(앱 종료 시 소멸, 디스크 미기록), 설정만 영속. 채팅 차단은 미구현(글루에서 무력화).
-- 기능 범위: 아이템 자동 합성은 인-프로세스(디스크 무수정)라 Cat-Talk에 포함. 자동 상자깡은 디스크 패치라 별도 도구로 분리(B 방식: 실행·설정만 연동).
 
 **남은 것**
 
