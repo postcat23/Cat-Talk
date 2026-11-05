@@ -43,7 +43,7 @@ export default function MessageList() {
 
   return (
     <>
-      <div className={styles.scroll} ref={scroll} onScroll={onScroll}>
+      <div className={`${styles.scroll} thin-scroll`} ref={scroll} onScroll={onScroll}>
         {items.length === 0 && <div className={`${styles.presence} ${styles.empty}`}>{query ? '검색 결과가 없습니다' : '대화를 기다리고 있습니다'}</div>}
         {items.map((item, i) => {
           if (item.kind === 'presence') {

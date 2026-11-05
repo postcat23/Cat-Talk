@@ -60,7 +60,7 @@ export default function Drawer() {
   const [updateAvailable, setUpdateAvailable] = useState(UPDATE_AVAILABLE);
 
   return (
-    <aside className={[styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' && styles.full].filter(Boolean).join(' ')} aria-label="메뉴">
+    <aside className={['thin-scroll', styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' && styles.full].filter(Boolean).join(' ')} aria-label="메뉴">
       {/* 헤더 한 줄: 유저 프로필 … 닫기. 실아바타는 배경 없이 아래 구분선 위에 서 있다 */}
       <div className={me?.avatar ? `${styles.dhead} ${styles.standing}` : styles.dhead}>
         <div className={styles.acct}>

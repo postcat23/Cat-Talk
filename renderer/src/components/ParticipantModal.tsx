@@ -18,7 +18,7 @@ export default function ParticipantModal() {
         <h2><span className={styles.sil} aria-hidden="true" />함께 있는 고양이</h2>
         <p>더보기에서 Steam 프로필을 열 수 있습니다.</p>
       </div>
-      <div className={styles.mlist}>
+      <div className={`${styles.mlist} thin-scroll`}>
         {sorted.map((p) => (
           <div key={p.id} className={styles.prow}>
             <span className={styles.av} style={{ background: p.color }}><Cat src={p.avatar} framing="face" /></span>

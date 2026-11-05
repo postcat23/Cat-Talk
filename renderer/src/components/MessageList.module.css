@@ -3,15 +3,9 @@
 /* 위아래 마진 대칭. 바로 다음 묶음은 lead 마진을 빼서(Message .afterNotice) 위아래 간격이 같다 */
 .presence{align-self:center;font-size:11.5px;color:var(--muted);background:var(--line);padding:3px 10px;border-radius:999px;margin:12px 0}
 .empty{margin:auto}
-/* 채팅 스크롤바: 얇게, 화살표 없이, 배경과 대비를 낮춘 반투명 막대(테마 따라 --fg 혼합). */
-.scroll::-webkit-scrollbar{width:5px}
-.scroll::-webkit-scrollbar-button{display:none}
-.scroll::-webkit-scrollbar-track{background:transparent}
-.scroll::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--fg) 16%, transparent);border-radius:999px}
-.scroll::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb, var(--fg) 30%, transparent)}
-/* 맨 아래로: 위로 올려 읽는 중에만. 입력창 바로 위에 붙여 가림을 줄인다. 안내 카드(z 4)·오버레이 아래.
+/* 맨 아래로: 위로 올려 읽는 중에만. 안내 카드(z 4)·오버레이 아래.
    테두리는 불투명 혼합: 다크에서 --surface가 상대 말풍선과 비슷해 윤곽으로 구분한다 */
-.toBottom{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);z-index:3;display:grid;place-items:center;width:28px;height:28px;padding:0;
+.toBottom{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:3;display:grid;place-items:center;width:28px;height:28px;padding:0;
   border:1px solid color-mix(in srgb, var(--fg) 22%, var(--surface));border-radius:50%;background:var(--surface);color:var(--fg);box-shadow:0 2px 6px rgba(0,0,0,.16);cursor:pointer}
 .toBottom:hover{background:color-mix(in srgb, var(--fg) 8%, var(--surface))}
 .toBottom svg{width:16px;height:16px}
