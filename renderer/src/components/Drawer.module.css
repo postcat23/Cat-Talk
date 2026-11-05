@@ -39,6 +39,8 @@
 /* 드로어가 max-height로 넘치면 내용 없는 구분선이 flex-shrink로 0px이 되어 사라지므로 줄지 않게 한다 */
 .divider{height:1px;flex:none;background:var(--line)}
 .acct{display:flex;align-items:center;gap:9px;font-size:13px}
+/* <strong> 기본값 bolder는 본문 300 기준 400이 되므로 강조(Bold)를 명시 */
+.acct strong{font-weight:700}
 .av{width:30px;height:30px;display:grid;place-items:center;flex:none}
 /* 실아바타: 배경 없이 콘텐츠 bbox 박스(Cat sprite, 가로폭 --sprite-w). 박스 바닥 = 그림 바닥 = 헤더 바닥 = 구분선.
    수치는 스크린샷 확인 후 확정 */
