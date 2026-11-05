@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const windowState = require('./window-state');
+const { createAutoChest, defaultSys } = require('./auto-chest');
 
 const REQUEST_TIMEOUT_MS = 5000;
 const DEV = process.env.CATTALK_DEV === '1';
@@ -20,6 +21,7 @@ const state = windowState.load();
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on('second-instance', () => openAndExpand());
+process.stderr.on('error', () => {});   // 콘솔 없이 실행되면 쓰기가 실패할 수 있다. 사이드카는 계속 돈다.
 
 function settle(id) {
   const p = pending.get(id);
@@ -47,11 +49,9 @@ function startSidecar() {
     stdio: ['pipe', 'pipe', DEV ? 'inherit' : 'pipe'],
     windowsHide: !DEV,
   });
-  if (child.stderr) {
-    process.stderr.on('error', () => {});   // 콘솔 없이 실행되면 쓰기가 실패할 수 있다. 사이드카는 계속 돈다.
-    child.stderr.on('data', (chunk) => { try { process.stderr.write(chunk); } catch (e) { /* 콘솔 없음 */ } });
-  }
+  if (child.stderr) child.stderr.on('data', (chunk) => { try { process.stderr.write(chunk); } catch (e) { /* 콘솔 없음 */ } });
   sidecar = child;
+  stdoutBuf = '';
   // 사이드카가 없거나 죽어도 창은 살아 있어야 한다. 대기 요청을 끊어 렌더러가 bridge_down을 표시하게 한다.
   const down = (reason) => {
     for (const id of [...pending.keys()]) settle(id).reject(new Error(reason));
@@ -73,6 +73,20 @@ function startSidecar() {
     }
   });
   child.on('exit', () => down('sidecar_exited'));
+}
+
+// 강제 kill은 사이드카의 종료 정리(stop → worker join/terminate)를 건너뛰어 worker를 오펀으로 남긴다.
+// stdin EOF로 스스로 정리하게 하고, 정리 상한(join 3s + 2s)을 넘길 때만 kill한다.
+const SIDECAR_EXIT_GRACE_MS = 8000;
+
+function stopSidecar() {
+  return new Promise((resolve) => {
+    if (!sidecar) { resolve(); return; }
+    const child = sidecar;
+    const force = setTimeout(() => child.kill(), SIDECAR_EXIT_GRACE_MS);
+    child.once('exit', () => { clearTimeout(force); resolve(); });
+    child.stdin.end();
+  });
 }
 
 function sidecarRequest(payloadString) {
@@ -197,6 +211,21 @@ ipcMain.handle('bridge-request', async (_e, payloadString) => {
   catch (e) { return JSON.stringify({ error: 'bridge_down' }); }
 });
 
+// 상자 자동 오픈(D-019). 설치는 Steam 재실행 전에 worker를 내려야 하므로 사이드카째 끄고 다시 켠다.
+const chest = createAutoChest({
+  dataDir: windowState.dataDir(),
+  patcherExe: path.join(__dirname, '..', 'artifacts', 'auto_chest', 'AutoChestPatcher.exe'),
+  sys: defaultSys((url) => shell.openExternal(url)),
+  stopWorker: stopSidecar,
+  startWorker: async () => { startSidecar(); },
+  notify: (progress) => { if (win && !win.isDestroyed()) win.webContents.send('chest:progress', progress); },
+});
+ipcMain.handle('chest:status', (_e, wanted) => chest.status(wanted === true));
+ipcMain.handle('chest:enable', () => chest.enable());
+ipcMain.handle('chest:disable', () => chest.disable());
+ipcMain.handle('chest:reapply', () => chest.reapply());
+ipcMain.on('chest:cancel', () => chest.cancel());
+
 // 렌더러가 저장된 값으로 시작하도록(기본값이 복원된 창을 덮어쓰지 않게) preload가 동기로 읽는다.
 ipcMain.on('window:get-initial', (e) => {
   e.returnValue = { side: state.side, heightPct: state.heightPct, hideTaskbar: state.hideTaskbar };
@@ -227,16 +256,8 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', redock);
   screen.on('display-removed', redock);
 });
-// 강제 kill은 사이드카의 종료 정리(stop → worker join/terminate)를 건너뛰어 worker를 오펀으로 남긴다.
-// stdin EOF로 스스로 정리하게 하고, 정리 상한(join 3s + 2s)을 넘길 때만 kill한다.
-const SIDECAR_EXIT_GRACE_MS = 8000;
-
 app.on('window-all-closed', () => {
   windowState.flush(state);
   if (tray) { tray.destroy(); tray = null; }
-  if (!sidecar) { app.quit(); return; }
-  const child = sidecar;
-  const force = setTimeout(() => child.kill(), SIDECAR_EXIT_GRACE_MS);
-  child.once('exit', () => { clearTimeout(force); app.quit(); });
-  child.stdin.end();
+  stopSidecar().then(() => app.quit());
 });

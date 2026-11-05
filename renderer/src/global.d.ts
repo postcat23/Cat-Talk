@@ -12,5 +12,13 @@ interface Window {
     setChatHeight(pct: 100 | 70 | 50): void;
     setSkipTaskbar(hide: boolean): void;
     setInteractive(interactive: boolean): void;
+    chest: {
+      status(wanted: boolean): Promise<import('./chat/autoChest').ChestStatus>;
+      enable(): Promise<import('./chat/autoChest').ChestResult>;
+      disable(): Promise<import('./chat/autoChest').ChestResult>;
+      reapply(): Promise<import('./chat/autoChest').ChestResult>;
+      cancel(): void;
+      onProgress(cb: (progress: import('./chat/autoChest').ChestProgress) => void): () => void;
+    };
   };
 }

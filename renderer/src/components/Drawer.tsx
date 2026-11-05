@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { OVERLAY_HEIGHT, useUi, type ChatHeight, type Settings, type Side, type Theme } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
+import { useChest } from '../hooks/useAutoChest';
+import { STATE_LABEL } from '../chat/autoChest';
 import Cat from './Cat';
 import styles from './Drawer.module.css';
 
@@ -43,6 +45,17 @@ export default function Drawer() {
   const { me, accountStatus, saveSettings } = useChat();
   const apply = (patch: Partial<Settings>) => dispatch({ type: 'setSettings', patch });
   const set = (patch: Partial<Settings>) => { apply(patch); saveSettings(patch); };
+  const chest = useChest();
+  // Electron: 실제 상태(패치+플래그)가 버튼을 정한다. 브라우저 dev: 설정값만.
+  const chestOn = chest ? chest.state === 'on' : settings.autoOpenChest;
+  const chestBusy = !!chest && (chest.busy || chest.state === 'installing');
+  // 끄기(플래그 삭제)는 호환 안 됨·게임 없음에서도 안전하므로 진행 중일 때만 막는다
+  const enableBlocked = chestBusy || chest?.state === 'incompatible' || chest?.state === 'no_game';
+  const turnChest = async (on: boolean) => {
+    if (!chest) { set({ autoOpenChest: on }); return; }
+    const result = await (on ? chest.enable() : chest.disable());
+    if (result.ok) set({ autoOpenChest: on });
+  };
   // 업데이트 확인·적용은 후속 단계. 지금은 목업처럼 버튼을 누르면 '최신'으로 돌아가는 것만.
   const [updateAvailable, setUpdateAvailable] = useState(UPDATE_AVAILABLE);
 
@@ -74,17 +87,18 @@ export default function Drawer() {
         </div>
       ))}
       {/* 구분선은 프로필↔설정, 설정 영역↔앱 업데이트 2개뿐. 상자 카드는 자체 배경이 구분 역할.
-          켜기 = 패치 적용 겸 재동기화(켜져 있어도 다시 눌러 현재 게임 버전에 재적용), 끄기 = 원본 복원.
-          TODO: 상자 자동 오픈 적용/복원(IL 패치, 게임 버전 재동기화). 디스크 수정 방식 확정 후.
-          게임 디스크 파일 미수정 원칙(D-005)과 충돌 소지 */}
+          켜기 = 설치돼 있으면 플래그만, 아니면 카운트다운 후 설치(재적용 포함), 끄기 = 플래그 삭제(D-019) */}
       <div className={styles.chest}>
         <span className={styles.cicon}>📦</span>
-        <span className={styles.ctitle}>상자 자동 오픈</span>
+        <span className={styles.ctitle}>
+          상자 자동 오픈
+          {chest?.state && <span className={styles.cstate}>{STATE_LABEL[chest.state]}</span>}
+        </span>
         <div className={styles.cbtns}>
-          <button className={settings.autoOpenChest ? `${styles.cbtn} ${styles.active}` : styles.cbtn} aria-pressed={settings.autoOpenChest}
-            onClick={() => set({ autoOpenChest: true })}>켜기</button>
-          <button className={settings.autoOpenChest ? styles.cbtn : `${styles.cbtn} ${styles.active}`} aria-pressed={!settings.autoOpenChest}
-            onClick={() => set({ autoOpenChest: false })}>끄기</button>
+          <button className={chestOn ? `${styles.cbtn} ${styles.active}` : styles.cbtn} aria-pressed={chestOn} disabled={enableBlocked}
+            onClick={() => void turnChest(true)}>켜기</button>
+          <button className={chestOn ? styles.cbtn : `${styles.cbtn} ${styles.active}`} aria-pressed={!chestOn} disabled={chestBusy}
+            onClick={() => void turnChest(false)}>끄기</button>
         </div>
       </div>
       <div className={styles.divider} />

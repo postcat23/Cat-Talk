@@ -23,6 +23,7 @@ Cat-Talk이 다루는 데이터는 다음과 같다.
 - **영속(로컬 디스크)**: 설정만 저장해 재실행 후에도 유지한다. 채팅 차단 기능은 구현하지 않으므로 차단 목록을 저장하지 않는다.
   - `%LOCALAPPDATA%\CatTalk-dev\settings.sqlite3`: 앱 설정(테마·언어·알림 등).
   - `%LOCALAPPDATA%\CatTalk-dev\window-state.json`: 창 배치(도크 방향·채팅 높이·작업표시줄 숨김·마지막 모니터의 식별자와 좌표). 대화 내용은 들어가지 않는다.
+- `%LOCALAPPDATA%\CatTalk-dev\auto_chest\`: 상자 자동 오픈을 켤 때 만드는 게임 파일(`Assembly-CSharp.dll`) 원본 백업과 SHA-256, 패치 작업 파일. 대화 내용은 들어가지 않는다.
 
 모든 데이터는 사용자 본인 기기에 머문다. 별도 메시지 서버·클라우드 동기화·다른 메신저로의 전달은 없다. 렌더러는 채팅을 디스크에 영속하지 않는다(off-the-record).
 

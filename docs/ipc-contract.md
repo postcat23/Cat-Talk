@@ -187,6 +187,26 @@ Cat-Talk 전송 계층 추가 코드: `not_wired`(사이드카 미배선 액션)
 
 ---
 
+## 9. 상자 자동 오픈 IPC (Cat-Talk 추가, 사이드카 밖)
+
+렌더러 ↔ Electron main. 패처 실행·게임 종료/재실행·백업/복원·플래그는 main이 맡는다(`electron/auto-chest.js`, 패처 `tools/auto_chest/`).
+
+| 채널 | 방향 | 내용 |
+|---|---|---|
+| `chest:status(wanted)` | invoke | `{state, reason?}`. 판정만 한다(쓰기 없음). `wanted`는 설정 `auto_open_chest` 값 |
+| `chest:enable()` | invoke | 설치돼 있으면 플래그만 생성. 아니면 카운트다운 후 설치. `{ok, reason?, rolledBack?}` |
+| `chest:disable()` | invoke | 플래그 삭제 |
+| `chest:reapply()` | invoke | 게임이 꺼져 있을 때만 재패치(재실행 없음) |
+| `chest:cancel` | send | 카운트다운 취소 |
+| `chest:progress` | main → 렌더러 | `{phase, seconds?, reason?, rolledBack?}` |
+
+- `state`: `not_installed`·`on`·`off`·`incompatible`·`needs_reapply`·`installing`·`no_game`·`error`.
+- `phase`: `countdown`·`cancelled`·`stopping_worker`·`closing_game`·`patching`·`launching`·`verifying`·`done`·`failed`.
+- 설치 순서: 구조 사전 점검 → 카운트다운 → 사이드카(worker) 종료 → 게임 종료 → Steam 해제 대기 → 백업(clean일 때만) → 패치·verify → 교체·재검증 → Steam 재실행 → 기동 확인 → 플래그 생성 → 사이드카 재시작. 교체 후 실패하면 백업으로 복원한다.
+- 설정 저장은 기존 `setting` 액션(`auto_open_chest`)을 그대로 쓴다. 렌더러가 결과가 `ok`일 때만 저장한다.
+
+---
+
 ## 부록 — 소스 매핑
 
 | 영역 | 파일 |

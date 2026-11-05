@@ -32,6 +32,8 @@
   background:color-mix(in srgb, var(--fg) 8%, var(--surface));border-radius:12px;padding:10px 12px}
 .cicon{font-size:18px;line-height:1;display:flex}
 .ctitle{flex:1}
+.cstate{display:block;margin-top:2px;font-size:11px;color:var(--muted)}
+.cbtn:disabled{opacity:.5;cursor:default}
 .cbtns{display:flex;align-items:center;gap:6px;margin-left:auto}
 .cbtn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:none;color:var(--muted);border-radius:8px;padding:5px 11px;cursor:pointer}
 .cbtn.active{background:var(--accent);color:var(--accent-fg);border-color:transparent}

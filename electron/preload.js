@@ -19,4 +19,17 @@ contextBridge.exposeInMainWorld('catTalk', {
   setChatHeight: (pct) => ipcRenderer.send('window:set-chat-height', pct),
   setSkipTaskbar: (hide) => ipcRenderer.send('window:set-skip-taskbar', hide),
   setInteractive: (interactive) => ipcRenderer.send('window:set-interactive', interactive),
+  // 상자 자동 오픈(D-019). status는 판정만(쓰기 없음), wanted = 설정 ON 여부.
+  chest: {
+    status: (wanted) => ipcRenderer.invoke('chest:status', wanted),
+    enable: () => ipcRenderer.invoke('chest:enable'),
+    disable: () => ipcRenderer.invoke('chest:disable'),
+    reapply: () => ipcRenderer.invoke('chest:reapply'),
+    cancel: () => ipcRenderer.send('chest:cancel'),
+    onProgress: (cb) => {
+      const listener = (_e, progress) => cb(progress);
+      ipcRenderer.on('chest:progress', listener);
+      return () => ipcRenderer.removeListener('chest:progress', listener);
+    },
+  },
 });

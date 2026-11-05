@@ -6,7 +6,8 @@ import styles from './NoticeCard.module.css';
 const sentences = (text: string) => text.split(/(?<=\.)\s+/).filter(Boolean);
 
 // 안내 카드. showMs가 있으면 그 시간 뒤 사라지고, 없으면 닫거나 상태가 풀릴 때까지 남는다.
-export default function NoticeCard({ text, showMs }: { text: string; showMs?: number }) {
+// action이 있으면 닫기(×) 대신 그 버튼을 보여 준다(예: 카운트다운 취소).
+export default function NoticeCard({ text, showMs, action }: { text: string; showMs?: number; action?: { label: string; onClick(): void } }) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
@@ -21,7 +22,9 @@ export default function NoticeCard({ text, showMs }: { text: string; showMs?: nu
       <span className={`${card.rtxt} ${styles.rtxt}`}>
         {sentences(text).map((line, i) => <span key={i} className={styles.line}>{line}</span>)}
       </span>
-      <button className={styles.x} aria-label="닫기" onClick={() => setVisible(false)}>×</button>
+      {action
+        ? <button className={styles.action} onClick={action.onClick}>{action.label}</button>
+        : <button className={styles.x} aria-label="닫기" onClick={() => setVisible(false)}>×</button>}
     </div>
   );
 }

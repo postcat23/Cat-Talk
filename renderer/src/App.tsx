@@ -3,6 +3,7 @@ import { MAX_CARDS, OVERLAY_HEIGHT, UiProvider, useUi, type ChatHeight } from '.
 import { useReactionStack } from './hooks/useReactionStack';
 import { useClickThrough } from './hooks/useClickThrough';
 import { ChatContext, useChatView } from './hooks/useChatView';
+import { AutoChestContext, useAutoChest } from './hooks/useAutoChest';
 import CollapseTab from './components/CollapseTab';
 import TopBar from './components/TopBar';
 import SearchBar from './components/SearchBar';
@@ -15,6 +16,7 @@ function Panel() {
   const { settings, overlays, dispatch } = useUi();
   const reactions = useReactionStack(MAX_CARDS[settings.height], settings.catInteraction);
   const chat = useChatView(reactions.push, settings.catInteraction);
+  const chest = useAutoChest(settings.autoOpenChest);
 
   // 도크 위치·채팅 높이·작업표시줄: Electron이면 창(BrowserWindow)이 맡고, 브라우저 dev면 패널 CSS로 시뮬레이션.
   // 패널·탭이 어느 쪽에 오는지는 두 모드 모두 data-side가 정한다. --ovh·반응 카드 최대 수는 설정값 기준 공통.
@@ -32,17 +34,19 @@ function Panel() {
 
   return (
     <ChatContext.Provider value={chat}>
-      <section className={overlays.collapsed ? 'panel collapsed' : 'panel'} data-side={settings.side} style={style}>
-        <CollapseTab />
-        {/* 채팅 투명도는 창(setOpacity)이 아니라 본체 CSS opacity. 투명 창 위에서 데스크톱이 비친다 */}
-        <div className="panel-body" style={{ opacity: settings.opacity / 100 }}>
-          <TopBar />
-          <SearchBar />
-          <Conversation reactions={reactions} />
-          {/* 창이 작은 70%·50%에서 오버레이를 열면 입력창을 숨겨 오버레이(--ovh 100%)가 창 전체를 덮게 한다 */}
-          <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen)} onSend={chat.send} />
-        </div>
-      </section>
+      <AutoChestContext.Provider value={chest}>
+        <section className={overlays.collapsed ? 'panel collapsed' : 'panel'} data-side={settings.side} style={style}>
+          <CollapseTab />
+          {/* 채팅 투명도는 창(setOpacity)이 아니라 본체 CSS opacity. 투명 창 위에서 데스크톱이 비친다 */}
+          <div className="panel-body" style={{ opacity: settings.opacity / 100 }}>
+            <TopBar />
+            <SearchBar />
+            <Conversation reactions={reactions} />
+            {/* 창이 작은 70%·50%에서 오버레이를 열면 입력창을 숨겨 오버레이(--ovh 100%)가 창 전체를 덮게 한다 */}
+            <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen)} onSend={chat.send} />
+          </div>
+        </section>
+      </AutoChestContext.Provider>
     </ChatContext.Provider>
   );
 }

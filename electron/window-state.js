@@ -45,4 +45,4 @@ function flush(state) {
   }
 }
 
-module.exports = { load, save, flush, HEIGHT_PCTS };
+module.exports = { load, save, flush, dataDir, HEIGHT_PCTS };
