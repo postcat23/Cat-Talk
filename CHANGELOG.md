@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `avatar` — 아바타 미해결·스킨 변경 중에는 게임 기본 고양이로 표시 (데모 이모지는 브라우저 dev 전용)
 - `auto-chest` — 상자 자동 오픈 IL 패처(inspect·patch·verify·backup·restore)와 게임 DLL 사본 검증 스크립트 (실게임 연동 전 단계)
 - `auto-chest` — 상자 자동 오픈 설치 흐름·상태 표시·켜기/끄기 드로어 UI (라이브 미검증)
-- `auto-chest` — 업데이트로 패치가 사라지면 5초 카운트다운(취소 가능) 후 재적용 (라이브 미검증)
+- `auto-chest` — 업데이트로 패치가 사라지면 재적용 토스트 표시, [재시작]으로 재적용·[X]로 설정 끄기 (라이브 미검증)
 
 ### Changed
 
