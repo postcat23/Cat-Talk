@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, screen, Tray, Menu } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const windowState = require('./window-state');
@@ -26,12 +27,30 @@ function settle(id) {
   return p;
 }
 
+// prod는 창 없는 인터프리터로 띄운다. 콘솔 앱(python.exe)은 콘솔 없는 부모 밑에서 새 콘솔을 만들고,
+// 그 아래 multiprocessing worker도 sys.executable(콘솔 앱)로 떠서 창을 하나 더 띄운다.
+function windowlessPython(exe) {
+  const w = path.join(path.dirname(exe), 'pythonw.exe');
+  return path.basename(exe).toLowerCase() === 'python.exe' && fs.existsSync(w) ? w : exe;
+}
+
 function startSidecar() {
   // upstream 소스는 3.10+ 문법(`dict | None`)이라 기본은 py 런처의 3.11. CATTALK_PYTHON으로 override.
-  const [py, ...pyArgs] = process.env.CATTALK_PYTHON ? [process.env.CATTALK_PYTHON] : ['py', '-3.11'];
+  // dev는 로그 확인용으로 콘솔을 유지한다(py.exe + stderr 상속).
+  const custom = process.env.CATTALK_PYTHON;
+  const [py, ...pyArgs] = DEV
+    ? (custom ? [custom] : ['py', '-3.11'])
+    : (custom ? [windowlessPython(custom)] : ['pyw', '-3.11']);
+  // libuv는 상속 stdio가 하나도 없을 때만 CREATE_NO_WINDOW를 붙인다. 그래서 prod는 stderr를 상속 대신
+  // 파이프로 받아 Electron stderr로 넘긴다(사이드카가 fd2를 fd1로 복제하므로 버리면 안 된다).
   const child = spawn(py, [...pyArgs, path.join(__dirname, '..', 'sidecar', 'server.py')], {
-    stdio: ['pipe', 'pipe', 'inherit'],
+    stdio: ['pipe', 'pipe', DEV ? 'inherit' : 'pipe'],
+    windowsHide: !DEV,
   });
+  if (child.stderr) {
+    process.stderr.on('error', () => {});   // 콘솔 없이 실행되면 쓰기가 실패할 수 있다. 사이드카는 계속 돈다.
+    child.stderr.on('data', (chunk) => { try { process.stderr.write(chunk); } catch (e) { /* 콘솔 없음 */ } });
+  }
   sidecar = child;
   // 사이드카가 없거나 죽어도 창은 살아 있어야 한다. 대기 요청을 끊어 렌더러가 bridge_down을 표시하게 한다.
   const down = (reason) => {
