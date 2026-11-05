@@ -9,8 +9,9 @@
 .scroll::-webkit-scrollbar-track{background:transparent}
 .scroll::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--fg) 16%, transparent);border-radius:999px}
 .scroll::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb, var(--fg) 30%, transparent)}
-/* 맨 아래로: 위로 올려 읽는 중에만. 말풍선 위, 안내 카드(z 4)·오버레이 아래 */
-.toBottom{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:3;display:grid;place-items:center;width:32px;height:32px;padding:0;
-  border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--fg);box-shadow:0 3px 10px rgba(0,0,0,.22);cursor:pointer}
+/* 맨 아래로: 위로 올려 읽는 중에만. 입력창 바로 위에 붙여 가림을 줄인다. 안내 카드(z 4)·오버레이 아래.
+   테두리는 불투명 혼합: 다크에서 --surface가 상대 말풍선과 비슷해 윤곽으로 구분한다 */
+.toBottom{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);z-index:3;display:grid;place-items:center;width:28px;height:28px;padding:0;
+  border:1px solid color-mix(in srgb, var(--fg) 22%, var(--surface));border-radius:50%;background:var(--surface);color:var(--fg);box-shadow:0 2px 6px rgba(0,0,0,.16);cursor:pointer}
 .toBottom:hover{background:color-mix(in srgb, var(--fg) 8%, var(--surface))}
-.toBottom svg{width:18px;height:18px}
+.toBottom svg{width:16px;height:16px}
