@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `avatar` — 말풍선 위 실스프라이트·반응 카드·참여자 모달·드로어 프로필 실아바타 (콘텐츠 가로폭 기준 프레이밍)
 - `avatar` — 아바타 미해결·스킨 변경 중에는 게임 기본 고양이로 표시 (데모 이모지는 브라우저 dev 전용)
 - `auto-chest` — 상자 자동 오픈 IL 패처(inspect·patch·verify·backup·restore)와 게임 DLL 사본 검증 스크립트 (실게임 연동 전 단계)
+- `auto-chest` — 상자 자동 오픈 설치 흐름·상태 표시·켜기/끄기 드로어 UI (라이브 미검증)
 
 ### Changed
 
