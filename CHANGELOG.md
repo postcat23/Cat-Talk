@@ -34,8 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 ### Changed
 
 - 앱 표시명을 'Cat Talk'로 변경 (상단바·창 제목·트레이 툴팁)
-- 기본 폰트를 나눔바른고딕(로컬 번들, SIL OFL 1.1)으로 변경, 숫자 표시도 같은 폰트로 통일
-- 본문 기본 굵기를 나눔바른고딕 Light로 변경 (강조는 Bold 유지, 쓰지 않는 Regular는 번들 제외)
+- 기본 폰트를 Pretendard(로컬 번들 Regular·SemiBold·Bold, SIL OFL 1.1)로 변경, 숫자 표시도 같은 폰트(고정폭 숫자)로 통일
 
 ### Fixed
 
