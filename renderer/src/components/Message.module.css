@@ -24,7 +24,7 @@
 /* 입퇴장 공지 바로 다음 묶음은 공지의 아래 마진이 간격을 맡는다(공지 위아래 대칭) */
 .lead.afterNotice{margin-top:0}
 .me .row{flex-direction:row-reverse}
-.bubble{position:relative;z-index:1;padding:8px 11px;border-radius:14px;font-size:13.5px;line-height:1.5;word-break:break-word}
+.bubble{position:relative;z-index:1;padding:8px 11px;border-radius:14px;font-size:13.5px;line-height:1.5;word-break:break-word;white-space:pre-wrap}
 .peer .bubble{background:var(--peer);border-top-left-radius:5px}
 .me .bubble{background:var(--own);color:var(--own-fg);border-top-right-radius:5px}
 .binfo{display:flex;flex-direction:column;gap:1px;padding-bottom:2px;flex:none}

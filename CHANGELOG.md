@@ -70,3 +70,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 안내 카드가 반응 카드 아래로 밀리던 문제 수정 (안내 카드를 항상 맨 위에 표시)
 - 입력창에 여러 줄을 쓰면 내용이 다 보여도 스크롤바가 뜨던 문제 수정
 - 최소화 후 복원·표시할 때 항상 위를 다시 적용
+- 여러 줄 메시지가 말풍선에서 한 줄로 이어 보이던 문제 수정
