@@ -14,6 +14,7 @@ export interface Participant {
 export interface ChatMessage {
   kind: 'msg';
   id: string;
+  seq?: number;    // 저장되지 않은 메시지에는 없다
   sender: string;  // participant id
   author: Participant;
   own: boolean;
@@ -139,7 +140,7 @@ export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatIt
     }
     const own = Boolean(m.own);
     return {
-      kind: 'msg', id: m.id, sender: m.sender, own, text: m.body, time: clock(m.received),
+      kind: 'msg', id: m.id, seq: m.seq, sender: m.sender, own, text: m.body, time: clock(m.received),
       // 나간 참여자는 profiles에 없어도 메시지에 남은 이름으로 표시한다
       author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf),
       status: m.unsaved ? UNSAVED_LABEL : STATUS_LABEL[m.status],

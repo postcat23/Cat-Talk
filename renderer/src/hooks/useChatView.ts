@@ -14,6 +14,8 @@ const MAX_AVATAR_REQUEST = 32;   // 사이드카 상한(64) 안에서 나눠 받
 const DRAFT_SAVE_MS = 300;
 const PAGE_SIZE = 50;     // LIVE 창·load-more 단위. 검색은 view 기본값(100)
 const MAX_LIVE_LIMIT = 1000;   // 사이드카 상한
+const JUMP_CONTEXT = 25;   // 검색 점프: 매치 앞뒤로 불러올 개수
+const HIGHLIGHT_MS = 2000;   // MessageList.module.css jumped 애니메이션과 같은 시간
 
 // 화면의 대화 창. 검색 결과는 여기 넣지 않아 검색을 풀면 그대로 돌아온다
 interface Timeline { messages: ViewMessage[]; hasMore: boolean; hasNewer: boolean }
@@ -23,6 +25,7 @@ const EMPTY_TIMELINE: Timeline = { messages: [], hasMore: false, hasNewer: false
 const png = (uri: string | undefined) => (uri?.startsWith('data:image/png;base64,') ? uri : undefined);
 
 export interface Toast { id: number; text: string }
+export interface Focus { id: string }   // 점프 대상. 점프마다 새 객체라 같은 메시지로 다시 가도 스크롤한다
 export interface RestoredDraft { text: string }   // 같은 글이어도 복원마다 새 객체라 입력창이 다시 받는다
 
 export interface Chat {
@@ -38,11 +41,13 @@ export interface Chat {
   restoredDraft: RestoredDraft | null;
   query: string;
   live: boolean;   // 바닥에서 최신을 따라가는 중. 아니면 창을 고정한다
+  focus: Focus | null;
   byId(uid: string): Participant | undefined;
   setQuery(query: string): void;
   setLive(live: boolean): void;
   loadOlder(): Promise<void>;
   loadNewer(): Promise<void>;
+  jumpTo(seq: number): Promise<void>;
   send(text: string): Promise<boolean>;
   openProfile(uid: string): Promise<void>;
   refresh(): Promise<void>;
@@ -59,7 +64,9 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [avatars, setAvatars] = useState<Record<string, string>>({});
   const [restoredDraft, setRestoredDraft] = useState<RestoredDraft | null>(null);
   const [timeline, setTimeline] = useState(EMPTY_TIMELINE);
+  const [results, setResults] = useState<ViewMessage[] | null>(null);   // 첫 응답 전에는 창을 그대로 둬 스크롤 위치를 잃지 않는다
   const [live, setLiveState] = useState(true);
+  const [focus, setFocus] = useState<Focus | null>(null);
 
   const viewRef = useRef<ViewResponse | null>(null);
   const queryRef = useRef('');
@@ -78,6 +85,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const liveRef = useRef(true);
   const liveLimit = useRef(PAGE_SIZE);   // 창을 못 채워 스크롤할 수 없을 때만 늘어난다
   const loading = useRef(false);
+  const focusTimer = useRef(0);
   const resetLive = useRef(() => {});   // poll이 setLive보다 먼저 정의돼 있어 ref로 부른다
   const reactionInput = useRef({ pushReaction, reactionsEnabled });
   useEffect(() => { reactionInput.current = { pushReaction, reactionsEnabled }; });
@@ -178,7 +186,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       if (next !== signature.current) {
         signature.current = next;
         setView(meta);
-        if (!q && liveRef.current) applyTimeline({ messages: data.messages, hasMore: data.has_more, hasNewer: false });
+        if (q) setResults(data.messages);
+        else if (liveRef.current) applyTimeline({ messages: data.messages, hasMore: data.has_more, hasNewer: false });
       }
     } catch {
       if (sent === version.current) { setFailed(true); viewRef.current = null; signature.current = ''; }
@@ -198,6 +207,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     if (next === queryRef.current) return;
     queryRef.current = next;
     setQueryState(next);
+    if (!next) setResults(null);
     version.current++;
     signature.current = '';
     void poll();
@@ -260,6 +270,32 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, [applyTimeline, setLive, showError]);
 
+  // 검색 매치 주변을 HISTORY 창으로 불러온다. seq가 연속이 아니라서 매치를 경계로 앞(before)·뒤(start, 매치 포함)를 따로 받는다.
+  const jumpTo = useCallback(async (seq: number) => {
+    const sent = ++version.current;
+    try {
+      const [older, newer] = await Promise.all([
+        rpc<ViewResponse>('view', { before: seq, limit: JUMP_CONTEXT }),
+        rpc<ViewResponse>('view', { start: seq, limit: JUMP_CONTEXT + 1 }),
+      ]);
+      if (sent !== version.current) return;
+      version.current++;   // 기다리는 사이 보낸 검색 폴링을 버린다
+      liveRef.current = false;
+      setLiveState(false);
+      applyTimeline({ messages: [...older.messages, ...newer.messages], hasMore: older.has_more, hasNewer: newer.has_newer });
+      queryRef.current = '';
+      setQueryState('');
+      setResults(null);
+      signature.current = '';
+      dispatch({ type: 'toggleSearch' });
+      setFocus({ id: newer.messages[0]?.id ?? '' });
+      clearTimeout(focusTimer.current);
+      focusTimer.current = window.setTimeout(() => setFocus(null), HIGHLIGHT_MS);
+    } catch (error) {
+      if (sent === version.current) showError(error);
+    }
+  }, [applyTimeline, dispatch, showError]);
+
   // 사용자가 입력창에서 보낸 텍스트만 여기로 온다. 자동 송신 경로는 없다.
   const send = useCallback(async (text: string) => {
     const current = viewRef.current;
@@ -319,8 +355,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     // 연결이 끊겨도 HISTORY는 고정한 창을 계속 보여 준다
     const source = query || live ? shown : view;
     if (!source) return [];
-    return toChatItems(query ? source : { ...source, messages: timeline.messages }, avatarOf);
-  }, [shown, view, query, live, timeline, avatarOf]);
+    return toChatItems({ ...source, messages: (query && results) || timeline.messages }, avatarOf);
+  }, [shown, view, query, results, live, timeline, avatarOf]);
   const participants = useMemo(
     () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf)),
     [shown, avatarOf],
@@ -334,7 +370,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, query, live, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, send, openProfile, refresh, saveSettings, saveDraft,
+    items, participants, me, query, live, focus, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, refresh, saveSettings, saveDraft,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),

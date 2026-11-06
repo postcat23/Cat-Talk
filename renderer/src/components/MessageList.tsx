@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useUi } from '../state/UiContext';
-import { useChat } from '../hooks/useChatView';
+import { useChat, type Focus } from '../hooks/useChatView';
 import Message from './Message';
 import styles from './MessageList.module.css';
 
@@ -9,12 +9,13 @@ const NEAR_TOP = 200;   // 맨 위에서 이 거리 안에 들어오면 과거�
 
 export default function MessageList() {
   const { settings } = useUi();
-  const { items, query, live, setLive, loadOlder, loadNewer } = useChat();
+  const { items, query, live, focus, setLive, loadOlder, loadNewer, jumpTo } = useChat();
   const scroll = useRef<HTMLDivElement>(null);
   const firstId = useRef<string | undefined>(undefined);
   const height = useRef(0);   // 직전 scrollHeight: 과거 페이지가 붙은 만큼 scrollTop을 보정한다
   const searching = useRef(false);
   const searchTop = useRef(0);   // 검색을 풀면 HISTORY는 보던 자리로 돌아간다
+  const focused = useRef<Focus | null>(null);
 
   const atBottom = (el: HTMLDivElement) => el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP;
 
@@ -23,16 +24,23 @@ export default function MessageList() {
     if (!live && atBottom(el)) void loadNewer();
   }
 
-  // LIVE면 맨 아래를 따라가고, 창 앞에 과거가 붙었으면 보던 위치를 그대로 둔다.
+  // 검색 점프면 매치를 가운데로, LIVE면 맨 아래를 따라가고, 창 앞에 과거가 붙었으면 보던 위치를 그대로 둔다.
   useLayoutEffect(() => {
     const el = scroll.current;
     if (!el) return;
     const first = items[0]?.id;
+    const target = focus && focus !== focused.current && !query
+      ? el.querySelector<HTMLElement>(`[data-id="${CSS.escape(focus.id)}"]`) : null;
+    focused.current = focus;
     const prepended = !live && !query && !searching.current && firstId.current !== undefined && first !== firstId.current
       && items.some((item) => item.id === firstId.current);
     if (query) {
       if (!searching.current) searchTop.current = el.scrollTop;
       el.scrollTop = 0;
+    }
+    else if (target) {
+      const box = el.getBoundingClientRect(), row = target.getBoundingClientRect();
+      el.scrollTop += row.top - box.top - (box.height - row.height) / 2;
     }
     else if (prepended) el.scrollTop += el.scrollHeight - height.current;
     else if (live) el.scrollTop = el.scrollHeight;
@@ -41,7 +49,7 @@ export default function MessageList() {
     firstId.current = first;
     height.current = el.scrollHeight;
     if (!query) loadNearEdge(el);
-  }, [items, query, live]);
+  }, [items, query, live, focus]);
 
   function onScroll() {
     const el = scroll.current;
@@ -62,7 +70,9 @@ export default function MessageList() {
           // 직전 항목이 같은 발신자의 메시지가 아니면 묶음의 첫 메시지(lead)
           const prev = items[i - 1];
           const lead = !(prev && prev.kind === 'msg' && prev.sender === item.sender);
-          return <Message key={item.id} message={item} lead={lead} afterNotice={settings.presence && prev?.kind === 'presence'} />;
+          const { seq } = item;
+          return <Message key={item.id} message={item} lead={lead} afterNotice={settings.presence && prev?.kind === 'presence'}
+            jumped={item.id === focus?.id} onJump={query && seq !== undefined ? () => void jumpTo(seq) : undefined} />;
         })}
       </div>
       {!query && !live && (
