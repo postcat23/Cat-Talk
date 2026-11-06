@@ -92,6 +92,8 @@ export interface ViewResponse {
   reactions?: ViewReaction[];
   draft?: string;             // 현재 로비의 저장된 초안
   has_more: boolean;          // 응답 창보다 과거가 더 있다
+  has_newer: boolean;         // 응답 창보다 최신이 더 있다
+  latest_seq: number;
   incoming_count?: number;    // 수락된 타인 메시지 누적 수(사이드카 경로만)
 }
 

@@ -9,13 +9,18 @@ const NEAR_TOP = 200;   // 맨 위에서 이 거리 안에 들어오면 과거�
 
 export default function MessageList() {
   const { settings } = useUi();
-  const { items, query, live, setLive, loadOlder } = useChat();
+  const { items, query, live, setLive, loadOlder, loadNewer } = useChat();
   const scroll = useRef<HTMLDivElement>(null);
   const firstId = useRef<string | undefined>(undefined);
   const height = useRef(0);   // 직전 scrollHeight: 과거 페이지가 붙은 만큼 scrollTop을 보정한다
+  const searching = useRef(false);
+  const searchTop = useRef(0);   // 검색을 풀면 HISTORY는 보던 자리로 돌아간다
+
+  const atBottom = (el: HTMLDivElement) => el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP;
 
   function loadNearEdge(el: HTMLDivElement) {
     if (el.scrollTop < NEAR_TOP) void loadOlder();
+    if (!live && atBottom(el)) void loadNewer();
   }
 
   // LIVE면 맨 아래를 따라가고, 창 앞에 과거가 붙었으면 보던 위치를 그대로 둔다.
@@ -23,11 +28,16 @@ export default function MessageList() {
     const el = scroll.current;
     if (!el) return;
     const first = items[0]?.id;
-    const prepended = !live && !query && firstId.current !== undefined && first !== firstId.current
+    const prepended = !live && !query && !searching.current && firstId.current !== undefined && first !== firstId.current
       && items.some((item) => item.id === firstId.current);
-    if (query) el.scrollTop = 0;
+    if (query) {
+      if (!searching.current) searchTop.current = el.scrollTop;
+      el.scrollTop = 0;
+    }
     else if (prepended) el.scrollTop += el.scrollHeight - height.current;
     else if (live) el.scrollTop = el.scrollHeight;
+    else if (searching.current) el.scrollTop = searchTop.current;
+    searching.current = Boolean(query);
     firstId.current = first;
     height.current = el.scrollHeight;
     if (!query) loadNearEdge(el);
@@ -37,15 +47,8 @@ export default function MessageList() {
     const el = scroll.current;
     if (!el || query) return;
     height.current = el.scrollHeight;
-    setLive(el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP);
+    if (!atBottom(el)) setLive(false);
     loadNearEdge(el);
-  }
-
-  function toBottom() {
-    const el = scroll.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    setLive(true);
   }
 
   return (
@@ -63,7 +66,7 @@ export default function MessageList() {
         })}
       </div>
       {!query && !live && (
-        <button className={styles.toBottom} aria-label="맨 아래로" onClick={toBottom}>
+        <button className={styles.toBottom} aria-label="맨 아래로" onClick={() => setLive(true)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
       )}

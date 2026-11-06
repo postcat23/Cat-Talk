@@ -24,12 +24,14 @@ function view({ query = '', before, start, limit = 100 }: ViewArgs): ViewRespons
   const matching = needle ? messages.filter((m) => !m.kind && m.body.toLowerCase().includes(needle)) : messages;
   const bounded = matching.filter((m) => (before === undefined || m.seq! < before) && (start === undefined || m.seq! >= start));
   const rows = start === undefined ? bounded.slice(-limit) : bounded.slice(0, limit);
-  const first = rows[0]?.seq ?? start;
+  const first = rows[0]?.seq ?? start, last = rows.at(-1)?.seq ?? before;
   return {
     context: CONTEXT, state: 'ready', notice: '', game_build: '',
     connected: true, lobby_verified: true, can_send: true, storage_error: false, revision,
     messages: rows.map((m) => ({ ...m })),
     has_more: first !== undefined && matching.some((m) => m.seq! < first),
+    has_newer: last !== undefined && matching.some((m) => m.seq! > last),
+    latest_seq: messages.at(-1)?.seq ?? 0,
     profiles: PROFILES, participants: PROFILES,
     theme, notifications: { ...notifications }, reactions_enabled: reactionsEnabled, ui_settings: { ...uiSettings }, reactions: [],
     draft: drafts.get(CONTEXT.lobby) ?? '',
