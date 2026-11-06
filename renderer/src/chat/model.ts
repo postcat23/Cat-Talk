@@ -91,6 +91,7 @@ export interface ViewResponse {
   default_avatar_id?: string; // 게임 기본 고양이. 아바타 미해결·스킨 변경 중 플레이스홀더(사이드카 경로만)
   reactions?: ViewReaction[];
   draft?: string;             // 현재 로비의 저장된 초안
+  has_more: boolean;          // 응답 창보다 과거가 더 있다
   incoming_count?: number;    // 수락된 타인 메시지 누적 수(사이드카 경로만)
 }
 

@@ -4,7 +4,7 @@ import { useUi, type Settings } from '../state/UiContext';
 import { errorText, noticeText, PROFILE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
   accountStatus, connState, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
-  type AvatarLookup, type ChatItem, type ConnState, type Participant, type ViewContext, type ViewResponse,
+  type AvatarLookup, type ChatItem, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
 } from '../chat/model';
 import type { ReactionStack } from './useReactionStack';
 
@@ -12,6 +12,12 @@ const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 
 const MAX_SEEN_REACTIONS = 256;
 const MAX_AVATAR_REQUEST = 32;   // 사이드카 상한(64) 안에서 나눠 받는다. 남은 건 다음 폴링에
 const DRAFT_SAVE_MS = 300;
+const PAGE_SIZE = 50;     // LIVE 창·load-more 단위. 검색은 view 기본값(100)
+const MAX_LIVE_LIMIT = 1000;   // 사이드카 상한
+
+// 화면의 대화 창. 검색 결과는 여기 넣지 않아 검색을 풀면 그대로 돌아온다
+interface Timeline { messages: ViewMessage[]; hasMore: boolean }
+const EMPTY_TIMELINE: Timeline = { messages: [], hasMore: false };
 
 // 반응 이미지는 PNG data URI만 그린다(upstream app.js와 같은 검사)
 const png = (uri: string | undefined) => (uri?.startsWith('data:image/png;base64,') ? uri : undefined);
@@ -31,8 +37,11 @@ export interface Chat {
   incoming: number | undefined;
   restoredDraft: RestoredDraft | null;
   query: string;
+  live: boolean;   // 바닥에서 최신을 따라가는 중. 아니면 창을 고정한다
   byId(uid: string): Participant | undefined;
   setQuery(query: string): void;
+  setLive(live: boolean): void;
+  loadOlder(): Promise<void>;
   send(text: string): Promise<boolean>;
   openProfile(uid: string): Promise<void>;
   refresh(): Promise<void>;
@@ -48,6 +57,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [toast, setToast] = useState<Toast | null>(null);
   const [avatars, setAvatars] = useState<Record<string, string>>({});
   const [restoredDraft, setRestoredDraft] = useState<RestoredDraft | null>(null);
+  const [timeline, setTimeline] = useState(EMPTY_TIMELINE);
+  const [live, setLiveState] = useState(true);
 
   const viewRef = useRef<ViewResponse | null>(null);
   const queryRef = useRef('');
@@ -62,11 +73,20 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const openingProfile = useRef(false);
   const draftScope = useRef<Pick<ViewContext, 'account' | 'lobby'> | null>(null);   // 입력창 글이 속한 계정·로비
   const pendingDraft = useRef<{ text: string; timer: number } | null>(null);
+  const timelineRef = useRef(EMPTY_TIMELINE);
+  const liveRef = useRef(true);
+  const liveLimit = useRef(PAGE_SIZE);   // 창을 못 채워 스크롤할 수 없을 때만 늘어난다
+  const loading = useRef(false);
   const reactionInput = useRef({ pushReaction, reactionsEnabled });
   useEffect(() => { reactionInput.current = { pushReaction, reactionsEnabled }; });
 
   const showError = useCallback((error: unknown) => {
     setToast({ id: nextToast.current++, text: errorText(error) });
+  }, []);
+
+  const applyTimeline = useCallback((next: Timeline) => {
+    timelineRef.current = next;
+    setTimeline(next);
   }, []);
 
   const takeReactions = useCallback((data: ViewResponse, requestedAt: number) => {
@@ -128,7 +148,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     const q = queryRef.current;
     try {
       const data = await rpc<ViewResponse>('view', {
-        ...(q && { query: q }),
+        ...(q ? { query: q } : { limit: liveLimit.current }),
         reactions: reactionInput.current.reactionsEnabled && !q && !document.hidden,
       });
       if (sent !== version.current) return;
@@ -145,14 +165,18 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       // revision은 하트비트마다 오르므로 비교에서 뺀다. 내용이 같으면 다시 그리지 않는다.
       const { revision: _revision, reactions: _reactions, draft: _draft, ...content } = data;
       const next = JSON.stringify(content);
-      if (next !== signature.current) { signature.current = next; setView(data); }
+      if (next !== signature.current) {
+        signature.current = next;
+        setView(data);
+        if (!q && liveRef.current) applyTimeline({ messages: data.messages, hasMore: data.has_more });
+      }
     } catch {
       if (sent === version.current) { setFailed(true); viewRef.current = null; signature.current = ''; }
     } finally {
       busy.current = false;
       if (again.current) { again.current = false; void poll(); }
     }
-  }, [dispatch, fetchAvatars, takeDraft, takeReactions]);
+  }, [applyTimeline, dispatch, fetchAvatars, takeDraft, takeReactions]);
 
   useEffect(() => {
     void poll();
@@ -168,19 +192,54 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     void poll();
   }, [poll]);
 
+  const setLive = useCallback((next: boolean) => {
+    if (next === liveRef.current) return;
+    liveRef.current = next;
+    setLiveState(next);
+    version.current++;   // 이전 모드로 보낸 폴링 응답이 창을 건드리지 않게 한다
+    signature.current = '';
+    if (next) void poll();
+  }, [poll]);
+
+  // 창 앞에 과거 페이지를 붙인다. seq는 연속이 아니라 현재 창의 가장 오래된 seq를 경계로 쓴다.
+  const loadOlder = useCallback(async () => {
+    const { messages, hasMore } = timelineRef.current;
+    const first = messages.find((m) => m.seq !== undefined)?.seq;
+    if (loading.current || !hasMore || first === undefined || queryRef.current) return;
+    // LIVE에서 여기 오는 건 창이 화면을 못 채운 경우뿐이다. 폴링이 덮어쓰므로 창 자체를 키운다
+    if (liveRef.current) {
+      liveLimit.current = Math.min(liveLimit.current + PAGE_SIZE, MAX_LIVE_LIMIT);
+      void poll();
+      return;
+    }
+    loading.current = true;
+    const sent = version.current;
+    try {
+      const page = await rpc<ViewResponse>('view', { before: first, limit: PAGE_SIZE });
+      if (sent !== version.current) return;
+      const current = timelineRef.current;
+      applyTimeline({ messages: [...page.messages, ...current.messages], hasMore: page.has_more });
+    } catch (error) {
+      if (sent === version.current) showError(error);
+    } finally {
+      loading.current = false;
+    }
+  }, [applyTimeline, poll, showError]);
+
   // 사용자가 입력창에서 보낸 텍스트만 여기로 온다. 자동 송신 경로는 없다.
   const send = useCallback(async (text: string) => {
     const current = viewRef.current;
     if (!current?.can_send) return false;
     try {
       await rpc('send', { context: current.context, text });
+      setLive(true);
       void poll();
       return true;
     } catch (error) {
       showError(error);
       return false;
     }
-  }, [poll, showError]);
+  }, [poll, setLive, showError]);
 
   const openProfile = useCallback(async (uid: string) => {
     if (openingProfile.current) return;
@@ -222,7 +281,10 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const placeholder = ready && shown?.default_avatar_id ? avatars[shown.default_avatar_id] : undefined;
   const avatarOf = useCallback<AvatarLookup>(
     (id) => (ready ? (id && avatars[id]) || placeholder : undefined), [ready, avatars, placeholder]);
-  const items = useMemo(() => (shown ? toChatItems(shown, avatarOf) : []), [shown, avatarOf]);
+  const items = useMemo(() => {
+    if (!shown) return [];
+    return toChatItems(query ? shown : { ...shown, messages: timeline.messages }, avatarOf);
+  }, [shown, query, timeline, avatarOf]);
   const participants = useMemo(
     () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf)),
     [shown, avatarOf],
@@ -236,7 +298,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, query, toast, restoredDraft, byId, setQuery, send, openProfile, refresh, saveSettings, saveDraft,
+    items, participants, me, query, live, toast, restoredDraft, byId, setQuery, setLive, loadOlder, send, openProfile, refresh, saveSettings, saveDraft,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),

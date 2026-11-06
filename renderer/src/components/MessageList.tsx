@@ -1,44 +1,51 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { useUi } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
 import Message from './Message';
 import styles from './MessageList.module.css';
 
 const BOTTOM_SLOP = 2;
+const NEAR_TOP = 200;   // 맨 위에서 이 거리 안에 들어오면 과거를 미리 불러온다
 
 export default function MessageList() {
   const { settings } = useUi();
-  const { items, query } = useChat();
+  const { items, query, live, setLive, loadOlder } = useChat();
   const scroll = useRef<HTMLDivElement>(null);
-  const atBottom = useRef(true);
-  const lastId = useRef<string | undefined>(undefined);
-  const [showBottom, setShowBottom] = useState(false);   // ↓ 버튼: 맨 아래가 아닐 때만
+  const firstId = useRef<string | undefined>(undefined);
+  const height = useRef(0);   // 직전 scrollHeight: 과거 페이지가 붙은 만큼 scrollTop을 보정한다
 
-  // 맨 아래를 보고 있을 때나 내가 보냈을 때만 따라 내려간다. 위로 올려 읽는 중에는 위치를 유지한다.
+  function loadNearEdge(el: HTMLDivElement) {
+    if (el.scrollTop < NEAR_TOP) void loadOlder();
+  }
+
+  // LIVE면 맨 아래를 따라가고, 창 앞에 과거가 붙었으면 보던 위치를 그대로 둔다.
   useLayoutEffect(() => {
     const el = scroll.current;
     if (!el) return;
-    const last = items[items.length - 1];
-    const sent = last?.kind === 'msg' && last.own && last.id !== lastId.current;
-    lastId.current = last?.id;
+    const first = items[0]?.id;
+    const prepended = !live && !query && firstId.current !== undefined && first !== firstId.current
+      && items.some((item) => item.id === firstId.current);
     if (query) el.scrollTop = 0;
-    else if (atBottom.current || sent) { el.scrollTop = el.scrollHeight; atBottom.current = true; }
-    setShowBottom(!query && !atBottom.current);
-  }, [items, query]);
+    else if (prepended) el.scrollTop += el.scrollHeight - height.current;
+    else if (live) el.scrollTop = el.scrollHeight;
+    firstId.current = first;
+    height.current = el.scrollHeight;
+    if (!query) loadNearEdge(el);
+  }, [items, query, live]);
 
   function onScroll() {
     const el = scroll.current;
     if (!el || query) return;
-    atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP;
-    setShowBottom(!atBottom.current);
+    height.current = el.scrollHeight;
+    setLive(el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLOP);
+    loadNearEdge(el);
   }
 
   function toBottom() {
     const el = scroll.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-    atBottom.current = true;
-    setShowBottom(false);
+    setLive(true);
   }
 
   return (
@@ -55,7 +62,7 @@ export default function MessageList() {
           return <Message key={item.id} message={item} lead={lead} afterNotice={settings.presence && prev?.kind === 'presence'} />;
         })}
       </div>
-      {showBottom && (
+      {!query && !live && (
         <button className={styles.toBottom} aria-label="맨 아래로" onClick={toBottom}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
