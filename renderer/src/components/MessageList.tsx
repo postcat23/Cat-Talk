@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useUi } from '../state/UiContext';
 import { useChat, type Focus } from '../hooks/useChatView';
+import Cat from './Cat';
 import Message from './Message';
 import styles from './MessageList.module.css';
 
@@ -9,7 +10,7 @@ const NEAR_TOP = 200;   // 맨 위에서 이 거리 안에 들어오면 과거�
 
 export default function MessageList() {
   const { settings } = useUi();
-  const { items, query, live, focus, setLive, loadOlder, loadNewer, jumpTo } = useChat();
+  const { items, query, live, focus, newest, setLive, loadOlder, loadNewer, jumpTo } = useChat();
   const scroll = useRef<HTMLDivElement>(null);
   const firstId = useRef<string | undefined>(undefined);
   const height = useRef(0);   // 직전 scrollHeight: 과거 페이지가 붙은 만큼 scrollTop을 보정한다
@@ -75,11 +76,17 @@ export default function MessageList() {
             jumped={item.id === focus?.id} onJump={query && seq !== undefined ? () => void jumpTo(seq) : undefined} />;
         })}
       </div>
-      {!query && !live && (
+      {!query && !live && (newest ? (
+        <button className={`${styles.toBottom} ${styles.preview}`} aria-label={`맨 아래로: ${newest.author.name} ${newest.text}`} onClick={() => setLive(true)}>
+          {!settings.clearCats && <span className={newest.author.avatar ? `${styles.pcat} ${styles.stand}` : styles.pcat}><Cat src={newest.author.avatar} framing="sprite" /></span>}
+          <span className={styles.pname}>{newest.author.name}</span>
+          <span className={styles.pbody}>{newest.text}</span>
+        </button>
+      ) : (
         <button className={styles.toBottom} aria-label="맨 아래로" onClick={() => setLive(true)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
-      )}
+      ))}
     </>
   );
 }

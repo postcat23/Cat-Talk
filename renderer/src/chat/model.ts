@@ -132,9 +132,11 @@ function clock(received: number) {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
+export const isPresence = (m: ViewMessage) => m.kind === 'member_joined' || m.kind === 'member_left';
+
 export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatItem[] {
   return view.messages.map((m): ChatItem => {
-    if (m.kind === 'member_joined' || m.kind === 'member_left') {
+    if (isPresence(m)) {
       const name = m.name || '이름 확인 중';
       return { kind: 'presence', id: m.id, text: `${name}님이 ${m.kind === 'member_joined' ? '들어왔습니다.' : '나갔습니다.'}` };
     }

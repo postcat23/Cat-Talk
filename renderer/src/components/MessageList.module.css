@@ -10,3 +10,11 @@
   border:1px solid color-mix(in srgb, var(--fg) 22%, var(--surface));border-radius:50%;background:var(--surface);color:var(--fg);box-shadow:0 2px 6px rgba(0,0,0,.16);cursor:pointer}
 .toBottom:hover{background:color-mix(in srgb, var(--fg) 8%, var(--surface))}
 .toBottom svg{width:16px;height:16px}
+/* 위로 올려 읽는 중 새 메시지가 있으면 ↓ 대신. 글자는 말풍선·닉네임과 같은 크기, 양쪽 14px는 대화 영역 여백.
+   줄바꿈은 nowrap이 공백으로 접고, 닉네임이 길어도 본문이 남게 닉네임 폭을 제한한다. 수치는 스크린샷 확인 후 확정 */
+.preview{width:max-content;max-width:calc(100% - 28px);height:auto;display:flex;align-items:center;gap:8px;padding:5px 12px 5px 9px;border-radius:14px;font:inherit;line-height:1.5}
+.pcat{width:24px;height:24px;display:grid;place-items:center;font-size:14px;flex:none}
+/* 실아바타: 콘텐츠 bbox 박스를 카드 아래 안쪽 경계에 닿게(아래 패딩 5px 상쇄), 반응 카드처럼 좌우 반전 */
+.stand{--sprite-w:28px;width:auto;height:auto;align-self:flex-end;margin-bottom:-5px;font-size:0;line-height:0;transform:scaleX(-1)}
+.pname{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:12.5px}
+.pbody{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}

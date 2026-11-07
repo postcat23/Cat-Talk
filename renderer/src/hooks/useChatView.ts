@@ -3,8 +3,8 @@ import { rpc } from '../rpc';
 import { useUi, type Settings } from '../state/UiContext';
 import { errorText, noticeText, PROFILE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
-  accountStatus, connState, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
-  type AvatarLookup, type ChatItem, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
+  accountStatus, connState, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
+  type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
 } from '../chat/model';
 import type { ReactionStack } from './useReactionStack';
 
@@ -42,6 +42,7 @@ export interface Chat {
   query: string;
   live: boolean;   // 바닥에서 최신을 따라가는 중. 아니면 창을 고정한다
   focus: Focus | null;
+  newest: ChatMessage | null;   // HISTORY 창 밖의 가장 최신 메시지. 없거나 LIVE·검색 중이면 null
   byId(uid: string): Participant | undefined;
   setQuery(query: string): void;
   setLive(live: boolean): void;
@@ -67,6 +68,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [results, setResults] = useState<ViewMessage[] | null>(null);   // 첫 응답 전에는 창을 그대로 둬 스크롤 위치를 잃지 않는다
   const [live, setLiveState] = useState(true);
   const [focus, setFocus] = useState<Focus | null>(null);
+  const [latest, setLatest] = useState<ViewMessage | null>(null);   // HISTORY 폴링이 받은 최신 메시지
 
   const viewRef = useRef<ViewResponse | null>(null);
   const queryRef = useRef('');
@@ -174,6 +176,9 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
         applyTimeline(EMPTY_TIMELINE);
         if (!liveRef.current) { resetLive.current(); return; }
       }
+      // 저장 안 된 메시지는 latest_seq를 바꾸지 않아 signature 비교 전에 받는다. 맨 끝이 입퇴장 행이면 직전 메시지를 유지한다
+      const newest = !q && !liveRef.current ? data.messages.filter((m) => !isPresence(m)).at(-1) : undefined;
+      if (newest) setLatest((current) => (current?.id === newest.id ? current : newest));
       // 설정은 시작 시 1회만 받는다. 이후로는 렌더러가 값을 쥐고 저장만 요청한다(폴링이 조작을 되돌리지 않게).
       if (!hydrated.current) {
         hydrated.current = true;
@@ -219,7 +224,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     setLiveState(next);
     version.current++;   // 이전 모드로 보낸 폴링 응답이 창을 건드리지 않게 한다
     signature.current = '';
-    if (next) { liveLimit.current = PAGE_SIZE; void poll(); }
+    if (next) { liveLimit.current = PAGE_SIZE; setLatest(null); void poll(); }
   }, [poll]);
   useEffect(() => { resetLive.current = () => setLive(true); }, [setLive]);
 
@@ -357,6 +362,11 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     if (!source) return [];
     return toChatItems({ ...source, messages: (query && results) || timeline.messages }, avatarOf);
   }, [shown, view, query, results, live, timeline, avatarOf]);
+  const newest = useMemo(() => {
+    if (live || query || !view || !latest || timeline.messages.some((m) => m.id === latest.id)) return null;
+    const [item] = toChatItems({ ...view, messages: [latest] }, avatarOf);
+    return item.kind === 'msg' ? item : null;
+  }, [live, query, view, latest, timeline, avatarOf]);
   const participants = useMemo(
     () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf)),
     [shown, avatarOf],
@@ -370,7 +380,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, query, live, focus, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, refresh, saveSettings, saveDraft,
+    items, participants, me, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, refresh, saveSettings, saveDraft,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),
