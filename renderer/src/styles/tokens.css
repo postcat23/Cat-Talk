@@ -4,9 +4,9 @@
   --panel:#f6f6f9; --surface:#ffffff; --fg:#1b1b22; --muted:#6b6b7a;
   --line:rgba(20,20,40,.10);
   --accent:#6d4bd8; --accent-fg:#ffffff;
-  /* --own: 내 말풍선 배경 전용(다른 accent 사용처와 분리). 뮤트 바이올렛 H250·S29%,
-     글자 대비 라이트 #64589f 6.1:1 / 다크 #6b5fa6 4.95:1(--own-fg #f4f1ff) */
-  --peer:#ececef; --own:#64589f; --own-fg:#ffffff;
+  /* --own: 내 말풍선 배경 전용(다른 accent 사용처와 분리). 연라벤더 + 어두운 글자로 상대 말풍선과 색조로 구분.
+     글자 대비 라이트 #e6e0f7 13.3:1(--own-fg = --fg) / 다크 #6b5fa6 4.95:1(--own-fg #f4f1ff) */
+  --peer:#ececef; --own:#e6e0f7; --own-fg:var(--fg);
   --good:#2fa96b; --bad:#d8534f; --idle:#8a8a98;
   --notice:#f0ecff; --notice-fg:#4a3aa0;
   --ui:"Pretendard","Noto Sans KR",system-ui,sans-serif;
