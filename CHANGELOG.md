@@ -74,3 +74,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 입력창에 여러 줄을 쓰면 내용이 다 보여도 스크롤바가 뜨던 문제 수정
 - 최소화 후 복원·표시할 때 항상 위를 다시 적용
 - 여러 줄 메시지가 말풍선에서 한 줄로 이어 보이던 문제 수정
+- 게임 등 다른 프로그램에 다녀오면 입력 언어가 영어로 바뀌던 문제 수정 (Cat Talk에서 쓰던 한/영 상태를 기억해 복귀 시 맞춤)

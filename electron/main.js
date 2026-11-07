@@ -5,6 +5,7 @@ const { execFile, spawn } = require('child_process');
 const windowState = require('./window-state');
 const { createAutoChest, defaultSys } = require('./auto-chest');
 const { countBadge, dotIcon } = require('./badge');
+const { attachImeMemory } = require('./ime-memory');
 
 const REQUEST_TIMEOUT_MS = 5000;
 const DEV = process.env.CATTALK_DEV === '1';
@@ -243,6 +244,7 @@ function createWindow() {
   const keepOnTop = () => { if (win && !win.isDestroyed()) win.setAlwaysOnTop(true); };
   win.on('restore', keepOnTop);
   win.on('show', keepOnTop);
+  attachImeMemory(win);
   setTaskbarHidden(state.hideTaskbar);
   win.on('move', onMove);
   // 투명 영역은 기본 클릭 통과. 렌더러가 패널·탭 위 커서를 알리면 그때만 클릭을 받는다.
