@@ -1,7 +1,6 @@
 /* 카드 기본형은 ReactionStack.module.css의 .card/.rtxt. 이 파일이 뒤에 로드돼 덮어쓴다(NoticeCard.tsx import 순서) */
 .notice{background:var(--notice);color:var(--notice-fg);border-color:transparent;line-height:1.5}
 .rtxt{white-space:normal}
-.line{display:block}
 .action + .x{margin-left:2px}
 .action{margin-left:auto;flex:none;font:inherit;font-size:12px;font-weight:600;border:1px solid currentColor;background:none;color:inherit;border-radius:8px;padding:4px 10px;cursor:pointer}
 .x{margin-left:auto;background:none;border:0;color:inherit;opacity:.6;cursor:pointer;font-size:16px;flex:none;padding:0 2px}
