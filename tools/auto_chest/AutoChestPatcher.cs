@@ -2,12 +2,14 @@
 // 게임 어셈블리를 로드·실행하지 않는다. 패치 세트 버전: 1 = 상자 자동 오픈만, 2 = 상자 자동 오픈 + 투명화.
 // 상자 자동 오픈(D-019): Shop.TimerUpdate 상태머신 MoveNext의 "ChestIsReady = true; OnChestReady();" 직후에
 //   "if (File.Exists(<플래그>)) this._shopItem.Buy();"를 삽입한다.
-// 투명화(D-028): 고양이마다 하나인 TranslucentOnHover의 알파 경로에 플래그를 건다. 삽입은 네 곳이다.
+// 투명화(D-028): 고양이마다 하나인 TranslucentOnHover의 알파 경로에 플래그를 건다. 삽입은 여섯 곳이다.
 //   SetTranslucentSmooth: 플래그가 있으면 목표 알파 0(타이머·호버 복귀도 이 경로라 함께 막힌다).
 //     클릭 통과는 게임 경로 그대로다: 목표 알파가 1이 아니면 게임이 Ignore Raycast 레이어로 바꾸고, 창 판정이 이 레이어를 뺀다.
 //   SetLayerRecursively: 투명화 중에는 CanvasGroup 안의 클릭 예외(상점·인벤토리 등)도 레이어를 바꾸고, UI로 복원할 때 함께 되돌린다.
 //   Start: 플래그가 있으면 새 고양이를 번쩍임 없이 곧바로 투명하게 한다.
 //   TranslucentOnHoverSetting.Update: 0.5초마다 플래그 변화를 보고 OnSetTranslucent로 전체에 알린다.
+//   호버 두 곳: 게임 호버 판정은 Ignore Raycast도 호버로 쳐서, 투명한 고양이 위에서 이모트 도넛·말풍선이 열린다.
+//     OnUIHoverCallback.IsPointerOverUIElement와 OnSpecificUIHoverCallback의 결과 필터에서 투명화 중에는 레이어 2를 뺀다.
 // 게임 런타임 어셈블리는 스트리핑돼 공개 Unity API도 없을 수 있다(실측: CanvasGroup.set_blocksRaycasts 없음).
 // 그래서 patch·verify는 결과의 모든 참조를 게임 Managed 폴더에서 해석해 보고, 하나라도 안 되면 거부한다.
 // 명령: inspect <dll> | patch <in> <out> <flag> <managedDir> | verify <orig> <patched> <flag> <managedDir>
@@ -42,6 +44,10 @@ sealed class Target {
     internal int SmoothAnchor;              // SetTranslucentSmooth에서 목표 알파를 저장하는 stloc.0 위치
     internal int LayerAnchor;               // SetLayerRecursively에서 클릭 예외면 반환하는 분기(brfalse) 위치
     internal List<int> SmoothMarkers, LayerMarkers, StartMarkers, UpdateMarkers;
+    internal MethodDefinition OverUI, HoverFilter;      // 호버 판정, 고양이별 호버 결과 필터
+    internal MethodReference ResultGameObject, GetLayer;
+    internal int OverUIAnchor;              // IsPointerOverUIElement에서 "Ignore Raycast가 아니면 다음 결과로" 분기(bne.un) 위치
+    internal List<int> OverUIMarkers, FilterMarkers;
 
     internal const string FlagName = "CatTalkAutoChest.on";
     internal const string TransparentFlagName = "CatTalkTransparent.on";
@@ -51,6 +57,8 @@ sealed class Target {
     internal const int SmoothInsert = 5, LayerInsert = 12, StartInsert = 10, UpdateInsert = 22;   // 삽입 명령 수
     internal const int SmoothMarkerAt = 0, UpdateMarkerAt = 7;                  // 삽입 블록 안의 ldstr 위치
     internal const int LayerMarkerAt = 6;                                       // 레이어 블록 안의 ldsfld CatTalkTransparent 위치
+    internal const int OverUIInsert = 2, FilterInsert = 9;                      // 호버 블록(마커 = 첫 명령 ldsfld CatTalkTransparent)
+    internal const int IgnoreRaycastLayer = 2;                                  // Unity 고정 레이어. 게임 클릭 판정도 상수 2를 쓴다
 
     static T One<T>(IEnumerable<T> items, string code) where T : class {
         var list = items.ToList();
@@ -127,6 +135,10 @@ sealed class Target {
         GetTransform = One(refs.Where(m => m.Name == "get_transform" && m.DeclaringType.FullName == "UnityEngine.Component" && m.Parameters.Count == 0), "component_get_transform");
         IsChildOf = One(refs.Where(m => m.Name == "IsChildOf" && m.DeclaringType.FullName == "UnityEngine.Transform" && m.Parameters.Count == 1), "transform_ischildof");
 
+        ResultGameObject = One(refs.Where(m => m.Name == "get_gameObject" && m.DeclaringType.FullName == "UnityEngine.EventSystems.RaycastResult"), "raycastresult_gameobject");
+        GetLayer = One(refs.Where(m => m.Name == "get_layer" && m.DeclaringType.FullName == "UnityEngine.GameObject"), "gameobject_get_layer");
+        FindHoverCallbacks(module);
+
         var smooth = Smooth.Body.Instructions;
         SmoothMarkers = FindMarkers(smooth, TransparentFlagName);
         var layer = Layer.Body.Instructions;
@@ -160,12 +172,42 @@ sealed class Target {
         if (!start.Any(i => i.OpCode == OpCodes.Stsfld && Same(i.Operand as FieldReference, OnSetTranslucent))) throw new Incompatible("hover_start_subscribe");
     }
 
+    void FindHoverCallbacks(ModuleDefinition module) {
+        var hoverCb = One(module.GetTypes().Where(x => x.FullName == "OnUIHoverCallback"), "uihover_type");
+        OverUI = One(hoverCb.Methods.Where(m => m.Name == "IsPointerOverUIElement" && !m.IsStatic && m.HasBody && m.Parameters.Count == 0 && m.ReturnType.MetadataType == MetadataType.Boolean), "uihover_overui");
+        var ignore = One(hoverCb.Fields.Where(f => f.Name == "_ignoreLayer" && !f.IsStatic && f.FieldType.MetadataType == MetadataType.Int32), "uihover_ignore_field");
+        var ui = One(hoverCb.Fields.Where(f => f.Name == "_uiLayer" && !f.IsStatic && f.FieldType.MetadataType == MetadataType.Int32), "uihover_ui_field");
+        var specific = One(module.GetTypes().Where(x => x.FullName == "BongoCat.OnSpecificUIHoverCallback"), "specifichover_type");
+        // 결과 필터는 컴파일러가 만든 람다라 이름(<Recalculate>b__5_0)이 빌드마다 바뀔 수 있어 모양으로 찾는다
+        HoverFilter = One(specific.Methods.Where(m => !m.IsStatic && m.HasBody && m.ReturnType.MetadataType == MetadataType.Boolean && m.Parameters.Count == 1
+            && m.Parameters[0].ParameterType.FullName == "UnityEngine.EventSystems.RaycastResult"
+            && m.Body.Instructions.Any(i => { var r = i.Operand as MethodReference; return r != null && r.Name == "IsChildOf"; })), "specifichover_filter");
+
+        var over = OverUI.Body.Instructions;
+        OverUIMarkers = Enumerable.Range(0, over.Count).Where(i => over[i].OpCode == OpCodes.Ldsfld && IsStateField(over[i].Operand as FieldReference)).ToList();
+        var gates = Enumerable.Range(0, over.Count - 1).Where(i => over[i].OpCode == OpCodes.Ldfld && Same(over[i].Operand as FieldReference, ignore)
+            && (over[i + 1].OpCode == OpCodes.Bne_Un_S || over[i + 1].OpCode == OpCodes.Bne_Un)).ToList();
+        if (gates.Count != 1) throw new Incompatible("uihover_overui_gate_" + gates.Count);
+        OverUIAnchor = gates[0] + 1;
+        // 원본: bne.un 바로 다음이 UI 레이어 분기(beq)의 대상(= 호버 처리 시작)이다
+        bool uiJoins = Enumerable.Range(1, over.Count - 1).Any(j => (over[j].OpCode == OpCodes.Beq_S || over[j].OpCode == OpCodes.Beq)
+            && over[j - 1].OpCode == OpCodes.Ldfld && Same(over[j - 1].Operand as FieldReference, ui)
+            && over[j].Operand == over[OverUIAnchor + 1 + (OverUIMarkers.Count == 0 ? 0 : OverUIInsert)]);
+        if (!uiJoins) throw new Incompatible("uihover_overui_shape");
+
+        var filter = HoverFilter.Body.Instructions;
+        FilterMarkers = Enumerable.Range(0, filter.Count).Where(i => filter[i].OpCode == OpCodes.Ldsfld && IsStateField(filter[i].Operand as FieldReference)).ToList();
+    }
+
     // 투명화 훅이 전부 제자리에 있는지. 전부 없으면 false, 일부만 있으면 호환 안 됨.
     internal bool TransparentHooked {
         get {
-            bool any = SmoothMarkers.Count + LayerMarkers.Count + StartMarkers.Count + UpdateMarkers.Count > 0 || StateField != null || NextPollField != null;
+            bool any = SmoothMarkers.Count + LayerMarkers.Count + StartMarkers.Count + UpdateMarkers.Count + OverUIMarkers.Count + FilterMarkers.Count > 0
+                || StateField != null || NextPollField != null;
             if (!any) return false;
             bool whole = SmoothMarkers.Count == 1 && SmoothMarkers[0] == SmoothAnchor + 1 + SmoothMarkerAt
+                && OverUIMarkers.Count == 1 && OverUIMarkers[0] == OverUIAnchor + 1
+                && FilterMarkers.Count == 1 && FilterMarkers[0] == 0
                 && LayerMarkers.Count == 1 && LayerMarkers[0] == LayerAnchor + 1 + LayerMarkerAt
                 && StartMarkers.Count == 1 && StartMarkers[0] == HoverStart.Body.Instructions.Count - 1 - StartInsert
                 && UpdateMarkers.Count == 1 && UpdateMarkers[0] == UpdateMarkerAt
@@ -209,7 +251,7 @@ sealed class Target {
     static bool Same(MethodReference a, MethodDefinition b) { return a != null && a.Name == b.Name && a.DeclaringType.FullName == b.DeclaringType.FullName && a.Parameters.Count == b.Parameters.Count; }
 
     // 패치가 본문을 바꾸는 메서드 전부.
-    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate }; } }
+    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate, OverUI, HoverFilter }; } }
 
     // 삽입 시퀀스(분기 대상 제외). Buy가 non-void면 pop 포함.
     internal int InsertLength { get { return Buy.ReturnType.MetadataType == MetadataType.Void ? 7 : 8; } }
@@ -462,8 +504,36 @@ static class Program {
         };
         InsertBefore(il, first, seqUpdate);
 
-        foreach (var body in new[] { smooth, layer, start, update }) if (body.MaxStackSize < 3) body.MaxStackSize = 3;
-        return seqSmooth.Count + seqLayer.Count + seqStart.Count + seqUpdate.Count;
+        // IsPointerOverUIElement: Ignore Raycast 결과에서 "if (CatTalkTransparent) 다음 결과로" — 투명화 중 고양이는 호버가 아니다.
+        var over = t.OverUI.Body;
+        il = over.GetILProcessor();
+        var notIgnore = over.Instructions[t.OverUIAnchor];
+        var seqOver = new List<Instruction> {
+            il.Create(OpCodes.Ldsfld, state),
+            il.Create(OpCodes.Brtrue_S, (Instruction)notIgnore.Operand),
+        };
+        InsertAfter(il, notIgnore, seqOver);
+
+        // 고양이별 결과 필터 처음: if (CatTalkTransparent && r.gameObject.layer == 2) return false;
+        // (판정에서 빠져도 호버 해제 순간 이전 결과 목록이 이 필터로 넘어오므로 여기서도 뺀다)
+        var filter = t.HoverFilter.Body;
+        il = filter.GetILProcessor();
+        var original = filter.Instructions[0];
+        var seqFilter = new List<Instruction> {
+            il.Create(OpCodes.Ldsfld, state),
+            il.Create(OpCodes.Brfalse_S, original),
+            il.Create(OpCodes.Ldarga_S, t.HoverFilter.Parameters[0]),
+            il.Create(OpCodes.Call, t.ResultGameObject),
+            il.Create(OpCodes.Callvirt, t.GetLayer),
+            il.Create(OpCodes.Ldc_I4_2),
+            il.Create(OpCodes.Bne_Un_S, original),
+            il.Create(OpCodes.Ldc_I4_0),
+            il.Create(OpCodes.Ret),
+        };
+        InsertBefore(il, original, seqFilter);
+
+        foreach (var body in new[] { smooth, layer, start, update, over, filter }) if (body.MaxStackSize < 3) body.MaxStackSize = 3;
+        return seqSmooth.Count + seqLayer.Count + seqStart.Count + seqUpdate.Count + seqOver.Count + seqFilter.Count;
     }
 
     static readonly Dictionary<Code, OpCode> LongForm = new Dictionary<Code, OpCode> {
@@ -583,6 +653,8 @@ static class Program {
             { ta.MoveNext.FullName, new[] { tb.AnchorIndex + 1, tb.InsertLength } },
             { ta.Smooth.FullName, new[] { tb.SmoothAnchor + 1, Target.SmoothInsert } },
             { ta.Layer.FullName, new[] { tb.LayerAnchor + 1, Target.LayerInsert } },
+            { ta.OverUI.FullName, new[] { tb.OverUIAnchor + 1, Target.OverUIInsert } },
+            { ta.HoverFilter.FullName, new[] { 0, Target.FilterInsert } },
             { ta.HoverStart.FullName, new[] { tb.HoverStart.Body.Instructions.Count - 1 - Target.StartInsert, Target.StartInsert } },
             { ta.SettingUpdate.FullName, new[] { 0, Target.UpdateInsert } },
         };
@@ -658,8 +730,22 @@ static class Program {
             && t.LayerAnchor + 1 + Target.LayerInsert < t.Layer.Body.Instructions.Count
             && t.Layer.Body.Instructions[t.LayerAnchor + 1 + Target.LayerInsert].OpCode == OpCodes.Ret
             && t.StateField.IsAssembly
+            && HoverSequencesOk(t)
             && Matches(t.HoverStart.Body, t.HoverStart.Body.Instructions.Count - 1 - Target.StartInsert, start)
             && Matches(t.SettingUpdate.Body, 0, update);
+    }
+
+    static bool HoverSequencesOk(Target t) {
+        const string on = "ldsfld TranslucentOnHoverSetting::" + Target.StateFieldName;
+        var over = t.OverUI.Body.Instructions;
+        int a = t.OverUIAnchor;
+        // 판정 블록: 켜져 있으면 bne.un과 같은 곳(다음 결과)으로
+        bool overOk = a + Target.OverUIInsert < over.Count
+            && Brief(over[a + 1], over, a + 1) == on
+            && (over[a + 2].OpCode == OpCodes.Brtrue_S || over[a + 2].OpCode == OpCodes.Brtrue) && over[a + 2].Operand == over[a].Operand;
+        var filter = new[] { on, "brfalse.s +9", "ldarga.s " + t.HoverFilter.Parameters[0].Name, "call RaycastResult::get_gameObject",
+            "callvirt GameObject::get_layer", "ldc.i4.2", "bne.un.s +9", "ldc.i4.0", "ret" };
+        return overOk && Matches(t.HoverFilter.Body, 0, filter);
     }
 
     // ---- backup/restore: clean일 때만 백업, SHA-256 기록. 복원은 SHA·clean 확인 후 byte-exact 복사 ----

@@ -11,6 +11,16 @@ static class TestMutate {
         return m.GetTypes().Single(t => t.FullName == type).Methods.Single(x => x.Name == name);
     }
 
+    static MethodDefinition Filter(ModuleDefinition m) {
+        return m.GetTypes().Single(t => t.FullName == "BongoCat.OnSpecificUIHoverCallback").Methods
+            .Single(x => x.Parameters.Count == 1 && x.Parameters[0].ParameterType.FullName == "UnityEngine.EventSystems.RaycastResult");
+    }
+
+    // 켜짐 상태 읽기(ldsfld CatTalkTransparent)를 다른 필드로 바꿔 그 자리의 훅만 없는 것처럼 만든다.
+    static void StateToOther(ModuleDefinition m, TypeDefinition setting, MethodDefinition method) {
+        method.Body.Instructions.Single(i => i.OpCode == OpCodes.Ldsfld && ((FieldReference)i.Operand).Name == "CatTalkTransparent").Operand = setting.Fields.Single(f => f.Name == "CatTalkNextPoll");
+    }
+
     // 마커(ldstr + File.Exists)의 문자열을 바꿔 그 자리의 훅만 없는 것처럼 만든다.
     static void BreakMarker(MethodDefinition method) {
         var ldstr = method.Body.Instructions.Single(i => i.OpCode == OpCodes.Ldstr && ((string)i.Operand).EndsWith("CatTalkTransparent.on"));
@@ -32,6 +42,13 @@ static class TestMutate {
             case "no-smooth": Method(m, "TranslucentOnHover", "SetTranslucentSmooth").Name = "Renamed"; break;
             case "no-update": Method(m, "TranslucentOnHoverSetting", "Update").Name = "Renamed"; break;
             case "no-layer": Method(m, "TranslucentOnHover", "SetLayerRecursively").Name = "Renamed"; break;
+            case "no-overui": Method(m, "OnUIHoverCallback", "IsPointerOverUIElement").Name = "Renamed"; break;
+            case "partial-overui": StateToOther(m, setting, Method(m, "OnUIHoverCallback", "IsPointerOverUIElement")); break;
+            case "partial-filter": StateToOther(m, setting, Filter(m)); break;
+            case "wrong-filter-layer": {   // 필터가 레이어 2 대신 5(UI)를 빼는 블록
+                Filter(m).Body.Instructions.Single(i => i.OpCode == OpCodes.Ldc_I4_2).OpCode = OpCodes.Ldc_I4_5;
+                break;
+            }
             case "no-alpha": hover.Fields.Single(f => f.Name == "_alpha").Name = "_renamed"; break;
             case "extra-anchor": {
                 var il = Method(m, "TranslucentOnHover", "SetTranslucentSmooth").Body.GetILProcessor();
