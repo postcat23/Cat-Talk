@@ -84,20 +84,20 @@ Run '11j restore over upgraded' 0 @('restore', (Join-Path $Work 'bak'), $target)
 Check '11k restored == original bytes' ((Sha $target) -eq $origSha) ''
 Run '11l backup of v1 -> refuse' 2 @('backup', $v1, (Join-Path $Work 'misc/bak1'))
 
-foreach ($m in 'no-hover-type','no-smooth','no-layer','no-update','no-overui','no-alpha','extra-anchor') {
+foreach ($m in 'no-hover-type','no-smooth','no-layer','no-update','no-overui','no-donut','no-speech','no-alpha','extra-anchor') {
   $bad = Join-Path $Work "mut/$m.dll"; & $mutate $orig $bad $m
   Run "12 clean, $m -> inspect refuse" 2 @('inspect', $bad)
   Run "12 clean, $m -> patch refuse" 2 @('patch', $bad, (Join-Path $Work "misc/$m.dll"), $flag, $mg)
   Check "12 clean, $m wrote nothing" (!(Test-Path (Join-Path $Work "misc/$m.dll"))) ''
 }
-foreach ($m in 'partial-smooth','partial-layer','partial-start','partial-update','partial-overui','partial-filter','partial-field') {
+foreach ($m in 'partial-smooth','partial-layer','partial-start','partial-update','partial-overui','partial-filter','partial-donut','partial-speech','partial-field') {
   $bad = Join-Path $Work "mut/$m.dll"; & $mutate $patched $bad $m
   Run "13 $m -> inspect refuse" 2 @('inspect', $bad)
   Run "13 $m -> verify refuse" 2 @('verify', $orig, $bad, $flag, $mg)
   Run "13 $m -> patch refuse" 2 @('patch', $bad, (Join-Path $Work "misc/$m.dll"), $flag, $mg)
   Run "13 $m -> backup refuse" 2 @('backup', $bad, (Join-Path $Work "misc/bak-$m"))
 }
-foreach ($m in 'wrong-alpha','wrong-layer','wrong-poll','wrong-filter-layer','edit-outside-block','edit-other-method') {
+foreach ($m in 'wrong-alpha','wrong-layer','wrong-poll','wrong-filter-layer','wrong-donut-target','edit-outside-block','edit-other-method') {
   $bad = Join-Path $Work "mut/$m.dll"; & $mutate $patched $bad $m
   Run "14 $m -> inspect still reads v2" 0 @('inspect', $bad)
   Run "14 $m -> verify refuse" 2 @('verify', $orig, $bad, $flag, $mg)

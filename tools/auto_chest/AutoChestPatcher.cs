@@ -2,14 +2,16 @@
 // 게임 어셈블리를 로드·실행하지 않는다. 패치 세트 버전: 1 = 상자 자동 오픈만, 2 = 상자 자동 오픈 + 투명화.
 // 상자 자동 오픈(D-019): Shop.TimerUpdate 상태머신 MoveNext의 "ChestIsReady = true; OnChestReady();" 직후에
 //   "if (File.Exists(<플래그>)) this._shopItem.Buy();"를 삽입한다.
-// 투명화(D-028): 고양이마다 하나인 TranslucentOnHover의 알파 경로에 플래그를 건다. 삽입은 여섯 곳이다.
+// 투명화(D-028): 고양이마다 하나인 TranslucentOnHover의 알파 경로에 플래그를 건다. 삽입은 여덟 곳이다.
 //   SetTranslucentSmooth: 플래그가 있으면 목표 알파 0(타이머·호버 복귀도 이 경로라 함께 막힌다).
 //     클릭 통과는 게임 경로 그대로다: 목표 알파가 1이 아니면 게임이 Ignore Raycast 레이어로 바꾸고, 창 판정이 이 레이어를 뺀다.
 //   SetLayerRecursively: 투명화 중에는 CanvasGroup 안의 클릭 예외(상점·인벤토리 등)도 레이어를 바꾸고, UI로 복원할 때 함께 되돌린다.
 //   Start: 플래그가 있으면 새 고양이를 번쩍임 없이 곧바로 투명하게 한다.
 //   TranslucentOnHoverSetting.Update: 0.5초마다 플래그 변화를 보고 OnSetTranslucent로 전체에 알린다.
-//   호버 두 곳: 게임 호버 판정은 Ignore Raycast도 호버로 쳐서, 투명한 고양이 위에서 이모트 도넛·말풍선이 열린다.
+//   호버 두 곳: 게임 호버 판정은 Ignore Raycast도 호버로 쳐서, 투명한 고양이도 호버 상태가 된다(F·R 키, 가운데 클릭 메뉴, 카운터 옆 버튼).
 //     OnUIHoverCallback.IsPointerOverUIElement와 OnSpecificUIHoverCallback의 결과 필터에서 투명화 중에는 레이어 2를 뺀다.
+//   팝업 두 곳: 이모트 도넛·말풍선 버튼은 레이캐스트가 아니라 커서 거리로 열린다(실게임 확인). 게임이 반투명 중에 켜는
+//     TranslucentOnHoverSetting.DisablePopups를 EmoteDonut.Update와 CatSpeech.Update가 읽는 분기에서, 투명화 중에도 꺼진 쪽으로 보낸다.
 // 게임 런타임 어셈블리는 스트리핑돼 공개 Unity API도 없을 수 있다(실측: CanvasGroup.set_blocksRaycasts 없음).
 // 그래서 patch·verify는 결과의 모든 참조를 게임 Managed 폴더에서 해석해 보고, 하나라도 안 되면 거부한다.
 // 명령: inspect <dll> | patch <in> <out> <flag> <managedDir> | verify <orig> <patched> <flag> <managedDir>
@@ -48,6 +50,9 @@ sealed class Target {
     internal MethodReference ResultGameObject, GetLayer;
     internal int OverUIAnchor;              // IsPointerOverUIElement에서 "Ignore Raycast가 아니면 다음 결과로" 분기(bne.un) 위치
     internal List<int> OverUIMarkers, FilterMarkers;
+    internal MethodDefinition DonutUpdate, SpeechUpdate;    // 팝업(이모트 도넛, 말풍선 버튼)
+    internal int DonutAnchor, SpeechAnchor;                 // "if (DisablePopups) 숨김"의 brtrue 위치
+    internal List<int> DonutMarkers, SpeechMarkers;
 
     internal const string FlagName = "CatTalkAutoChest.on";
     internal const string TransparentFlagName = "CatTalkTransparent.on";
@@ -57,7 +62,7 @@ sealed class Target {
     internal const int SmoothInsert = 5, LayerInsert = 12, StartInsert = 10, UpdateInsert = 22;   // 삽입 명령 수
     internal const int SmoothMarkerAt = 0, UpdateMarkerAt = 7;                  // 삽입 블록 안의 ldstr 위치
     internal const int LayerMarkerAt = 6;                                       // 레이어 블록 안의 ldsfld CatTalkTransparent 위치
-    internal const int OverUIInsert = 2, FilterInsert = 9;                      // 호버 블록(마커 = 첫 명령 ldsfld CatTalkTransparent)
+    internal const int OverUIInsert = 2, FilterInsert = 9, PopupInsert = 2;     // 호버·팝업 블록(마커 = 첫 명령 ldsfld CatTalkTransparent)
     internal const int IgnoreRaycastLayer = 2;                                  // Unity 고정 레이어. 게임 클릭 판정도 상수 2를 쓴다
 
     static T One<T>(IEnumerable<T> items, string code) where T : class {
@@ -138,6 +143,7 @@ sealed class Target {
         ResultGameObject = One(refs.Where(m => m.Name == "get_gameObject" && m.DeclaringType.FullName == "UnityEngine.EventSystems.RaycastResult"), "raycastresult_gameobject");
         GetLayer = One(refs.Where(m => m.Name == "get_layer" && m.DeclaringType.FullName == "UnityEngine.GameObject"), "gameobject_get_layer");
         FindHoverCallbacks(module);
+        FindPopups(module);
 
         var smooth = Smooth.Body.Instructions;
         SmoothMarkers = FindMarkers(smooth, TransparentFlagName);
@@ -199,15 +205,43 @@ sealed class Target {
         FilterMarkers = Enumerable.Range(0, filter.Count).Where(i => filter[i].OpCode == OpCodes.Ldsfld && IsStateField(filter[i].Operand as FieldReference)).ToList();
     }
 
+    void FindPopups(ModuleDefinition module) {
+        var disable = One(HoverSetting.Fields.Where(f => f.Name == "DisablePopups" && !f.IsStatic && f.FieldType.MetadataType == MetadataType.Boolean), "hoversetting_disablepopups");
+        var donut = One(module.GetTypes().Where(x => x.FullName == "EmoteDonut"), "donut_type");
+        var speech = One(module.GetTypes().Where(x => x.FullName == "Vfx.CatSpeech"), "speech_type");
+        DonutUpdate = One(donut.Methods.Where(m => m.Name == "Update" && !m.IsStatic && m.HasBody && m.Parameters.Count == 0), "donut_update");
+        SpeechUpdate = One(speech.Methods.Where(m => m.Name == "Update" && !m.IsStatic && m.HasBody && m.Parameters.Count == 0), "speech_update");
+        DonutAnchor = PopupGate(DonutUpdate, disable, "donut_gate_");
+        SpeechAnchor = PopupGate(SpeechUpdate, disable, "speech_gate_");
+        DonutMarkers = StateReads(DonutUpdate);
+        SpeechMarkers = StateReads(SpeechUpdate);
+    }
+
+    // 앵커: ldfld DisablePopups 바로 다음의 brtrue(= 팝업을 숨기는 쪽으로). 메서드에 정확히 하나.
+    static int PopupGate(MethodDefinition m, FieldDefinition disable, string code) {
+        var ins = m.Body.Instructions;
+        var gates = Enumerable.Range(0, ins.Count - 1).Where(i => ins[i].OpCode == OpCodes.Ldfld && Same(ins[i].Operand as FieldReference, disable)
+            && (ins[i + 1].OpCode == OpCodes.Brtrue_S || ins[i + 1].OpCode == OpCodes.Brtrue)).ToList();
+        if (gates.Count != 1) throw new Incompatible(code + gates.Count);
+        return gates[0] + 1;
+    }
+
+    static List<int> StateReads(MethodDefinition m) {
+        var ins = m.Body.Instructions;
+        return Enumerable.Range(0, ins.Count).Where(i => ins[i].OpCode == OpCodes.Ldsfld && IsStateField(ins[i].Operand as FieldReference)).ToList();
+    }
+
     // 투명화 훅이 전부 제자리에 있는지. 전부 없으면 false, 일부만 있으면 호환 안 됨.
     internal bool TransparentHooked {
         get {
-            bool any = SmoothMarkers.Count + LayerMarkers.Count + StartMarkers.Count + UpdateMarkers.Count + OverUIMarkers.Count + FilterMarkers.Count > 0
-                || StateField != null || NextPollField != null;
+            bool any = SmoothMarkers.Count + LayerMarkers.Count + StartMarkers.Count + UpdateMarkers.Count + OverUIMarkers.Count + FilterMarkers.Count
+                + DonutMarkers.Count + SpeechMarkers.Count > 0 || StateField != null || NextPollField != null;
             if (!any) return false;
             bool whole = SmoothMarkers.Count == 1 && SmoothMarkers[0] == SmoothAnchor + 1 + SmoothMarkerAt
                 && OverUIMarkers.Count == 1 && OverUIMarkers[0] == OverUIAnchor + 1
                 && FilterMarkers.Count == 1 && FilterMarkers[0] == 0
+                && DonutMarkers.Count == 1 && DonutMarkers[0] == DonutAnchor + 1
+                && SpeechMarkers.Count == 1 && SpeechMarkers[0] == SpeechAnchor + 1
                 && LayerMarkers.Count == 1 && LayerMarkers[0] == LayerAnchor + 1 + LayerMarkerAt
                 && StartMarkers.Count == 1 && StartMarkers[0] == HoverStart.Body.Instructions.Count - 1 - StartInsert
                 && UpdateMarkers.Count == 1 && UpdateMarkers[0] == UpdateMarkerAt
@@ -251,7 +285,7 @@ sealed class Target {
     static bool Same(MethodReference a, MethodDefinition b) { return a != null && a.Name == b.Name && a.DeclaringType.FullName == b.DeclaringType.FullName && a.Parameters.Count == b.Parameters.Count; }
 
     // 패치가 본문을 바꾸는 메서드 전부.
-    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate, OverUI, HoverFilter }; } }
+    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate, OverUI, HoverFilter, DonutUpdate, SpeechUpdate }; } }
 
     // 삽입 시퀀스(분기 대상 제외). Buy가 non-void면 pop 포함.
     internal int InsertLength { get { return Buy.ReturnType.MetadataType == MetadataType.Void ? 7 : 8; } }
@@ -506,13 +540,7 @@ static class Program {
 
         // IsPointerOverUIElement: Ignore Raycast 결과에서 "if (CatTalkTransparent) 다음 결과로" — 투명화 중 고양이는 호버가 아니다.
         var over = t.OverUI.Body;
-        il = over.GetILProcessor();
-        var notIgnore = over.Instructions[t.OverUIAnchor];
-        var seqOver = new List<Instruction> {
-            il.Create(OpCodes.Ldsfld, state),
-            il.Create(OpCodes.Brtrue_S, (Instruction)notIgnore.Operand),
-        };
-        InsertAfter(il, notIgnore, seqOver);
+        var seqOver = BranchAlsoWhenOn(over, t.OverUIAnchor, state);
 
         // 고양이별 결과 필터 처음: if (CatTalkTransparent && r.gameObject.layer == 2) return false;
         // (판정에서 빠져도 호버 해제 순간 이전 결과 목록이 이 필터로 넘어오므로 여기서도 뺀다)
@@ -532,8 +560,26 @@ static class Program {
         };
         InsertBefore(il, original, seqFilter);
 
-        foreach (var body in new[] { smooth, layer, start, update, over, filter }) if (body.MaxStackSize < 3) body.MaxStackSize = 3;
-        return seqSmooth.Count + seqLayer.Count + seqStart.Count + seqUpdate.Count + seqOver.Count + seqFilter.Count;
+        // 팝업: "if (DisablePopups) 숨김" 다음에 "if (CatTalkTransparent) 숨김" — 이모트 도넛은 닫히고 말풍선 버튼은 감춰진다.
+        var donut = t.DonutUpdate.Body;
+        var speech = t.SpeechUpdate.Body;
+        var seqDonut = BranchAlsoWhenOn(donut, t.DonutAnchor, state);
+        var seqSpeech = BranchAlsoWhenOn(speech, t.SpeechAnchor, state);
+
+        foreach (var body in new[] { smooth, layer, start, update, over, filter, donut, speech }) if (body.MaxStackSize < 3) body.MaxStackSize = 3;
+        return seqSmooth.Count + seqLayer.Count + seqStart.Count + seqUpdate.Count + seqOver.Count + seqFilter.Count + seqDonut.Count + seqSpeech.Count;
+    }
+
+    // 조건 분기(anchor) 바로 뒤에 "if (CatTalkTransparent) 같은 대상으로"를 넣는다. 꺼져 있으면 원래 흐름 그대로다.
+    static List<Instruction> BranchAlsoWhenOn(MethodBody body, int anchor, FieldDefinition state) {
+        var il = body.GetILProcessor();
+        var gate = body.Instructions[anchor];
+        var seq = new List<Instruction> {
+            il.Create(OpCodes.Ldsfld, state),
+            il.Create(OpCodes.Brtrue_S, (Instruction)gate.Operand),
+        };
+        InsertAfter(il, gate, seq);
+        return seq;
     }
 
     static readonly Dictionary<Code, OpCode> LongForm = new Dictionary<Code, OpCode> {
@@ -655,6 +701,8 @@ static class Program {
             { ta.Layer.FullName, new[] { tb.LayerAnchor + 1, Target.LayerInsert } },
             { ta.OverUI.FullName, new[] { tb.OverUIAnchor + 1, Target.OverUIInsert } },
             { ta.HoverFilter.FullName, new[] { 0, Target.FilterInsert } },
+            { ta.DonutUpdate.FullName, new[] { tb.DonutAnchor + 1, Target.PopupInsert } },
+            { ta.SpeechUpdate.FullName, new[] { tb.SpeechAnchor + 1, Target.PopupInsert } },
             { ta.HoverStart.FullName, new[] { tb.HoverStart.Body.Instructions.Count - 1 - Target.StartInsert, Target.StartInsert } },
             { ta.SettingUpdate.FullName, new[] { 0, Target.UpdateInsert } },
         };
@@ -737,15 +785,18 @@ static class Program {
 
     static bool HoverSequencesOk(Target t) {
         const string on = "ldsfld TranslucentOnHoverSetting::" + Target.StateFieldName;
-        var over = t.OverUI.Body.Instructions;
-        int a = t.OverUIAnchor;
-        // 판정 블록: 켜져 있으면 bne.un과 같은 곳(다음 결과)으로
-        bool overOk = a + Target.OverUIInsert < over.Count
-            && Brief(over[a + 1], over, a + 1) == on
-            && (over[a + 2].OpCode == OpCodes.Brtrue_S || over[a + 2].OpCode == OpCodes.Brtrue) && over[a + 2].Operand == over[a].Operand;
         var filter = new[] { on, "brfalse.s +9", "ldarga.s " + t.HoverFilter.Parameters[0].Name, "call RaycastResult::get_gameObject",
             "callvirt GameObject::get_layer", "ldc.i4.2", "bne.un.s +9", "ldc.i4.0", "ret" };
-        return overOk && Matches(t.HoverFilter.Body, 0, filter);
+        // 판정 블록은 bne.un과 같은 곳(다음 결과)으로, 팝업 블록은 DisablePopups의 brtrue와 같은 곳(숨김)으로
+        return BranchesAlsoWhenOn(t.OverUI.Body, t.OverUIAnchor) && Matches(t.HoverFilter.Body, 0, filter)
+            && BranchesAlsoWhenOn(t.DonutUpdate.Body, t.DonutAnchor) && BranchesAlsoWhenOn(t.SpeechUpdate.Body, t.SpeechAnchor);
+    }
+
+    static bool BranchesAlsoWhenOn(MethodBody body, int a) {
+        var ins = body.Instructions;
+        return a + 2 < ins.Count
+            && Brief(ins[a + 1], ins, a + 1) == "ldsfld TranslucentOnHoverSetting::" + Target.StateFieldName
+            && (ins[a + 2].OpCode == OpCodes.Brtrue_S || ins[a + 2].OpCode == OpCodes.Brtrue) && ins[a + 2].Operand == ins[a].Operand;
     }
 
     // ---- backup/restore: clean일 때만 백업, SHA-256 기록. 복원은 SHA·clean 확인 후 byte-exact 복사 ----

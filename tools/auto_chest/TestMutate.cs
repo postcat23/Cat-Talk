@@ -45,6 +45,16 @@ static class TestMutate {
             case "no-overui": Method(m, "OnUIHoverCallback", "IsPointerOverUIElement").Name = "Renamed"; break;
             case "partial-overui": StateToOther(m, setting, Method(m, "OnUIHoverCallback", "IsPointerOverUIElement")); break;
             case "partial-filter": StateToOther(m, setting, Filter(m)); break;
+            case "no-donut": Method(m, "EmoteDonut", "Update").Name = "Renamed"; break;
+            case "no-speech": Method(m, "Vfx.CatSpeech", "Update").Name = "Renamed"; break;
+            case "partial-donut": StateToOther(m, setting, Method(m, "EmoteDonut", "Update")); break;
+            case "partial-speech": StateToOther(m, setting, Method(m, "Vfx.CatSpeech", "Update")); break;
+            case "wrong-donut-target": {   // 팝업 블록이 숨김 쪽이 아니라 바로 다음 명령으로 가는 블록(마커는 그대로)
+                var body = Method(m, "EmoteDonut", "Update").Body.Instructions;
+                var marker = body.Single(i => i.OpCode == OpCodes.Ldsfld && ((FieldReference)i.Operand).Name == "CatTalkTransparent");
+                marker.Next.Operand = marker.Next.Next;
+                break;
+            }
             case "wrong-filter-layer": {   // 필터가 레이어 2 대신 5(UI)를 빼는 블록
                 Filter(m).Body.Instructions.Single(i => i.OpCode == OpCodes.Ldc_I4_2).OpCode = OpCodes.Ldc_I4_5;
                 break;
