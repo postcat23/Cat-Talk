@@ -36,8 +36,8 @@ function Seg<T extends string>({ options, value, onChange }: { options: Option<T
   );
 }
 
-function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
-  return <button className={on ? `${styles.sw} ${styles.on}` : styles.sw} role="switch" aria-checked={on} aria-label={label} onClick={onToggle} />;
+function Switch({ on, label, onToggle, disabled }: { on: boolean; label: string; onToggle: () => void; disabled?: boolean }) {
+  return <button className={on ? `${styles.sw} ${styles.on}` : styles.sw} role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={onToggle} />;
 }
 
 export default function Drawer() {
@@ -53,8 +53,15 @@ export default function Drawer() {
   const enableBlocked = chestBusy || chest?.state === 'incompatible' || chest?.state === 'no_game';
   const turnChest = async (on: boolean) => {
     if (!chest) { set({ autoOpenChest: on }); return; }
-    const result = await (on ? chest.enable() : chest.disable());
+    const result = await (on ? chest.enable('chest') : chest.disable('chest'));
     if (result.ok) set({ autoOpenChest: on });
+  };
+  // 모든 고양이 투명화: 게임 패치를 상자 자동 오픈과 함께 쓴다(설치돼 있으면 즉시, 아니면 같은 설치 흐름). 앱 안 고양이 표시도 이 설정을 따른다.
+  const clearOn = chest ? chest.transparent === 'on' : settings.clearCats;
+  const turnClear = async (on: boolean) => {
+    if (!chest) { set({ clearCats: on }); return; }
+    const result = await (on ? chest.enable('transparent') : chest.disable('transparent'));
+    if (result.ok) set({ clearCats: on });
   };
   // 업데이트 확인·적용은 후속 단계. 지금은 목업처럼 버튼을 누르면 '최신'으로 돌아가는 것만.
   const [updateAvailable, setUpdateAvailable] = useState(UPDATE_AVAILABLE);
@@ -83,7 +90,9 @@ export default function Drawer() {
       {SWITCHES.map(({ key, label }) => (
         <div key={key} className={styles.set}>
           <span>{label}</span>
-          <Switch on={settings[key]} label={label} onToggle={() => set({ [key]: !settings[key] })} />
+          {key === 'clearCats'
+            ? <Switch on={clearOn} label={label} disabled={clearOn ? chestBusy : enableBlocked} onToggle={() => void turnClear(!clearOn)} />
+            : <Switch on={settings[key]} label={label} onToggle={() => set({ [key]: !settings[key] })} />}
         </div>
       ))}
       {/* 구분선은 프로필↔설정, 설정 영역↔앱 업데이트 2개뿐. 상자 카드는 자체 배경이 구분 역할.

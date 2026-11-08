@@ -272,7 +272,8 @@ ipcMain.handle('bridge-request', async (_e, payloadString) => {
   catch (e) { return JSON.stringify({ error: 'bridge_down' }); }
 });
 
-// 상자 자동 오픈(D-019). 설치는 Steam 재실행 전에 worker를 내려야 하므로 사이드카째 끄고 다시 켠다.
+// 상자 자동 오픈(D-019)·모든 고양이 투명화(D-028). 설치는 Steam 재실행 전에 worker를 내려야 하므로 사이드카째 끄고 다시 켠다.
+// 기능 이름('chest' | 'transparent')은 auto-chest가 검증한다.
 const chest = createAutoChest({
   dataDir: windowState.dataDir(),
   patcherExe: path.join(__dirname, '..', 'artifacts', 'auto_chest', 'AutoChestPatcher.exe'),
@@ -282,9 +283,9 @@ const chest = createAutoChest({
   notify: (progress) => { if (win && !win.isDestroyed()) win.webContents.send('chest:progress', progress); },
 });
 ipcMain.handle('chest:status', (_e, wanted) => chest.status(wanted === true));
-ipcMain.handle('chest:enable', () => chest.enable());
-ipcMain.handle('chest:disable', () => chest.disable());
-ipcMain.handle('chest:reapply', () => chest.reapply());
+ipcMain.handle('chest:enable', (_e, feature) => chest.enable(feature));
+ipcMain.handle('chest:disable', (_e, feature) => chest.disable(feature));
+ipcMain.handle('chest:reapply', (_e, features) => chest.reapply(features));
 ipcMain.on('chest:cancel', () => chest.cancel());
 
 // 렌더러가 저장된 값으로 시작하도록(기본값이 복원된 창을 덮어쓰지 않게) preload가 동기로 읽는다.

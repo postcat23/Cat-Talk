@@ -5,6 +5,7 @@ import { useClickThrough } from './hooks/useClickThrough';
 import { useMessageAlerts } from './hooks/useMessageAlerts';
 import { ChatContext, useChatView } from './hooks/useChatView';
 import { AutoChestContext, useAutoChest } from './hooks/useAutoChest';
+import type { Feature } from './chat/autoChest';
 import CollapseTab from './components/CollapseTab';
 import TopBar from './components/TopBar';
 import SearchBar from './components/SearchBar';
@@ -18,11 +19,12 @@ function Panel() {
   const reactions = useReactionStack(MAX_CARDS[settings.height], settings.catInteraction);
   const chat = useChatView(reactions.push, settings.catInteraction);
   const { saveSettings } = chat;
-  const chestOff = useCallback(() => {
-    dispatch({ type: 'setSettings', patch: { autoOpenChest: false } });
-    saveSettings({ autoOpenChest: false });
+  const chestOff = useCallback((features: Feature[]) => {
+    const patch = { ...(features.includes('chest') && { autoOpenChest: false }), ...(features.includes('transparent') && { clearCats: false }) };
+    dispatch({ type: 'setSettings', patch });
+    saveSettings(patch);
   }, [dispatch, saveSettings]);
-  const chest = useAutoChest(settings.autoOpenChest, chestOff);
+  const chest = useAutoChest(settings.autoOpenChest, settings.clearCats, chestOff);
 
   // 도크 위치·채팅 높이·작업표시줄: Electron이면 창(BrowserWindow)이 맡고, 브라우저 dev면 패널 CSS로 시뮬레이션.
   // 패널·탭이 어느 쪽에 오는지는 두 모드 모두 data-side가 정한다. --ovh·반응 카드 최대 수는 설정값 기준 공통.

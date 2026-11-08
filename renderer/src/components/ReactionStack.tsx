@@ -1,7 +1,7 @@
 import type { ReactionStack as Stack } from '../hooks/useReactionStack';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
-import { progressText } from '../chat/autoChest';
+import { progressText, reapplyNotice } from '../chat/autoChest';
 import Cat from './Cat';
 import NoticeCard from './NoticeCard';
 import styles from './ReactionStack.module.css';
@@ -9,7 +9,6 @@ import styles from './ReactionStack.module.css';
 const DEV_NOTICE = '앱이 켜져 있는 동안의 대화만 보관하고, 종료하면 지웁니다.';
 // 야옹 반응은 게임이 보낸 원문(언어별, 예: '야옹 야옹')을 그대로 쓴다. 없을 때만 한국어 원문
 const MEOW_FALLBACK = '야옹 야옹';
-const REAPPLY_NOTICE = '상자 자동 오픈 재적용이 필요합니다';
 const DEV_NOTICE_MS = 10000;   // 최초 1회
 const TOAST_MS = 4000;         // upstream 토스트와 같은 시간
 
@@ -21,11 +20,11 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
   const install = chest?.progress;
   return (
     <div className={styles.stack}>
-      {/* 상자 자동 오픈 설치 진행. 카운트다운 동안만 취소 가능(이후 단계는 게임 파일을 다룬다) */}
+      {/* 상자 자동 오픈·투명화 설치 진행. 카운트다운 동안만 취소 가능(이후 단계는 게임 파일을 다룬다) */}
       {install && <NoticeCard key={install.phase} text={progressText(install)}
         action={install.phase === 'countdown' ? { label: '취소', onClick: () => chest?.cancel() } : undefined} />}
-      {/* 설정 ON + 패치 소실: [재시작]이 곧 확인이라 카운트다운 없이 재적용, [X]는 설정을 끈다 */}
-      {chest?.needsReapply && !install && <NoticeCard key="reapply" text={REAPPLY_NOTICE}
+      {/* 설정 ON + 패치 소실: [재시작]이 곧 확인이라 카운트다운 없이 재적용, [X]는 켜진 설정을 모두 끈다 */}
+      {chest?.needsReapply && !install && <NoticeCard key="reapply" text={reapplyNotice(chest.wanted)}
         action={{ label: '재적용', onClick: () => void chest.reapply() }} onClose={() => void chest.dismissReapply()} />}
       {toast && <NoticeCard key={toast.id} text={toast.text} showMs={TOAST_MS} />}
       {notice && <NoticeCard key={notice} text={notice} />}

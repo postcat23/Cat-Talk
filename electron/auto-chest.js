@@ -1,10 +1,13 @@
-// 상자 자동 오픈(D-019): 패처 호출·게임 종료/재실행·백업/롤백·플래그를 메인 프로세스에서 조율한다.
+// 상자 자동 오픈(D-019)·모든 고양이 투명화(D-028): 패처 호출·게임 종료/재실행·백업/롤백·플래그를 메인 프로세스에서 조율한다.
+// 두 기능은 패치 하나를 함께 쓰고 플래그만 따로다. 설치는 한 번(재실행), 이후 켜기/끄기는 플래그만(게임이 0.5초~ 주기로 본다).
 // 시스템 조작(sys)과 worker 제어는 주입받아, 실게임 없이 사본으로 흐름을 검증할 수 있다(tools/auto_chest/test-flow.js).
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
 const FLAG_NAME = 'CatTalkAutoChest.on';
+const TRANSPARENT_FLAG_NAME = 'CatTalkTransparent.on';   // 패처가 FLAG_NAME 옆에 정하는 이름(AutoChestPatcher.cs)
+const FEATURE_FLAGS = { chest: FLAG_NAME, transparent: TRANSPARENT_FLAG_NAME };
 const GAME_EXE = 'BongoCat.exe';
 const COUNTDOWN_SECONDS = 5;
 const POLL_MS = 500;
@@ -62,7 +65,7 @@ class Failure extends Error {}
 // Windows 경로는 대소문자를 구분하지 않는다. 표기만 다른 경로를 '게임이 옮겨졌다'로 오판하지 않게 한다.
 const samePath = (a, b) => typeof a === 'string' && path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
 
-function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, notify }) {
+function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, notify: notifyRaw }) {
   const home = path.join(dataDir, 'auto_chest');
   const backupDir = path.join(home, 'backup');
   const staging = path.join(home, 'staging', 'Assembly-CSharp.dll');
@@ -70,10 +73,13 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
   let busy = false, cancelled = false;
 
   // managed: 패처가 결과의 모든 참조를 게임 런타임 어셈블리로 해석해 보는 폴더(스트리핑된 API 차단, D-028)
+  // flag: 패처에 넘기는 상자 자동 오픈 플래그(투명화 플래그 경로는 패처가 이 옆으로 정한다)
   const paths = (game) => {
     const managed = path.join(game.root, 'BongoCat_Data', 'Managed');
     return { managed, dll: path.join(managed, 'Assembly-CSharp.dll'), flag: path.join(game.root, FLAG_NAME) };
   };
+  const featureFlag = (game, feature) => path.join(game.root, FEATURE_FLAGS[feature]);
+  const known = (feature) => Object.hasOwn(FEATURE_FLAGS, feature);
 
   async function patcher(...args) {
     const r = await run(patcherExe, args);
@@ -82,8 +88,15 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     return { code: r.code, json };
   }
 
-  // 판정만 한다(쓰기 없음). wanted = 설정 ON 여부: 켜 뒀는데 clean이면 업데이트로 패치가 사라진 것.
+  // 판정만 한다(쓰기 없음). wanted = 어느 기능이든 설정 ON 여부: 켜 뒀는데 clean이면 업데이트로 패치가 사라진 것.
+  // state = 설치 상태(설치돼 있으면 상자 자동 오픈 플래그로 on/off), transparent = 같은 판정에서 투명화 플래그로 on/off.
   async function status(wanted) {
+    const s = await installState(wanted);
+    if (s.state !== 'installed') return { ...s, transparent: s.state };
+    return { state: fs.existsSync(featureFlag(s.game, 'chest')) ? 'on' : 'off', transparent: fs.existsSync(featureFlag(s.game, 'transparent')) ? 'on' : 'off' };
+  }
+
+  async function installState(wanted) {
     if (busy) return { state: 'installing' };
     const game = await sys.findGame();
     if (!game) return { state: 'no_game' };
@@ -93,7 +106,8 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     if (r.code !== 0) return { state: 'error', reason: r.json.reason };
     if (r.json.state === 'clean') return { state: wanted ? 'needs_reapply' : 'not_installed' };
     if (!samePath(r.json.flag, flag)) return { state: 'needs_reapply', reason: 'flag_path_changed' };   // 게임 경로가 바뀜
-    return { state: fs.existsSync(flag) ? 'on' : 'off' };
+    if (r.json.upToDate === false) return { state: 'needs_reapply', reason: 'outdated' };   // 이전 패치 세트(v1: 자동 오픈만) → 재적용으로 v2(D-028)
+    return { state: 'installed', game };
   }
 
   async function waitFor(check, ms) {
@@ -132,7 +146,9 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     return (await patcher('restore', backupDir, paths(game).dll)).code === 0;
   }
 
-  async function install(game) {
+  // features: 설치가 끝나면 켤 기능들. 진행 알림에도 실어 렌더러가 기능 이름으로 문구를 쓴다.
+  async function install(game, features) {
+    const notify = (p) => notifyRaw({ ...p, features });
     const wasRunning = await sys.gameRunning();
     let replaced = false, restarted = false;
     busy = true;
@@ -154,7 +170,7 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       notify({ phase: 'verifying' });
       await sys.sleep(STABLE_MS);
       if (!(await sys.gameRunning())) throw new Failure('game_crashed');
-      fs.writeFileSync(paths(game).flag, '');
+      for (const f of features) fs.writeFileSync(featureFlag(game, f), '');
       notify({ phase: 'done' });
       return { ok: true };
     } catch (e) {
@@ -170,12 +186,12 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     }
   }
 
-  async function countdown() {
+  async function countdown(features) {
     cancelled = false;
     for (let s = COUNTDOWN_SECONDS; s > 0; s--) {
-      notify({ phase: 'countdown', seconds: s });
+      notifyRaw({ phase: 'countdown', seconds: s, features });
       await sys.sleep(1000);
-      if (cancelled) { notify({ phase: 'cancelled' }); return false; }
+      if (cancelled) { notifyRaw({ phase: 'cancelled', features }); return false; }
     }
     return true;
   }
@@ -184,34 +200,37 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     status,
     cancel() { cancelled = true; },
 
-    // 켜기: 설치돼 있으면 플래그만(즉시, 재실행 없음). 아니면 카운트다운 후 설치.
-    async enable() {
+    // 켜기(feature = 'chest' | 'transparent'): 설치돼 있으면 그 기능 플래그만(즉시, 재실행 없음). 아니면 카운트다운 후 설치.
+    // 이전 패치 세트(v1)도 여기서 재적용 대상이라 설치 흐름으로 v2가 된다.
+    async enable(feature = 'chest') {
+      if (!known(feature)) return { ok: false, reason: 'unknown_feature' };
       if (busy) return { ok: false, reason: 'busy' };
-      const current = await status(false);
+      const current = await installState(false);
       if (current.state === 'incompatible' || current.state === 'error' || current.state === 'no_game') return { ok: false, reason: current.state };
+      if (current.state === 'installed') { fs.writeFileSync(featureFlag(current.game, feature), ''); return { ok: true }; }
       const game = await sys.findGame();
-      if (current.state === 'on') return { ok: true };
-      if (current.state === 'off') { fs.writeFileSync(paths(game).flag, ''); return { ok: true }; }
-      if (!(await countdown())) return { ok: false, reason: 'cancelled' };
-      return install(game);
+      if (!(await countdown([feature]))) return { ok: false, reason: 'cancelled' };
+      return install(game, [feature]);
     },
 
-    // 끄기: 플래그 삭제(즉시). 패치는 무해하게 남는다.
-    async disable() {
+    // 끄기: 그 기능 플래그만 삭제(즉시). 패치와 다른 기능은 그대로다.
+    async disable(feature = 'chest') {
+      if (!known(feature)) return { ok: false, reason: 'unknown_feature' };
       const game = await sys.findGame();
-      if (game) fs.rmSync(paths(game).flag, { force: true });
+      if (game) fs.rmSync(featureFlag(game, feature), { force: true });
       return { ok: true };
     },
 
-    // 재적용: 업데이트로 패치가 사라졌을 때 토스트의 [재시작]으로만 불린다(버튼이 곧 확인이라 카운트다운 없음).
+    // 재적용(features = 설정이 켜진 기능들): 업데이트로 패치가 사라졌을 때 토스트의 [재시작]으로만 불린다(버튼이 곧 확인이라 카운트다운 없음).
     // 재적용이 필요한 상태가 아니면(구조가 바뀌어 호환 안 됨 포함) 아무것도 하지 않는다.
-    async reapply() {
+    async reapply(features = ['chest']) {
+      if (!Array.isArray(features) || features.length === 0 || !features.every(known)) return { ok: false, reason: 'unknown_feature' };
       if (busy) return { ok: false, reason: 'busy' };
       const current = await status(true);
       if (current.state !== 'needs_reapply') return { ok: false, reason: current.state };
-      return install(await sys.findGame());
+      return install(await sys.findGame(), [...new Set(features)]);
     },
   };
 }
 
-module.exports = { createAutoChest, defaultSys, FLAG_NAME, POLL_MS };
+module.exports = { createAutoChest, defaultSys, FLAG_NAME, TRANSPARENT_FLAG_NAME, POLL_MS };

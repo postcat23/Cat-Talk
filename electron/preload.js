@@ -21,12 +21,13 @@ contextBridge.exposeInMainWorld('catTalk', {
   setInteractive: (interactive) => ipcRenderer.send('window:set-interactive', interactive),
   // 안 읽은 수({count, toast, taskbar}). 수와 토글은 렌더러가 정하고, 표시는 main이 맡는다.
   setUnread: (alert) => ipcRenderer.send('alert:unread', alert),
-  // 상자 자동 오픈(D-019). status는 판정만(쓰기 없음), wanted = 설정 ON 여부.
+  // 상자 자동 오픈(D-019)·모든 고양이 투명화(D-028). status는 판정만(쓰기 없음), wanted = 어느 기능이든 설정 ON 여부.
+  // feature = 'chest' | 'transparent', reapply는 설정이 켜진 기능 목록.
   chest: {
     status: (wanted) => ipcRenderer.invoke('chest:status', wanted),
-    enable: () => ipcRenderer.invoke('chest:enable'),
-    disable: () => ipcRenderer.invoke('chest:disable'),
-    reapply: () => ipcRenderer.invoke('chest:reapply'),
+    enable: (feature) => ipcRenderer.invoke('chest:enable', feature),
+    disable: (feature) => ipcRenderer.invoke('chest:disable', feature),
+    reapply: (features) => ipcRenderer.invoke('chest:reapply', features),
     cancel: () => ipcRenderer.send('chest:cancel'),
     onProgress: (cb) => {
       const listener = (_e, progress) => cb(progress);

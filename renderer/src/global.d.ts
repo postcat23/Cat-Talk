@@ -15,9 +15,9 @@ interface Window {
     setUnread(alert: { count: number; toast: boolean; taskbar: boolean }): void;
     chest: {
       status(wanted: boolean): Promise<import('./chat/autoChest').ChestStatus>;
-      enable(): Promise<import('./chat/autoChest').ChestResult>;
-      disable(): Promise<import('./chat/autoChest').ChestResult>;
-      reapply(): Promise<import('./chat/autoChest').ChestResult>;
+      enable(feature: import('./chat/autoChest').Feature): Promise<import('./chat/autoChest').ChestResult>;
+      disable(feature: import('./chat/autoChest').Feature): Promise<import('./chat/autoChest').ChestResult>;
+      reapply(features: import('./chat/autoChest').Feature[]): Promise<import('./chat/autoChest').ChestResult>;
       cancel(): void;
       onProgress(cb: (progress: import('./chat/autoChest').ChestProgress) => void): () => void;
     };
