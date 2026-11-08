@@ -2,11 +2,15 @@
 // 게임 어셈블리를 로드·실행하지 않는다. 패치 세트 버전: 1 = 상자 자동 오픈만, 2 = 상자 자동 오픈 + 투명화.
 // 상자 자동 오픈(D-019): Shop.TimerUpdate 상태머신 MoveNext의 "ChestIsReady = true; OnChestReady();" 직후에
 //   "if (File.Exists(<플래그>)) this._shopItem.Buy();"를 삽입한다.
-// 투명화(D-028): 고양이마다 하나인 TranslucentOnHover의 알파 경로에 플래그를 건다. 삽입은 세 곳이다.
-//   SetTranslucentSmooth: 플래그가 있으면 목표 알파 0 + 클릭 통과(타이머·호버 복귀도 이 경로라 함께 막힌다).
+// 투명화(D-028): 고양이마다 하나인 TranslucentOnHover의 알파 경로에 플래그를 건다. 삽입은 네 곳이다.
+//   SetTranslucentSmooth: 플래그가 있으면 목표 알파 0(타이머·호버 복귀도 이 경로라 함께 막힌다).
+//     클릭 통과는 게임 경로 그대로다: 목표 알파가 1이 아니면 게임이 Ignore Raycast 레이어로 바꾸고, 창 판정이 이 레이어를 뺀다.
+//   SetLayerRecursively: 투명화 중에는 CanvasGroup 안의 클릭 예외(상점·인벤토리 등)도 레이어를 바꾸고, UI로 복원할 때 함께 되돌린다.
 //   Start: 플래그가 있으면 새 고양이를 번쩍임 없이 곧바로 투명하게 한다.
 //   TranslucentOnHoverSetting.Update: 0.5초마다 플래그 변화를 보고 OnSetTranslucent로 전체에 알린다.
-// 명령: inspect <dll> | patch <in> <out> <flag> | verify <orig> <patched> <flag>
+// 게임 런타임 어셈블리는 스트리핑돼 공개 Unity API도 없을 수 있다(실측: CanvasGroup.set_blocksRaycasts 없음).
+// 그래서 patch·verify는 결과의 모든 참조를 게임 Managed 폴더에서 해석해 보고, 하나라도 안 되면 거부한다.
+// 명령: inspect <dll> | patch <in> <out> <flag> <managedDir> | verify <orig> <patched> <flag> <managedDir>
 //       backup <dll> <backupDir> | restore <backupDir> <target>
 // <flag>는 상자 자동 오픈 플래그다. 투명화 플래그는 같은 폴더의 CatTalkTransparent.on으로 정해지고, 두 플래그는 독립이다.
 // 출력은 JSON 한 줄. 종료 코드: 0 성공, 2 호환 안 됨/거부, 3 이미 패치됨(건너뜀), 1 오류.
@@ -32,19 +36,21 @@ sealed class Target {
     internal List<int> Markers = new List<int>();   // 우리 삽입 마커(ldstr ...CatTalkAutoChest.on) 위치
 
     internal TypeDefinition Hover, HoverSetting;
-    internal FieldDefinition HoverAlpha, OnSetTranslucent, StateField, NextPollField;
-    internal MethodDefinition Smooth, HoverStart, SettingUpdate;
-    internal MethodReference InvokeBool, UnscaledTime;
+    internal FieldDefinition HoverAlpha, LayerUI, OnSetTranslucent, StateField, NextPollField;
+    internal MethodDefinition Smooth, Layer, HoverStart, SettingUpdate;
+    internal MethodReference InvokeBool, UnscaledTime, GetTransform, IsChildOf;
     internal int SmoothAnchor;              // SetTranslucentSmooth에서 목표 알파를 저장하는 stloc.0 위치
-    internal List<int> SmoothMarkers, StartMarkers, UpdateMarkers;
+    internal int LayerAnchor;               // SetLayerRecursively에서 클릭 예외면 반환하는 분기(brfalse) 위치
+    internal List<int> SmoothMarkers, LayerMarkers, StartMarkers, UpdateMarkers;
 
     internal const string FlagName = "CatTalkAutoChest.on";
     internal const string TransparentFlagName = "CatTalkTransparent.on";
     internal const string StateFieldName = "CatTalkTransparent";
     internal const string NextPollFieldName = "CatTalkNextPoll";
     internal const float PollSeconds = 0.5f;
-    internal const int SmoothInsert = 13, StartInsert = 10, UpdateInsert = 22;   // 삽입 명령 수
-    internal const int SmoothMarkerAt = 2, UpdateMarkerAt = 7;                  // 삽입 블록 안의 ldstr 위치
+    internal const int SmoothInsert = 5, LayerInsert = 12, StartInsert = 10, UpdateInsert = 22;   // 삽입 명령 수
+    internal const int SmoothMarkerAt = 0, UpdateMarkerAt = 7;                  // 삽입 블록 안의 ldstr 위치
+    internal const int LayerMarkerAt = 6;                                       // 레이어 블록 안의 ldsfld CatTalkTransparent 위치
 
     static T One<T>(IEnumerable<T> items, string code) where T : class {
         var list = items.ToList();
@@ -104,8 +110,12 @@ sealed class Target {
         Hover = One(module.GetTypes().Where(x => x.FullName == "TranslucentOnHover"), "hover_type");
         HoverSetting = One(module.GetTypes().Where(x => x.FullName == "TranslucentOnHoverSetting"), "hoversetting_type");
         HoverAlpha = One(Hover.Fields.Where(f => f.Name == "_alpha" && !f.IsStatic && f.FieldType.FullName == "UnityEngine.CanvasGroup"), "hover_alpha_field");
+        LayerUI = One(Hover.Fields.Where(f => f.Name == "_layerUI" && !f.IsStatic && f.FieldType.MetadataType == MetadataType.Int32), "hover_layerui_field");
+        var exceptions = One(Hover.Fields.Where(f => f.Name == "_notClickThroughObjects" && !f.IsStatic), "hover_exceptions_field");
         OnSetTranslucent = One(HoverSetting.Fields.Where(f => f.Name == "OnSetTranslucent" && f.IsStatic && f.FieldType.FullName == "System.Action`1<System.Boolean>"), "hoversetting_event");
         Smooth = One(Hover.Methods.Where(m => m.Name == "SetTranslucentSmooth" && !m.IsStatic && m.HasBody && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.MetadataType == MetadataType.Boolean), "hover_smooth");
+        Layer = One(Hover.Methods.Where(m => m.Name == "SetLayerRecursively" && !m.IsStatic && m.HasBody && m.Parameters.Count == 2
+            && m.Parameters[0].ParameterType.FullName == "UnityEngine.Transform" && m.Parameters[1].ParameterType.MetadataType == MetadataType.Int32), "hover_setlayer");
         HoverStart = One(Hover.Methods.Where(m => m.Name == "Start" && !m.IsStatic && m.HasBody && m.Parameters.Count == 0), "hover_start");
         SettingUpdate = One(HoverSetting.Methods.Where(m => m.Name == "Update" && !m.IsStatic && m.HasBody && m.Parameters.Count == 0), "hoversetting_update");
         StateField = HoverSetting.Fields.SingleOrDefault(f => f.Name == StateFieldName);
@@ -113,9 +123,14 @@ sealed class Target {
         var refs = module.GetMemberReferences().OfType<MethodReference>().ToList();
         InvokeBool = One(refs.Where(m => m.Name == "Invoke" && m.DeclaringType.FullName == "System.Action`1<System.Boolean>"), "action_bool_invoke");
         UnscaledTime = One(refs.Where(m => m.Name == "get_unscaledTime" && m.DeclaringType.FullName == "UnityEngine.Time"), "time_unscaledtime");
+        // 레이어 블록은 게임이 이미 참조하는 멤버만 쓴다(새 외부 참조 없음)
+        GetTransform = One(refs.Where(m => m.Name == "get_transform" && m.DeclaringType.FullName == "UnityEngine.Component" && m.Parameters.Count == 0), "component_get_transform");
+        IsChildOf = One(refs.Where(m => m.Name == "IsChildOf" && m.DeclaringType.FullName == "UnityEngine.Transform" && m.Parameters.Count == 1), "transform_ischildof");
 
         var smooth = Smooth.Body.Instructions;
         SmoothMarkers = FindMarkers(smooth, TransparentFlagName);
+        var layer = Layer.Body.Instructions;
+        LayerMarkers = Enumerable.Range(0, layer.Count).Where(i => layer[i].OpCode == OpCodes.Ldsfld && IsStateField(layer[i].Operand as FieldReference)).ToList();
         StartMarkers = FindMarkers(HoverStart.Body.Instructions, TransparentFlagName);
         UpdateMarkers = FindMarkers(SettingUpdate.Body.Instructions, TransparentFlagName);
 
@@ -126,6 +141,20 @@ sealed class Target {
         if (stores.Count != (SmoothMarkers.Count == 0 ? 1 : 2)) throw new Incompatible("hover_smooth_anchor_" + stores.Count);
         SmoothAnchor = stores[0];
 
+        // 앵커: "if (_notClickThroughObjects.Contains(t.gameObject)) return;"의 brfalse. 원본은 바로 다음이 그 ret이다.
+        var gates = new List<int>();
+        for (int i = 4; i + 1 < layer.Count; i++) {
+            var m = layer[i].Operand as MethodReference;
+            if (layer[i].OpCode != OpCodes.Call || m == null || m.Name != "Contains") continue;
+            if (layer[i - 4].OpCode != OpCodes.Ldarg_0 || layer[i - 3].OpCode != OpCodes.Ldfld || !Same(layer[i - 3].Operand as FieldReference, exceptions)) continue;
+            if (layer[i + 1].OpCode != OpCodes.Brfalse_S && layer[i + 1].OpCode != OpCodes.Brfalse) continue;
+            gates.Add(i + 1);
+        }
+        if (gates.Count != 1) throw new Incompatible("hover_setlayer_gate_" + gates.Count);
+        LayerAnchor = gates[0];
+        if (LayerMarkers.Count == 0 && (LayerAnchor + 2 >= layer.Count || layer[LayerAnchor + 1].OpCode != OpCodes.Ret || layer[LayerAnchor].Operand != layer[LayerAnchor + 2]))
+            throw new Incompatible("hover_setlayer_shape");
+
         var start = HoverStart.Body.Instructions;
         if (start.Count(i => i.OpCode == OpCodes.Ret) != 1 || start[start.Count - 1].OpCode != OpCodes.Ret) throw new Incompatible("hover_start_shape");
         if (!start.Any(i => i.OpCode == OpCodes.Stsfld && Same(i.Operand as FieldReference, OnSetTranslucent))) throw new Incompatible("hover_start_subscribe");
@@ -134,9 +163,10 @@ sealed class Target {
     // 투명화 훅이 전부 제자리에 있는지. 전부 없으면 false, 일부만 있으면 호환 안 됨.
     internal bool TransparentHooked {
         get {
-            bool any = SmoothMarkers.Count + StartMarkers.Count + UpdateMarkers.Count > 0 || StateField != null || NextPollField != null;
+            bool any = SmoothMarkers.Count + LayerMarkers.Count + StartMarkers.Count + UpdateMarkers.Count > 0 || StateField != null || NextPollField != null;
             if (!any) return false;
             bool whole = SmoothMarkers.Count == 1 && SmoothMarkers[0] == SmoothAnchor + 1 + SmoothMarkerAt
+                && LayerMarkers.Count == 1 && LayerMarkers[0] == LayerAnchor + 1 + LayerMarkerAt
                 && StartMarkers.Count == 1 && StartMarkers[0] == HoverStart.Body.Instructions.Count - 1 - StartInsert
                 && UpdateMarkers.Count == 1 && UpdateMarkers[0] == UpdateMarkerAt
                 && StateField != null && StateField.IsStatic && StateField.FieldType.MetadataType == MetadataType.Boolean
@@ -175,10 +205,11 @@ sealed class Target {
             && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.MetadataType == MetadataType.String && m.ReturnType.MetadataType == MetadataType.Boolean;
     }
     static bool Same(FieldReference a, FieldDefinition b) { return a != null && a.Name == b.Name && a.DeclaringType.FullName == b.DeclaringType.FullName; }
+    static bool IsStateField(FieldReference f) { return f != null && f.Name == StateFieldName && f.DeclaringType.FullName == "TranslucentOnHoverSetting"; }
     static bool Same(MethodReference a, MethodDefinition b) { return a != null && a.Name == b.Name && a.DeclaringType.FullName == b.DeclaringType.FullName && a.Parameters.Count == b.Parameters.Count; }
 
     // 패치가 본문을 바꾸는 메서드 전부.
-    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, HoverStart, SettingUpdate }; } }
+    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate }; } }
 
     // 삽입 시퀀스(분기 대상 제외). Buy가 non-void면 pop 포함.
     internal int InsertLength { get { return Buy.ReturnType.MetadataType == MetadataType.Void ? 7 : 8; } }
@@ -192,8 +223,8 @@ static class Program {
             if (args.Length == 0) throw new ArgumentException("usage");
             switch (args[0]) {
                 case "inspect": Need(args, 2); return Inspect(args[1]);
-                case "patch": Need(args, 4); return Patch(args[1], args[2], args[3]);
-                case "verify": Need(args, 4); return Verify(args[1], args[2], args[3]);
+                case "patch": Need(args, 5); return Patch(args[1], args[2], args[3], args[4]);
+                case "verify": Need(args, 5); return Verify(args[1], args[2], args[3], args[4]);
                 case "backup": Need(args, 3); return Backup(args[1], args[2]);
                 case "restore": Need(args, 3); return Restore(args[1], args[2]);
                 default: throw new ArgumentException("usage");
@@ -215,14 +246,31 @@ static class Program {
             return BitConverter.ToString(h.ComputeHash(s)).Replace("-", "").ToLowerInvariant();
     }
 
-    static ModuleDefinition Read(string path) {
+    static ModuleDefinition Read(string path, string managedDir = null) {
         if (new FileInfo(path).Length > 64 * 1024 * 1024) throw new InvalidDataException("too_large");
         // Deferred: 건드리는 부분만 읽는다. Immediate는 모든 커스텀 어트리뷰트 인자를 해석하려다
         // UnityEngine enum 때문에 다른 게임 어셈블리를 요구한다(실측). 손대지 않은 어트리뷰트는 원본 blob 그대로 쓴다.
-        // 같은 폴더의 참조만 해석. InMemory: 원본 파일 핸들을 잡고 있지 않는다.
+        // 참조는 managedDir(없으면 같은 폴더)에서만 해석. InMemory: 원본 파일 핸들을 잡고 있지 않는다.
         var resolver = new DefaultAssemblyResolver();
-        resolver.AddSearchDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
+        foreach (var d in resolver.GetSearchDirectories()) resolver.RemoveSearchDirectory(d);
+        resolver.AddSearchDirectory(managedDir ?? Path.GetDirectoryName(Path.GetFullPath(path)));
         return ModuleDefinition.ReadModule(path, new ReaderParameters { InMemory = true, ReadingMode = ReadingMode.Deferred, AssemblyResolver = resolver });
+    }
+
+    // 게임 런타임 어셈블리로 모든 타입·멤버 참조가 해석되는지. 스트리핑으로 빠진 API를 부르면 게임에서 MissingMethodException이 난다.
+    static void ReferencesResolve(string dll, string managedDir) {
+        if (!File.Exists(Path.Combine(managedDir, "mscorlib.dll")) || !File.Exists(Path.Combine(managedDir, "UnityEngine.CoreModule.dll"))) throw new ArgumentException("managed_dir");
+        var m = Read(dll, managedDir);
+        foreach (var t in m.GetTypeReferences()) {
+            TypeDefinition r = null;
+            try { r = t.Resolve(); } catch (AssemblyResolutionException) { }
+            if (r == null) throw new Incompatible("unresolved_reference");
+        }
+        foreach (var x in m.GetMemberReferences()) {
+            IMemberDefinition r = null;
+            try { r = x.Resolve(); } catch (AssemblyResolutionException) { }
+            if (r == null) throw new Incompatible("unresolved_reference");
+        }
     }
 
     const int PatchVersion = 2;
@@ -250,7 +298,7 @@ static class Program {
         return Emit(0, o);
     }
 
-    static int Patch(string input, string output, string flag) {
+    static int Patch(string input, string output, string flag, string managedDir) {
         if (!Path.IsPathRooted(flag) || Path.GetFileName(flag) != Target.FlagName) throw new ArgumentException("flag_path");
         if (string.Equals(Path.GetFullPath(input), Path.GetFullPath(output), StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("in_place");
         var module = Read(input);
@@ -277,6 +325,8 @@ static class Program {
         var check = Target.Find(reread);
         if (Version(check) != PatchVersion) throw new InvalidDataException("post_patch_state");
         if (!check.Patched.All(m => BranchTargetsResolved(m.Body))) throw new InvalidDataException("post_patch_branch");
+        try { ReferencesResolve(output, managedDir); }
+        catch { File.Delete(output); throw; }   // 게임에서 깨질 결과물은 남기지 않는다
         return Emit(0, new Dictionary<string, object> { { "ok", true }, { "state", "patched" }, { "patchVersion", PatchVersion }, { "upgraded", version == 1 }, { "sha256", Sha256(output) }, { "inserted", inserted }, { "widenedBranches", widened } });
     }
 
@@ -318,36 +368,50 @@ static class Program {
     static int InsertTransparent(ModuleDefinition module, Target t, string flag, MethodReference exists) {
         var groupType = t.HoverAlpha.FieldType;
         var sys = module.TypeSystem;
-        var setBlocks = Accessor("set_blocksRaycasts", groupType, sys.Void, sys.Boolean);
-        var getBlocks = Accessor("get_blocksRaycasts", groupType, sys.Boolean, null);
         var setAlpha = Accessor("set_alpha", groupType, sys.Void, sys.Single);
 
-        const FieldAttributes hidden = FieldAttributes.Private | FieldAttributes.Static;
-        var state = new FieldDefinition(Target.StateFieldName, hidden, sys.Boolean);
-        var nextPoll = new FieldDefinition(Target.NextPollFieldName, hidden, sys.Single);
+        // 켜짐 상태는 TranslucentOnHover의 레이어 블록도 읽으므로 어셈블리 내부 공개(internal)다.
+        var state = new FieldDefinition(Target.StateFieldName, FieldAttributes.Assembly | FieldAttributes.Static, sys.Boolean);
+        var nextPoll = new FieldDefinition(Target.NextPollFieldName, FieldAttributes.Private | FieldAttributes.Static, sys.Single);
         t.HoverSetting.Fields.Add(state);
         t.HoverSetting.Fields.Add(nextPoll);
 
-        // SetTranslucentSmooth: blocksRaycasts = !File.Exists(flag); if (!blocksRaycasts) 목표 알파 = 0;
+        // SetTranslucentSmooth: if (File.Exists(flag)) 목표 알파 = 0; 레이어(클릭 통과)는 뒤따르는 게임 코드가 목표 알파로 정한다.
         var smooth = t.Smooth.Body;
         var il = smooth.GetILProcessor();
         var anchor = smooth.Instructions[t.SmoothAnchor];
         var seqSmooth = new List<Instruction> {
-            il.Create(OpCodes.Ldarg_0),
-            il.Create(OpCodes.Ldfld, t.HoverAlpha),
             il.Create(OpCodes.Ldstr, flag),
             il.Create(OpCodes.Call, exists),
-            il.Create(OpCodes.Ldc_I4_0),
-            il.Create(OpCodes.Ceq),
-            il.Create(OpCodes.Callvirt, setBlocks),
-            il.Create(OpCodes.Ldarg_0),
-            il.Create(OpCodes.Ldfld, t.HoverAlpha),
-            il.Create(OpCodes.Callvirt, getBlocks),
-            il.Create(OpCodes.Brtrue_S, anchor.Next),
+            il.Create(OpCodes.Brfalse_S, anchor.Next),
             il.Create(OpCodes.Ldc_R4, 0f),
             il.Create(OpCodes.Stloc_0),
         };
         InsertAfter(il, anchor, seqSmooth);
+
+        // SetLayerRecursively: 클릭 예외여도 CanvasGroup 안이고 (투명화 켜짐 || UI로 복원 중)이면 반환하지 않고 계속 진행한다.
+        // if (t.IsChildOf(_alpha.transform) && (CatTalkTransparent || layer == _layerUI)) goto 계속; return;
+        // 그룹 안 예외의 하위 트리는 원래 전부 UI 레이어다(씬 실측). 그래서 UI 복원이 원상태다. 그룹 밖 예외(메뉴·채팅)는 그대로다.
+        var layer = t.Layer.Body;
+        il = layer.GetILProcessor();
+        var gate = layer.Instructions[t.LayerAnchor];
+        var exitRet = layer.Instructions[t.LayerAnchor + 1];
+        var proceed = (Instruction)gate.Operand;
+        var seqLayer = new List<Instruction> {
+            il.Create(OpCodes.Ldarg_1),
+            il.Create(OpCodes.Ldarg_0),
+            il.Create(OpCodes.Ldfld, t.HoverAlpha),
+            il.Create(OpCodes.Callvirt, t.GetTransform),
+            il.Create(OpCodes.Callvirt, t.IsChildOf),
+            il.Create(OpCodes.Brfalse_S, exitRet),
+            il.Create(OpCodes.Ldsfld, state),
+            il.Create(OpCodes.Brtrue_S, proceed),
+            il.Create(OpCodes.Ldarg_2),
+            il.Create(OpCodes.Ldarg_0),
+            il.Create(OpCodes.Ldfld, t.LayerUI),
+            il.Create(OpCodes.Beq_S, proceed),
+        };
+        InsertBefore(il, exitRet, seqLayer);
 
         // Start 끝: if (File.Exists(flag)) { _alpha.alpha = 0; SetTranslucentSmooth(true); }
         var start = t.HoverStart.Body;
@@ -398,8 +462,8 @@ static class Program {
         };
         InsertBefore(il, first, seqUpdate);
 
-        foreach (var body in new[] { smooth, start, update }) if (body.MaxStackSize < 3) body.MaxStackSize = 3;
-        return seqSmooth.Count + seqStart.Count + seqUpdate.Count;
+        foreach (var body in new[] { smooth, layer, start, update }) if (body.MaxStackSize < 3) body.MaxStackSize = 3;
+        return seqSmooth.Count + seqLayer.Count + seqStart.Count + seqUpdate.Count;
     }
 
     static readonly Dictionary<Code, OpCode> LongForm = new Dictionary<Code, OpCode> {
@@ -500,7 +564,8 @@ static class Program {
         return lines;
     }
 
-    static int Verify(string origPath, string patchedPath, string flag) {
+    static int Verify(string origPath, string patchedPath, string flag, string managedDir) {
+        ReferencesResolve(patchedPath, managedDir);   // 구조가 맞아도 게임 런타임에서 깨지면 의미가 없어 가장 먼저 본다
         var a = Read(origPath); var b = Read(patchedPath);
         var ta = Target.Find(a); var tb = Target.Find(b);
         if (State(ta) != "clean") throw new Incompatible("verify_original_not_clean");
@@ -517,6 +582,7 @@ static class Program {
         var sites = new Dictionary<string, int[]> {
             { ta.MoveNext.FullName, new[] { tb.AnchorIndex + 1, tb.InsertLength } },
             { ta.Smooth.FullName, new[] { tb.SmoothAnchor + 1, Target.SmoothInsert } },
+            { ta.Layer.FullName, new[] { tb.LayerAnchor + 1, Target.LayerInsert } },
             { ta.HoverStart.FullName, new[] { tb.HoverStart.Body.Instructions.Count - 1 - Target.StartInsert, Target.StartInsert } },
             { ta.SettingUpdate.FullName, new[] { 0, Target.UpdateInsert } },
         };
@@ -576,8 +642,9 @@ static class Program {
     static bool TransparentSequencesOk(Target t, string flag) {
         const string alpha = "ldfld TranslucentOnHover::_alpha", exists = "call File::Exists";
         const string on = "TranslucentOnHoverSetting::" + Target.StateFieldName, next = "TranslucentOnHoverSetting::" + Target.NextPollFieldName;
-        var smooth = new[] { "ldarg.0", alpha, "ldstr " + flag, exists, "ldc.i4.0", "ceq", "callvirt CanvasGroup::set_blocksRaycasts",
-            "ldarg.0", alpha, "callvirt CanvasGroup::get_blocksRaycasts", "brtrue.s +13", "ldc.r4 0", "stloc.0" };
+        var smooth = new[] { "ldstr " + flag, exists, "brfalse.s +5", "ldc.r4 0", "stloc.0" };
+        var layer = new[] { "ldarg.1", "ldarg.0", alpha, "callvirt Component::get_transform", "callvirt Transform::IsChildOf", "brfalse.s +12",
+            "ldsfld " + on, "brtrue.s +13", "ldarg.2", "ldarg.0", "ldfld TranslucentOnHover::_layerUI", "beq.s +13" };
         var start = new[] { "ldstr " + flag, exists, "brfalse.s +10", "ldarg.0", alpha, "ldc.r4 0", "callvirt CanvasGroup::set_alpha",
             "ldarg.0", "ldc.i4.1", "call TranslucentOnHover::SetTranslucentSmooth" };
         var update = new[] { "call Time::get_unscaledTime", "ldsfld " + next, "blt.s +22",
@@ -587,6 +654,10 @@ static class Program {
             "ldsfld TranslucentOnHoverSetting::OnSetTranslucent", "dup", "brtrue.s +20", "pop", "br.s +22",
             "ldsfld " + on, "callvirt Action`1::Invoke" };
         return Matches(t.Smooth.Body, t.SmoothAnchor + 1, smooth)
+            && Matches(t.Layer.Body, t.LayerAnchor + 1, layer)
+            && t.LayerAnchor + 1 + Target.LayerInsert < t.Layer.Body.Instructions.Count
+            && t.Layer.Body.Instructions[t.LayerAnchor + 1 + Target.LayerInsert].OpCode == OpCodes.Ret
+            && t.StateField.IsAssembly
             && Matches(t.HoverStart.Body, t.HoverStart.Body.Instructions.Count - 1 - Target.StartInsert, start)
             && Matches(t.SettingUpdate.Body, 0, update);
     }

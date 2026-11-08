@@ -1,14 +1,16 @@
 // 상자 자동 오픈 흐름 검증(D-019): 실게임 없이 가짜 게임 폴더 + DLL 사본 + 실제 패처로 돌린다.
 // 게임 실행·종료·Steam 상태는 가짜 함수다. 실게임 폴더·프로세스·Steam을 건드리지 않는다.
-// 사용: node tools/auto_chest/test-flow.js <Assembly-CSharp.dll 사본> <빈 작업 폴더>
+// 사용: node tools/auto_chest/test-flow.js <Assembly-CSharp.dll 사본> <게임 Managed 폴더 사본> <빈 작업 폴더>
+// Managed 사본은 패처의 참조 해석 검증용으로 가짜 게임 폴더의 Managed에 함께 넣는다.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { createAutoChest, FLAG_NAME } = require('../../electron/auto-chest');
 
-const [copy, work] = process.argv.slice(2);
-if (!copy || !work) { console.error('usage: test-flow.js <copy> <work>'); process.exit(2); }
-if (/\\BongoCat_Data\\Managed\\/i.test(path.resolve(copy))) { console.error('use a copy outside the game folder'); process.exit(2); }
+const [copy, managedRefs, work] = process.argv.slice(2);
+if (!copy || !managedRefs || !work) { console.error('usage: test-flow.js <copy> <managed copy> <work>'); process.exit(2); }
+if (/\\BongoCat_Data\\Managed(\\|$)/i.test(path.resolve(copy)) || /\\BongoCat_Data\\Managed(\\|$)/i.test(path.resolve(managedRefs))) { console.error('use copies outside the game folder'); process.exit(2); }
+const refs = fs.readdirSync(managedRefs).filter((n) => /\.dll$/i.test(n) && n !== 'Assembly-CSharp.dll');
 const patcherExe = path.join(__dirname, '..', '..', 'artifacts', 'auto_chest', 'AutoChestPatcher.exe');
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const origSha = sha(copy);
@@ -21,6 +23,7 @@ function world(name, opts = {}) {
   const root = path.join(base, 'game');
   const managed = path.join(root, 'BongoCat_Data', 'Managed');
   fs.mkdirSync(managed, { recursive: true });
+  for (const n of refs) fs.copyFileSync(path.join(managedRefs, n), path.join(managed, n));
   const dll = path.join(managed, 'Assembly-CSharp.dll');
   fs.copyFileSync(copy, dll);
   const w = { root, dll, flag: path.join(root, FLAG_NAME), log: [], notes: [], running: !!opts.running, steam: !!opts.running, data: path.join(base, 'data') };

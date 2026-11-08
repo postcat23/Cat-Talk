@@ -69,7 +69,11 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
   const original = path.join(backupDir, 'Assembly-CSharp.dll.orig');
   let busy = false, cancelled = false;
 
-  const paths = (game) => ({ dll: path.join(game.root, 'BongoCat_Data', 'Managed', 'Assembly-CSharp.dll'), flag: path.join(game.root, FLAG_NAME) });
+  // managed: 패처가 결과의 모든 참조를 게임 런타임 어셈블리로 해석해 보는 폴더(스트리핑된 API 차단, D-028)
+  const paths = (game) => {
+    const managed = path.join(game.root, 'BongoCat_Data', 'Managed');
+    return { managed, dll: path.join(managed, 'Assembly-CSharp.dll'), flag: path.join(game.root, FLAG_NAME) };
+  };
 
   async function patcher(...args) {
     const r = await run(patcherExe, args);
@@ -103,7 +107,7 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
   // 게임이 꺼져 있을 때만 호출한다. 백업(clean일 때만) → 구조검증·패치(별도 파일) → verify → 교체 → 재검증.
   // onReplaced로 교체 사실을 알려, 호출자가 이후 실패 시 백업으로 복원하게 한다.
   async function patchInstalled(game, onReplaced) {
-    const { dll, flag } = paths(game);
+    const { managed, dll, flag } = paths(game);
     let r = await patcher('inspect', dll);
     if (r.code !== 0) throw new Failure(r.code === 2 ? 'incompatible' : 'inspect_failed');
     if (r.json.state === 'patched') {   // 경로가 바뀐 패치본: 원본으로 되돌린 뒤 새 리터럴로 다시 패치
@@ -111,15 +115,15 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     } else if ((await patcher('backup', dll, backupDir)).code !== 0) throw new Failure('backup_failed');
     fs.mkdirSync(path.dirname(staging), { recursive: true });
     fs.rmSync(staging, { force: true });
-    r = await patcher('patch', dll, staging, flag);
+    r = await patcher('patch', dll, staging, flag, managed);
     if (r.code !== 0) throw new Failure(r.code === 2 ? 'incompatible' : 'patch_failed');
-    if ((await patcher('verify', original, staging, flag)).code !== 0) throw new Failure('verify_failed');
+    if ((await patcher('verify', original, staging, flag, managed)).code !== 0) throw new Failure('verify_failed');
     if (await sys.gameRunning()) throw new Failure('game_running');
     const tmp = `${dll}.cattalk-new`;
     fs.copyFileSync(staging, tmp);
     try { fs.renameSync(tmp, dll); } catch (e) { fs.rmSync(tmp, { force: true }); throw new Failure('replace_failed'); }
     onReplaced();
-    if ((await patcher('verify', original, dll, flag)).code !== 0) throw new Failure('post_verify_failed');
+    if ((await patcher('verify', original, dll, flag, managed)).code !== 0) throw new Failure('post_verify_failed');
   }
 
   async function rollback(game) {
