@@ -6,11 +6,15 @@ const windowState = require('./window-state');
 const { createAutoChest, defaultSys } = require('./auto-chest');
 const { countBadge, dotIcon } = require('./badge');
 const { attachImeMemory } = require('./ime-memory');
+const { createUpdater } = require('./updater');
 
 const REQUEST_TIMEOUT_MS = 5000;
 const DEV = process.env.CATTALK_DEV === '1';
 const DEV_URL = 'http://localhost:5173';   // vite.config.mts의 DEV_PORT와 맞춘다
 const ICON = path.join(__dirname, 'app-icon.ico');
+// 설치본은 실행·읽기 파일(사이드카·Python 소스·패처·호환성 도구)을 asar 밖 resources에 둔다(package.json build.extraResources).
+// dev는 레포 루트. 두 경우 모두 sidecar·src·artifacts의 상대 위치가 같아 사이드카(Python)는 경로를 바꾸지 않는다.
+const RES = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
 const APP_ID = 'CatTalk.Desktop';   // Windows 토스트 발신자
 const WINDOW_APP_ID = 'CatTalk.Window';   // 작업표시줄용. 레지스트리에 등록하지 않는다(registerToastIdentity 참고)
 
@@ -23,6 +27,9 @@ const MOVE_SETTLE_MS = 200;
 // side·heightPct·hideTaskbar·display({id,bounds}). 시작 시 디스크에서 읽고 바뀔 때마다 저장한다.
 const state = windowState.load();
 
+// dev(electron .)와 설치본이 같은 사용자 폴더를 쓰게 해 단일 실행 잠금을 공유한다. 설치본 기본값은 productName('Cat Talk') 폴더라
+// 그대로 두면 둘이 함께 켜져 게임에 사이드카가 둘 붙는다(D-030). 데이터 폴더(CatTalk-dev)도 공유한다.
+app.setPath('userData', path.join(app.getPath('appData'), 'cat-talk'));
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
 app.on('second-instance', () => openAndExpand());
@@ -50,7 +57,7 @@ function startSidecar() {
     : (custom ? [windowlessPython(custom)] : ['pyw', '-3.11']);
   // libuv는 상속 stdio가 하나도 없을 때만 CREATE_NO_WINDOW를 붙인다. 그래서 prod는 stderr를 상속 대신
   // 파이프로 받아 Electron stderr로 넘긴다(사이드카가 fd2를 fd1로 복제하므로 버리면 안 된다).
-  const child = spawn(py, [...pyArgs, path.join(__dirname, '..', 'sidecar', 'server.py')], {
+  const child = spawn(py, [...pyArgs, path.join(RES, 'sidecar', 'server.py')], {
     stdio: ['pipe', 'pipe', DEV ? 'inherit' : 'pipe'],
     windowsHide: !DEV,
   });
@@ -276,7 +283,7 @@ ipcMain.handle('bridge-request', async (_e, payloadString) => {
 // 기능 이름('chest' | 'transparent')은 auto-chest가 검증한다.
 const chest = createAutoChest({
   dataDir: windowState.dataDir(),
-  patcherExe: path.join(__dirname, '..', 'artifacts', 'auto_chest', 'AutoChestPatcher.exe'),
+  patcherExe: path.join(RES, 'artifacts', 'auto_chest', 'AutoChestPatcher.exe'),
   sys: defaultSys((url) => shell.openExternal(url)),
   stopWorker: stopSidecar,
   startWorker: async () => { startSidecar(); },
@@ -287,6 +294,17 @@ ipcMain.handle('chest:enable', (_e, feature) => chest.enable(feature));
 ipcMain.handle('chest:disable', (_e, feature) => chest.disable(feature));
 ipcMain.handle('chest:reapply', (_e, features) => chest.reapply(features));
 ipcMain.on('chest:cancel', () => chest.cancel());
+
+// 앱 자동 업데이트(D-030). 설치본에서만 확인·내려받기를 한다(dev는 electron-updater를 읽지도 않는다).
+// 적용 전에 사이드카를 정상 종료해 worker를 남기지 않는다.
+const updater = createUpdater({
+  packaged: app.isPackaged,
+  autoUpdater: app.isPackaged ? require('electron-updater').autoUpdater : null,
+  notify: (status) => { if (win && !win.isDestroyed()) win.webContents.send('update:status', status); },
+  beforeInstall: async () => { windowState.flush(state); await stopSidecar(); },
+});
+ipcMain.handle('update:status', () => updater.status());
+ipcMain.handle('update:install', () => updater.install());
 
 // 앱 버전(package.json의 version). 드로어 표시용이며, 업데이트를 붙이면 electron-updater도 이 값을 기준으로 비교한다.
 ipcMain.on('app:get-version', (e) => { e.returnValue = app.getVersion(); });
@@ -326,6 +344,7 @@ ipcMain.on('window:set-interactive', (_e, interactive) => {
 app.whenReady().then(() => {
   registerToastIdentity();
   startSidecar(); createWindow();
+  updater.start();
   // 해상도·배율·작업표시줄 변화: 현재 디스플레이 기준으로 재도크. 그 디스플레이가 빠지면 남은 쪽으로.
   const redock = () => { if (win && !win.isDestroyed()) dockTo(currentDisplay()); };
   screen.on('display-metrics-changed', redock);

@@ -12,4 +12,6 @@
 ## 패키지
 
 <!-- sw:section id=dist-package source=packaging owner=user gate=no_placeholder -->
-패키징은 아직 구성 전이다(코드 포팅 미시작). 계획하는 방식: 파이썬 사이드카를 **PyInstaller**로 번들하고, Electron 셸을 **electron-builder**로 Windows x64 설치본으로 묶는다. 설치본은 게임 메모리 읽기에 필요한 `steam_api64.dll`·Mono 런타임 접근 경로와 권한을 보장해야 한다. 상자 자동 오픈 패처(`AutoChestPatcher.exe`·`Mono.Cecil.dll`)도 설치본에 함께 넣어야 한다(현재는 `artifacts/auto_chest/`의 빌드 산출물을 실행한다). 게임 DLL과 백업은 배포물에 포함하지 않는다. 구체적 산출물·서명은 패키징 단계에서 확정한다.
+Electron 셸은 **electron-builder NSIS 설치본**(Windows x64, 원클릭·사용자별 설치 `%LOCALAPPDATA%\Programs\cat-talk`, 시작 메뉴 바로가기만, 게시자 `postcat23`, 서명 없음)으로 묶는다(D-030). `npm run dist`가 `dist/Cat-Talk-Setup-<버전>.exe`와 업데이트 메타데이터(`latest.yml`)를 만든다. 실행·읽기 파일(사이드카 `sidecar/`, upstream 소스 `src/`, 호환성 도구 `artifacts/compatibility`, 상자 자동 오픈 패처 `artifacts/auto_chest`)은 asar 밖 `resources/`에 레포와 같은 상대 위치로 넣어, 사이드카 코드는 경로를 바꾸지 않는다. 설치본과 dev는 데이터 폴더(`%LOCALAPPDATA%\CatTalk-dev`)와 단일 실행 잠금을 공유한다(둘이 함께 켜져 사이드카가 둘 붙지 않게).
+
+파이썬 사이드카는 아직 번들하지 않아 **설치 PC에 Python 3.11(py 런처)과 `sidecar/requirements.txt` 패키지가 필요**하다. Python 없는 PC를 위한 **PyInstaller** 번들은 공개 배포 단계에서 한다. 설치본은 게임 메모리 읽기에 필요한 `steam_api64.dll`·Mono 런타임 접근 경로와 권한을 보장해야 한다. 게임 DLL과 백업은 배포물에 포함하지 않는다.

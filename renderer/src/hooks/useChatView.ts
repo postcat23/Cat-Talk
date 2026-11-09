@@ -54,6 +54,8 @@ export interface Chat {
   refresh(): Promise<void>;
   saveSettings(patch: Partial<Settings>): void;
   saveDraft(text: string, now?: boolean): void;
+  sending: boolean;      // 보낸 메시지의 응답을 기다리는 중. 그동안 앱 업데이트(재시작)를 막는다(D-030)
+  hasDraft(): boolean;   // 입력창에 쓰던 글이 있는지(복원된 초안 포함). 업데이트 재시작 전 확인용
 }
 
 export function useChatView(pushReaction: ReactionStack['push'], reactionsEnabled: boolean): Chat {
@@ -69,6 +71,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [live, setLiveState] = useState(true);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [latest, setLatest] = useState<ViewMessage | null>(null);   // HISTORY 폴링이 받은 최신 메시지
+  const [sending, setSending] = useState(false);
 
   const viewRef = useRef<ViewResponse | null>(null);
   const queryRef = useRef('');
@@ -83,6 +86,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const openingProfile = useRef(false);
   const draftScope = useRef<Pick<ViewContext, 'account' | 'lobby'> | null>(null);   // 입력창 글이 속한 계정·로비
   const pendingDraft = useRef<{ text: string; timer: number } | null>(null);
+  const draftText = useRef('');   // 입력창의 마지막 글. 입력(saveDraft)과 로비 초안 복원(takeDraft) 둘 다 기록한다
   const timelineRef = useRef(EMPTY_TIMELINE);
   const liveRef = useRef(true);
   const liveLimit = useRef(PAGE_SIZE);   // 창을 못 채워 스크롤할 수 없을 때만 늘어난다
@@ -138,6 +142,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   }, []);
 
   const saveDraft = useCallback((text: string, now = false) => {
+    draftText.current = text;
     if (pendingDraft.current) clearTimeout(pendingDraft.current.timer);
     pendingDraft.current = { text, timer: window.setTimeout(flushDraft, DRAFT_SAVE_MS) };
     if (now) flushDraft();
@@ -150,6 +155,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     if (!account || !lobby || (scope?.account === account && scope.lobby === lobby)) return false;
     flushDraft();
     draftScope.current = { account, lobby };
+    draftText.current = data.draft ?? '';   // 복원은 입력창이 saveDraft로 알리지 않는다
     setRestoredDraft({ text: data.draft ?? '' });
     return true;
   }, [flushDraft]);
@@ -305,6 +311,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const send = useCallback(async (text: string) => {
     const current = viewRef.current;
     if (!current?.can_send) return false;
+    setSending(true);
     try {
       await rpc('send', { context: current.context, text });
       setLive(true);
@@ -313,8 +320,12 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     } catch (error) {
       showError(error);
       return false;
+    } finally {
+      setSending(false);
     }
   }, [poll, setLive, showError]);
+
+  const hasDraft = useCallback(() => draftText.current.trim() !== '', []);
 
   const openProfile = useCallback(async (uid: string) => {
     if (openingProfile.current) return;
@@ -380,7 +391,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, refresh, saveSettings, saveDraft,
+    items, participants, me, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, refresh, saveSettings, saveDraft, sending, hasDraft,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),

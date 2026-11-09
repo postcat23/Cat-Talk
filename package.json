@@ -3,21 +3,41 @@
   "version": "0.0.1",
   "private": true,
   "description": "Bongo Cat 로비 채팅 데스크톱 메신저 (bongo-cat-chat 포크)",
+  "author": "postcat23",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "vite",
-    "build": "tsc -p renderer && vite build"
+    "build": "tsc -p renderer && vite build",
+    "dist": "npm run build && electron-builder --win --publish never",
+    "release": "npm run build && electron-builder --win --publish always"
+  },
+  "build": {
+    "appId": "CatTalk.Desktop",
+    "productName": "Cat Talk",
+    "directories": { "output": "dist" },
+    "files": ["electron/**", "renderer/dist/**", "package.json"],
+    "extraResources": [
+      { "from": "sidecar", "to": "sidecar", "filter": ["**/*", "!**/__pycache__", "!**/__pycache__/**"] },
+      { "from": "src", "to": "src", "filter": ["**/*", "!**/__pycache__", "!**/__pycache__/**"] },
+      { "from": "artifacts/compatibility", "to": "artifacts/compatibility" },
+      { "from": "artifacts/auto_chest", "to": "artifacts/auto_chest" }
+    ],
+    "win": { "target": "nsis", "icon": "electron/app-icon.ico" },
+    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": false, "artifactName": "Cat-Talk-Setup-${version}.${ext}" },
+    "publish": { "provider": "github", "owner": "postcat23", "repo": "Cat-Talk" }
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
     "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "koffi": "^3.3.7",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

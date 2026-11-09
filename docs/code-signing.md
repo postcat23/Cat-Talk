@@ -15,4 +15,4 @@
 ## 검증
 
 <!-- sw:section id=signing-verify source=- owner=user gate=no_placeholder -->
-미서명 빌드이므로 현재 서명 검증 절차는 없다. 서명을 도입하면 앱·설치·제거 실행 파일에 서명을 적용하고, 배포 전 서명·해시 검증 절차를 수립한다.
+미서명 빌드이므로 현재 서명 검증 절차는 없다. 자동 업데이트도 업데이트 파일의 서명을 검증하지 않는다(electron-updater 6.8.x는 `app-update.yml`에 `publisherName`이 없으면 생략하고 해시만 검증, D-030). 서명을 도입하면 앱·설치·제거 실행 파일에 서명을 적용하고, electron-builder가 `publisherName`을 기록해 업데이트 서명 검증이 켜진다. 배포 전 서명·해시 검증 절차를 그때 수립한다.

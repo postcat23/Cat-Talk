@@ -1,15 +1,16 @@
-import { useState } from 'react';
 import { OVERLAY_HEIGHT, useUi, type ChatHeight, type Settings, type Side, type Theme } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
+import { useUpdate, type UpdateState } from '../hooks/useAppUpdate';
 import { STATE_LABEL } from '../chat/autoChest';
 import Cat from './Cat';
 import styles from './Drawer.module.css';
 
 // 앱 버전은 main의 app.getVersion()(package.json의 version)이다. 브라우저 dev에는 Electron이 없어 표시하지 않는다.
-// 업데이트 확인·적용(electron-updater)은 후속 단계라(D-006: 자동 업데이트 보류) '최신'·업데이트 버튼은 아직 표시용 고정값이다.
 const APP_VERSION = window.catTalk?.version ? `v${window.catTalk.version}` : null;
-const UPDATE_AVAILABLE = false;
+// 배지는 확인 결과가 있을 때만: '최신'(새 버전 없음)·'업데이트 가능'(내려받아 둠). 확인 전·중·실패(비공개 레포 포함)·dev는
+// '최신'이라고 단정하지 않고 버전만 보여 준다(D-030).
+const UPDATE_BADGE: Partial<Record<UpdateState, string>> = { latest: '최신', ready: '업데이트 가능' };
 
 type Option<T> = { value: T; label: string };
 
@@ -43,7 +44,7 @@ function Switch({ on, label, onToggle, disabled }: { on: boolean; label: string;
 
 export default function Drawer() {
   const { settings, overlays, dispatch } = useUi();
-  const { me, accountStatus, saveSettings } = useChat();
+  const { me, accountStatus, saveSettings, sending, hasDraft } = useChat();
   const apply = (patch: Partial<Settings>) => dispatch({ type: 'setSettings', patch });
   const set = (patch: Partial<Settings>) => { apply(patch); saveSettings(patch); };
   const chest = useChest();
@@ -64,8 +65,17 @@ export default function Drawer() {
     const result = await (on ? chest.enable('transparent') : chest.disable('transparent'));
     if (result.ok) set({ clearCats: on });
   };
-  // 업데이트 확인·적용은 후속 단계. 지금은 목업처럼 버튼을 누르면 '최신'으로 돌아가는 것만.
-  const [updateAvailable, setUpdateAvailable] = useState(UPDATE_AVAILABLE);
+  // 앱 업데이트(D-030): 내려받아 둔 업데이트를 [업데이트]로 적용(재시작)한다. 보내는 중이면 끝날 때까지 막고,
+  // 쓰던 글이 있으면 대화 영역에 확인 카드를 띄우므로 드로어를 닫아 가리지 않게 한다.
+  const update = useUpdate();
+  const updateReady = update?.state === 'ready';
+  const updateBadge = update ? UPDATE_BADGE[update.state] : undefined;
+  const startUpdate = () => {
+    if (!update || sending) return;
+    const draft = hasDraft();
+    if (draft) dispatch({ type: 'closeOverlays' });
+    update.request(draft);
+  };
 
   return (
     <aside className={['thin-scroll', styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' && styles.full].filter(Boolean).join(' ')} aria-label="메뉴">
@@ -115,9 +125,9 @@ export default function Drawer() {
       <div className={styles.update}>
         <div className={styles.uhead}>앱 업데이트</div>
         <div className={styles.urow}>
-          <span className={updateAvailable ? `${styles.ubadge} ${styles.avail}` : styles.ubadge}>{updateAvailable ? '업데이트 가능' : '최신'}</span>
+          {updateBadge && <span className={updateReady ? `${styles.ubadge} ${styles.avail}` : styles.ubadge}>{updateBadge}</span>}
           {APP_VERSION && <span className={styles.uver}>{APP_VERSION}</span>}
-          {updateAvailable && <button className={styles.upbtn} onClick={() => setUpdateAvailable(false)}>업데이트</button>}
+          {updateReady && <button className={styles.upbtn} disabled={sending} onClick={startUpdate}>업데이트</button>}
         </div>
       </div>
     </aside>
