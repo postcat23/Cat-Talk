@@ -288,6 +288,9 @@ ipcMain.handle('chest:disable', (_e, feature) => chest.disable(feature));
 ipcMain.handle('chest:reapply', (_e, features) => chest.reapply(features));
 ipcMain.on('chest:cancel', () => chest.cancel());
 
+// 앱 버전(package.json의 version). 드로어 표시용이며, 업데이트를 붙이면 electron-updater도 이 값을 기준으로 비교한다.
+ipcMain.on('app:get-version', (e) => { e.returnValue = app.getVersion(); });
+
 // 렌더러가 저장된 값으로 시작하도록(기본값이 복원된 창을 덮어쓰지 않게) preload가 동기로 읽는다.
 ipcMain.on('window:get-initial', (e) => {
   e.returnValue = { side: state.side, heightPct: state.heightPct, hideTaskbar: state.hideTaskbar };

@@ -6,8 +6,9 @@ import { STATE_LABEL } from '../chat/autoChest';
 import Cat from './Cat';
 import styles from './Drawer.module.css';
 
-// 앱 업데이트 연결은 후속 단계(electron-updater). 그때까지 표시용 고정값.
-const APP_VERSION = 'v1.0.0';
+// 앱 버전은 main의 app.getVersion()(package.json의 version)이다. 브라우저 dev에는 Electron이 없어 표시하지 않는다.
+// 업데이트 확인·적용(electron-updater)은 후속 단계라(D-006: 자동 업데이트 보류) '최신'·업데이트 버튼은 아직 표시용 고정값이다.
+const APP_VERSION = window.catTalk?.version ? `v${window.catTalk.version}` : null;
 const UPDATE_AVAILABLE = false;
 
 type Option<T> = { value: T; label: string };
@@ -115,7 +116,7 @@ export default function Drawer() {
         <div className={styles.uhead}>앱 업데이트</div>
         <div className={styles.urow}>
           <span className={updateAvailable ? `${styles.ubadge} ${styles.avail}` : styles.ubadge}>{updateAvailable ? '업데이트 가능' : '최신'}</span>
-          <span className={styles.uver}>{APP_VERSION}</span>
+          {APP_VERSION && <span className={styles.uver}>{APP_VERSION}</span>}
           {updateAvailable && <button className={styles.upbtn} onClick={() => setUpdateAvailable(false)}>업데이트</button>}
         </div>
       </div>

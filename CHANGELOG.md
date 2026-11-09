@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 위로 올려 읽는 동안 새 메시지가 와도 화면을 고정하고, ↓ 버튼이나 맨 아래 도달·메시지 전송으로 최신 대화에 복귀
 - 검색 결과를 누르면 검색을 닫고 그 메시지 주변 대화로 이동해 2초간 강조 (위아래로 이어 읽기 가능)
 - 위로 올려 읽는 중 새 메시지가 오면 ↓ 버튼 대신 최신 메시지 미리보기 카드 표시
+- `renderer` — 드로어 '앱 업데이트'에 고정값(v1.0.0) 대신 실제 앱 버전(package.json, `app.getVersion()`) 표시
 
 ### Changed
 
