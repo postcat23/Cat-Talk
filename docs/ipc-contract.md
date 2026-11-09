@@ -85,6 +85,7 @@
 - `default_avatar_id` — Cat-Talk 추가. 게임 기본 고양이(장착 해제 스킨 `Cat`, 모자 없음)를 worker가 1회 렌더한 이미지의 id. `avatars`로 받는다. 렌더러는 아바타 미해결·스킨 변경 중 플레이스홀더로 쓴다. 렌더 전·실패 시 키가 없다
 - `profile_targets[]`(Steam 프로필 열기 허용 대상)
 - `blocks_ready`, `blocked_users[{steam_id,name}]` — Cat-Talk은 앱 차단 목록(D-033). 렌더러는 `participants`의 `blocked` 멤버를 목록·참여자 수에서 숨기고, 드로어 '차단 목록'에 `blocked_users`(이름은 닉네임 반영)를 보여 준다. `blocks_ready`가 false면(목록 읽기 실패) 업스트림이 상대 대화를 보류한다
+- Cat-Talk Steam 차단(D-033 2단계): worker 글루(`sidecar/steam_relationship.py`)가 멤버 프로필 행에 `steam_blocked`(ISteamFriends `GetFriendRelationship` = 5 `Ignored`, 내가 '모든 대화 차단'한 상대 — 실측)를 붙이고, 사이드카가 그 멤버를 view 전체에서 뺀다 — 지난 대화·입퇴장은 `VolatileStore.message_page`가 앱 차단과 같은 조회 단계에서(`latest_seq`·`has_more`·`has_newer`·`unseen`도 맞음), 나머지는 view 후처리에서 `participants`·`profiles`·`reactions`·`profile_targets`·`volatile_peer_ids`, 그리고 `blocked_users`(= 앱 차단 − 스팀 차단). `service.blocked`(앱 차단)에는 넣지 않으므로 앱에서 풀 수 없고, Steam에서 풀면 다음 프로필 갱신(약 1초)에 돌아온다. 나간 멤버는 마지막 판정을 유지(이번 실행), 계정이 바뀌면 초기화. `incoming_count`에서도 뺀다. `steam_blocked`는 렌더러로 보내지 않는다
 
 **설정·상태**
 - `theme`,`collapsed`,`language`,`language_preference`,`notifications{notification_flash,notification_toast}`,`reactions_enabled`
@@ -137,7 +138,7 @@
 
 **설정 저장 역할 분리:** 앱 설정은 `settings.sqlite3`(사이드카), 창 배치(도크·높이·작업표시줄 숨김·모니터)는 `window-state.json`(Electron main)에 둔다. 창 배치는 창 생성 전에 필요해 사이드카를 기다릴 수 없고, 두 저장소가 같은 키를 갖지 않는다. 렌더러는 시작 시 첫 `view`로 앱 설정을 1회 받고, 이후 변경은 `setting`으로 저장만 한다.
 
-**구현: `sidecar/volatile_store.py`의 `VolatileStore(Store)` 글루.** upstream `Store`를 상속해 부모 연결을 `:memory:`로 연다 — 7개 테이블과 `timeline` 뷰가 전부 메모리 DB에 생기고(빈 `blocked_users` 포함), FK(messages→sessions, receipts→messages, presence_events→sessions)도 그 안에서 성립한다. `setting()`만 별도 디스크 연결(`settings.sqlite3`)로 돌리고, 차단 목록 두 메서드도 그 settings를 쓴다(D-033). `store.py`는 수정하지 않는다(D-009) — upstream 스키마·메서드가 바뀌면 이 글루를 함께 점검한다.
+**구현: `sidecar/volatile_store.py`의 `VolatileStore(Store)` 글루.** upstream `Store`를 상속해 부모 연결을 `:memory:`로 연다 — 7개 테이블과 `timeline` 뷰가 전부 메모리 DB에 생기고(빈 `blocked_users` 포함), FK(messages→sessions, receipts→messages, presence_events→sessions)도 그 안에서 성립한다. `setting()`만 별도 디스크 연결(`settings.sqlite3`)로 돌리고, 차단 목록 두 메서드도 그 settings를 쓴다(D-033). `message_page()`는 사이드카가 채우는 `hidden_senders`(Steam 차단, D-033 2단계)를 앱 차단(`blocked`)에 합쳐 조회한다(`blocked`가 None이면 그대로). `store.py`는 수정하지 않는다(D-009) — upstream 스키마·메서드가 바뀌면 이 글루를 함께 점검한다.
 
 **무의미해지는 것(코드는 upstream 그대로 둠)**
 - `RETENTION_SECONDS`·`prune()`·60초 주기 프루닝: 매 실행 빈 메모리 DB라 지울 것이 사실상 없다.
