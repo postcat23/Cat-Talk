@@ -63,6 +63,7 @@ function dispatch(args: Record<string, unknown>) {
     case 'draft': drafts.set(args.lobby as string, args.text as string); return { ok: true };
     case 'refresh': return { ok: true };
     case 'open_steam_profile': return { ok: true };
+    case 'open_steam_trade': return { ok: true };
     default: return { error: 'not_wired' };
   }
 }

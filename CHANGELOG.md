@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 위로 올려 읽는 중 새 메시지가 오면 ↓ 버튼 대신 최신 메시지 미리보기 카드 표시
 - `renderer` — 드로어 '앱 업데이트'에 고정값(v1.0.0) 대신 실제 앱 버전(package.json, `app.getVersion()`) 표시
 - `auto-update` — 설치본(NSIS, 원클릭·사용자별, 시작 메뉴 바로가기)과 자동 업데이트: 켤 때·6시간마다 GitHub Releases를 확인해 백그라운드로 내려받고, 드로어 '업데이트 가능'·[업데이트]로 재시작해 적용(보내는 중엔 막고, 쓰던 글이 있으면 확인). 레포가 비공개인 동안은 확인이 실패하고 드로어는 버전만 표시
+- `renderer` — 참여자 ⋯ 더보기에 '교환 요청' 추가: 그 참여자의 Steam 교환 요청 페이지를 Steam 앱에서 엶(프로필 열기와 같은 대상 검증, 실패 시 에러 안내). 메뉴의 'Steam 프로필 열기'는 '프로필 열기'로 줄이고, 대상 확인 실패 문구를 프로필·교환 공용으로 변경
 
 ### Changed
 

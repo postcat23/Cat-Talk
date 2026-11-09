@@ -3,7 +3,8 @@ import type { ViewResponse } from './model';
 
 const REQUEST_FAILED = '요청을 완료하지 못했습니다. 연결·저장 상태를 확인해 주세요.';
 
-// 통과 9종(ipc-contract §8) + storage_failed + 전송 계층 not_wired·bridge_down. 그 외는 전부 request_failed로 접는다.
+// 통과 9종(ipc-contract §8) + storage_failed + main이 만드는 steam_trade_failed + 전송 계층 not_wired·bridge_down.
+// 그 외는 전부 request_failed로 접는다. invalid_steam_id·steam_profile_unavailable은 프로필 열기·교환 공용 문구다.
 const ERROR_TEXT: Record<string, string> = {
   connection_changed: '연결된 로비가 바뀌어 메시지를 보내지 않았습니다.',
   development_limit_50: '메시지는 50자까지 보낼 수 있습니다.',
@@ -11,9 +12,10 @@ const ERROR_TEXT: Record<string, string> = {
   storage_failed_before_send: '기록을 저장하지 못해 메시지를 보내지 않았습니다.',
   storage_failed: '저장에 실패했습니다. 작성한 내용은 이 창에서 확인해 주세요.',
   legal_unavailable: '안내 파일을 열지 못했습니다. 앱 파일을 복구하거나 다시 설치해 주세요.',
-  invalid_steam_id: '프로필 대상을 확인하지 못했습니다. 참여자 목록을 다시 확인해 주세요.',
-  steam_profile_unavailable: '현재 연결에서 열 수 없는 프로필입니다. 참여자와 연결 상태를 확인해 주세요.',
+  invalid_steam_id: '대상을 확인하지 못했습니다. 참여자 목록을 다시 확인해 주세요.',
+  steam_profile_unavailable: '현재 연결에서 열 수 없는 대상입니다. 참여자와 연결 상태를 확인해 주세요.',
   steam_profile_failed: 'Steam 프로필을 열지 못했습니다. Steam 실행 상태를 확인해 주세요.',
+  steam_trade_failed: 'Steam 교환 요청 페이지를 열지 못했습니다. Steam 실행 상태를 확인해 주세요.',
   block_unavailable: '차단 설정을 저장하지 못했습니다. 이전 설정을 유지합니다.',
   not_wired: '아직 지원하지 않는 기능입니다.',
   bridge_down: '채팅 기능에 연결하지 못했습니다.',
@@ -21,6 +23,7 @@ const ERROR_TEXT: Record<string, string> = {
 };
 
 export const PROFILE_OPENING = 'Steam 프로필을 여는 중입니다.';
+export const TRADE_OPENING = 'Steam 교환 페이지를 여는 중입니다.';
 
 export function errorText(error: unknown) {
   const code = error instanceof Error ? error.message : '';

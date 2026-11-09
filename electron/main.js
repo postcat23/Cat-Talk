@@ -261,19 +261,25 @@ function createWindow() {
   else win.loadFile(path.join(__dirname, '..', 'renderer', 'dist', 'index.html'));
 }
 
-// 프로필 열기: 사이드카가 대상을 검증해 준 URI를 main이 연다. URI는 렌더러로 넘기지 않는다.
-async function openSteamProfile(payloadString) {
+// 프로필 열기·교환 페이지 열기: 사이드카가 대상을 검증해 준 URI를 main이 형식을 다시 확인하고 연다.
+// URI는 렌더러로 넘기지 않는다. 둘 다 Steam 클라이언트에서 열린다(교환은 전용 딥링크가 없어 https 페이지를 steam://openurl/로 감싼다).
+const STEAM_LINKS = new Map([
+  ['open_steam_profile', { pattern: /^steam:\/\/url\/SteamIDPage\/[0-9]+$/, failed: 'steam_profile_failed' }],
+  ['open_steam_trade', { pattern: /^steam:\/\/openurl\/https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?partner=[0-9]+$/, failed: 'steam_trade_failed' }],
+]);
+async function openSteamLink(payloadString, link) {
   const result = JSON.parse(await sidecarRequest(payloadString));
   if (result.error) return JSON.stringify(result);
-  if (!/^steam:\/\/url\/SteamIDPage\/[0-9]+$/.test(result.uri)) return JSON.stringify({ error: 'steam_profile_failed' });
+  if (!link.pattern.test(result.uri)) return JSON.stringify({ error: link.failed });
   try { await shell.openExternal(result.uri); }
-  catch (e) { return JSON.stringify({ error: 'steam_profile_failed' }); }
+  catch (e) { return JSON.stringify({ error: link.failed }); }
   return JSON.stringify({ ok: true });
 }
 
 ipcMain.handle('bridge-request', async (_e, payloadString) => {
   try {
-    if (JSON.parse(payloadString).action === 'open_steam_profile') return await openSteamProfile(payloadString);
+    const link = STEAM_LINKS.get(JSON.parse(payloadString).action);
+    if (link) return await openSteamLink(payloadString, link);
     return await sidecarRequest(payloadString);
   }
   catch (e) { return JSON.stringify({ error: 'bridge_down' }); }
