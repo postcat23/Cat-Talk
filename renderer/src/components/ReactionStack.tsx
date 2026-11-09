@@ -1,7 +1,7 @@
 import type { ReactionStack as Stack } from '../hooks/useReactionStack';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
-import { progressText, reapplyNotice } from '../chat/autoChest';
+import { progressText, reapplyNotice, REINSTALL_NOTICE } from '../chat/autoChest';
 import Cat from './Cat';
 import NoticeCard from './NoticeCard';
 import styles from './ReactionStack.module.css';
@@ -26,6 +26,8 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
       {/* 설정 ON + 패치 소실: [재시작]이 곧 확인이라 카운트다운 없이 재적용, [X]는 켜진 설정을 모두 끈다 */}
       {chest?.needsReapply && !install && <NoticeCard key="reapply" text={reapplyNotice(chest.wanted)}
         action={{ label: '재적용', onClick: () => void chest.reapply() }} onClose={() => void chest.dismissReapply()} />}
+      {/* 설치 도구 불일치 + 설정 ON: 재적용으로는 못 고쳐 재설치 안내만. [X]는 이번 실행 동안 숨김(D-029) */}
+      {chest?.needsReinstall && !install && <NoticeCard key="reinstall" text={REINSTALL_NOTICE} onClose={chest.dismissReinstall} />}
       {toast && <NoticeCard key={toast.id} text={toast.text} showMs={TOAST_MS} />}
       {notice && <NoticeCard key={notice} text={notice} />}
       <NoticeCard text={DEV_NOTICE} showMs={DEV_NOTICE_MS} />

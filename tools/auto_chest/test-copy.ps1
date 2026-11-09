@@ -116,5 +116,13 @@ Run '15e verify, calls set_blocksRaycasts -> refuse' 2 @('verify', $orig, $bad, 
 Check '15f refusal reason = unresolved_reference' ($last -match 'unresolved_reference') $last
 Run '15g patch without runtime folder -> error' 1 @('patch', $orig, (Join-Path $Work 'misc/nomg.dll'), $flag, (Join-Path $Work 'misc'))
 Check '15h no output without runtime folder' (!(Test-Path (Join-Path $Work 'misc/nomg.dll'))) ''
+
+# ---- 설치 도구 버전(D-029): 앱이 기대값과 비교한다. 이전 패처는 version을 모른다 ----
+Run '16a version -> ok' 0 @('version')
+$ver = $last | ConvertFrom-Json
+Check '16b version = cli 2, patchVersion 2' ($ver.cli -eq 2 -and $ver.patchVersion -eq 2) "$last"
+Run '16c version with extra args -> error' 1 @('version', 'x')
+$legacyVer = & $legacy version 2>$null; $legacyCode = $LASTEXITCODE
+Check '16d legacy patcher has no version -> error' ($legacyCode -eq 1) "exit=$legacyCode $legacyVer"
 Check '9 original copy untouched' ((Sha $orig) -eq $origSha) ''
 if ($failed) { exit 1 }

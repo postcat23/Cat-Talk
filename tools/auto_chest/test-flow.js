@@ -44,7 +44,7 @@ function world(name, opts = {}) {
   };
   w.steamHeld = () => !!opts.steamStuck;
   w.chest = createAutoChest({
-    dataDir: w.data, patcherExe, sys,
+    dataDir: w.data, patcherExe: opts.patcherExe ?? patcherExe, sys,
     stopWorker: async () => { w.log.push('stopWorker'); w.workerStopped = true; },
     startWorker: async () => { w.log.push('startWorker'); w.workerStopped = false; },
     notify: (p) => w.notes.push(p),
@@ -238,6 +238,69 @@ function makeV1(legacy, w) {
   r = await w.chest.reapply(['chest']);
   check('17d v1 + 자동 오픈만 켜짐 -> 토스트 재적용으로 v2(직접 설치와 같은 바이트), 투명화 플래그 없음',
     r.ok && sha(w.dll) === v2sha && fs.existsSync(w.flag) && !fs.existsSync(w.tflag), JSON.stringify(r));
+
+  // ---- 설치 도구 버전·사전 점검(D-029): 안 되는 설치는 worker·게임을 건드리기 전에 끝낸다 ----
+  const phases = (x) => x.notes.map((n) => n.phase).join(',');
+  const untouched = (x) => x.log.length === 0 && sha(x.dll) === origSha && !fs.existsSync(x.flag) && !fs.existsSync(x.tflag);
+
+  // 구버전 패처(version 명령 없음, 3인자 CLI): 2026-11-09 서브 기기 실측 상황
+  w = world('oldtool', { running: true, patcherExe: legacy });
+  st = await w.chest.status(true);
+  check('18 구버전 패처 -> 앱 재설치 필요', st.state === 'patcher_mismatch' && st.transparent === 'patcher_mismatch' && st.reason === 'mismatch', JSON.stringify(st));
+  r = await w.chest.enable();
+  check('18b 켜기 거부, 알림·worker·게임·DLL 그대로', r.reason === 'patcher_mismatch' && w.notes.length === 0 && untouched(w) && w.running, JSON.stringify(r) + ' ' + w.log.join(','));
+  fs.writeFileSync(w.flag, '');   // 설정 ON + clean(재적용 대상)이어도
+  r = await w.chest.reapply();
+  check('18c 재적용 거부, 알림·worker·게임·DLL 그대로', r.reason === 'patcher_mismatch' && w.notes.length === 0 && w.log.length === 0 && w.running && sha(w.dll) === origSha, JSON.stringify(r));
+
+  w = world('notool', { patcherExe: path.join(work, 'none', 'AutoChestPatcher.exe') });
+  st = await w.chest.status(false);
+  check('18d 패처 없음 -> 앱 재설치 필요(missing)', st.state === 'patcher_mismatch' && st.reason === 'missing', JSON.stringify(st));
+
+  // 판정은 패처·Mono.Cecil 파일이 바뀔 때만 다시 한다: 다시 빌드하면 곧바로 풀리고, 의존 DLL이 빠지면 다시 막힌다
+  const swapDir = path.join(work, 'swaptool');   // world()가 지우는 세계 폴더와 겹치지 않게
+  fs.rmSync(swapDir, { recursive: true, force: true });
+  fs.mkdirSync(swapDir, { recursive: true });
+  fs.copyFileSync(path.join(path.dirname(patcherExe), 'Mono.Cecil.dll'), path.join(swapDir, 'Mono.Cecil.dll'));
+  const swapExe = path.join(swapDir, 'AutoChestPatcher.exe');
+  fs.copyFileSync(legacy, swapExe);
+  w = world('swap', { patcherExe: swapExe });
+  const s1 = await w.chest.status(false);
+  fs.copyFileSync(patcherExe, swapExe);
+  const s2 = await w.chest.status(false);
+  check('18e 패처를 다시 빌드하면 재판정', s1.state === 'patcher_mismatch' && s1.reason === 'mismatch' && s2.state === 'not_installed', `${JSON.stringify(s1)} -> ${s2.state}`);
+  fs.rmSync(path.join(swapDir, 'Mono.Cecil.dll'));
+  const s3 = await w.chest.status(false);
+  check('18f 의존 DLL 누락(백신 격리 등) -> 앱 재설치 필요', s3.state === 'patcher_mismatch' && s3.reason === 'mismatch', JSON.stringify(s3));
+
+  // 사전 점검 통과: 점검이 맨 앞, 그 뒤는 종전 순서
+  w = world('order', { running: true });
+  r = await w.chest.enable();
+  check('19 사전 점검 -> 카운트다운 -> 설치', r.ok && w.notes[0].phase === 'checking' && w.notes[1].phase === 'countdown' && w.notes.at(-1).phase === 'done', phases(w));
+
+  // 런타임 참조 부족(스트리핑된 게임 런타임, D-028 2a 실패 유형): 판정은 통과하지만 패치가 거부된다
+  w = world('preref', { running: true });
+  fs.rmSync(path.join(w.root, 'BongoCat_Data', 'Managed', 'UnityEngine.UIModule.dll'));
+  check('19a 판정은 통과(미설치)', (await w.chest.status(false)).state === 'not_installed');
+  r = await w.chest.enable();
+  check('19b 켜기 -> 사전 점검에서 중단, 카운트다운·worker·게임 조작 없음', r.reason === 'incompatible' && untouched(w) && w.running && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
+  fs.writeFileSync(w.flag, '');
+  w.notes.length = 0;
+  r = await w.chest.reapply();
+  check('19c 재적용 -> 사전 점검에서 중단, worker·게임 조작 없음', r.reason === 'incompatible' && w.log.length === 0 && w.running && sha(w.dll) === origSha && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
+  check('19d 사전 점검 산출물 남기지 않음', !fs.existsSync(path.join(w.data, 'auto_chest', 'staging', 'preflight', 'Assembly-CSharp.dll')));
+
+  // 원본 백업 손상 + v1 재적용: 종전엔 게임을 끈 뒤 restore에서야 실패해 게임만 재시작됐다
+  w = world('badbak', { running: true });
+  execFileSync(patcherExe, ['backup', w.dll, path.join(w.data, 'auto_chest', 'backup')]);
+  makeV1(legacy, w);
+  fs.writeFileSync(w.flag, '');
+  const v1sha = sha(w.dll);
+  const bak = path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig');
+  const bytes = fs.readFileSync(bak); bytes[1000] ^= 0xff; fs.writeFileSync(bak, bytes);
+  check('20 v1 + 설정 ON -> 재적용 필요', (await w.chest.status(true)).state === 'needs_reapply');
+  r = await w.chest.reapply(['chest']);
+  check('20b 백업 손상 -> 사전 점검에서 중단, worker·게임·DLL 그대로', r.reason === 'preflight_failed' && w.log.length === 0 && w.running && sha(w.dll) === v1sha && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
 
   console.log(failed ? `FAILED: ${failed}` : 'ALL PASS');
   process.exit(failed ? 1 : 0);
