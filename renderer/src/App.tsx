@@ -5,6 +5,7 @@ import { useClickThrough } from './hooks/useClickThrough';
 import { useMessageAlerts } from './hooks/useMessageAlerts';
 import { ChatContext, useChatView } from './hooks/useChatView';
 import { AutoChestContext, useAutoChest } from './hooks/useAutoChest';
+import { AppUpdateContext, useAppUpdate } from './hooks/useAppUpdate';
 import type { Feature } from './chat/autoChest';
 import CollapseTab from './components/CollapseTab';
 import TopBar from './components/TopBar';
@@ -25,6 +26,7 @@ function Panel() {
     saveSettings(patch);
   }, [dispatch, saveSettings]);
   const chest = useAutoChest(settings.autoOpenChest, settings.clearCats, chestOff);
+  const update = useAppUpdate();
 
   // 도크 위치·채팅 높이·작업표시줄: Electron이면 창(BrowserWindow)이 맡고, 브라우저 dev면 패널 CSS로 시뮬레이션.
   // 패널·탭이 어느 쪽에 오는지는 두 모드 모두 data-side가 정한다. --ovh·반응 카드 최대 수는 설정값 기준 공통.
@@ -44,6 +46,7 @@ function Panel() {
   return (
     <ChatContext.Provider value={chat}>
       <AutoChestContext.Provider value={chest}>
+      <AppUpdateContext.Provider value={update}>
         <section className={overlays.collapsed ? 'panel collapsed' : 'panel'} data-side={settings.side} style={style}>
           <CollapseTab />
           {/* 채팅 투명도는 창(setOpacity)이 아니라 본체 CSS opacity. 투명 창 위에서 데스크톱이 비친다 */}
@@ -56,6 +59,7 @@ function Panel() {
               restored={chat.restoredDraft} onSend={chat.send} onDraft={chat.saveDraft} />
           </div>
         </section>
+      </AppUpdateContext.Provider>
       </AutoChestContext.Provider>
     </ChatContext.Provider>
   );

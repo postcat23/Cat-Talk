@@ -8,6 +8,11 @@ interface Window {
   catTalk?: {
     initial: { side: 'left' | 'right'; heightPct: 100 | 70 | 50; hideTaskbar: boolean };
     version: string;   // app.getVersion() — package.json의 version
+    update: {
+      status(): Promise<import('./hooks/useAppUpdate').UpdateStatus>;
+      install(): Promise<{ ok: boolean; reason?: string }>;
+      onStatus(cb: (status: import('./hooks/useAppUpdate').UpdateStatus) => void): () => void;
+    };
     onExpand(cb: () => void): () => void;
     setDockSide(side: 'left' | 'right'): void;
     setChatHeight(pct: 100 | 70 | 50): void;

@@ -28,6 +28,7 @@
 .ubadge.avail{background:rgba(109,75,216,.18);color:var(--accent)}
 .uver{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--muted)}
 .upbtn{margin-left:auto;display:inline-flex;font:inherit;font-size:12.5px;font-weight:600;border:0;border-radius:9px;padding:7px 12px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
+.upbtn:disabled{opacity:.5;cursor:default}
 /* 라운드 카드. 배경은 드로어(--surface)에서 전경색 쪽으로 한 단계(라이트·다크 공통 토큰 혼합) */
 .chest{display:flex;align-items:center;gap:10px;font-size:13.5px;line-height:1.2;
   background:color-mix(in srgb, var(--fg) 8%, var(--surface));border-radius:12px;padding:10px 12px}

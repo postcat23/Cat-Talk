@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 검색 결과를 누르면 검색을 닫고 그 메시지 주변 대화로 이동해 2초간 강조 (위아래로 이어 읽기 가능)
 - 위로 올려 읽는 중 새 메시지가 오면 ↓ 버튼 대신 최신 메시지 미리보기 카드 표시
 - `renderer` — 드로어 '앱 업데이트'에 고정값(v1.0.0) 대신 실제 앱 버전(package.json, `app.getVersion()`) 표시
+- `auto-update` — 설치본(NSIS, 원클릭·사용자별, 시작 메뉴 바로가기)과 자동 업데이트: 켤 때·6시간마다 GitHub Releases를 확인해 백그라운드로 내려받고, 드로어 '업데이트 가능'·[업데이트]로 재시작해 적용(보내는 중엔 막고, 쓰던 글이 있으면 확인). 레포가 비공개인 동안은 확인이 실패하고 드로어는 버전만 표시
 
 ### Changed
 

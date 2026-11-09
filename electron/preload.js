@@ -11,6 +11,16 @@ contextBridge.exposeInMainWorld('catTalk', {
   initial: ipcRenderer.sendSync('window:get-initial'),
   // 앱 버전(main의 app.getVersion() = package.json). 드로어 '앱 업데이트'에 표시한다.
   version: ipcRenderer.sendSync('app:get-version'),
+  // 앱 자동 업데이트(D-030). 설치본에서만 동작하고 dev는 state 'disabled'. install은 내려받아 둔 업데이트를 재시작으로 적용한다.
+  update: {
+    status: () => ipcRenderer.invoke('update:status'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onStatus: (cb) => {
+      const listener = (_e, status) => cb(status);
+      ipcRenderer.on('update:status', listener);
+      return () => ipcRenderer.removeListener('update:status', listener);
+    },
+  },
   // 트레이 '열기/펼치기'·두 번째 실행 시 접힌 패널을 펼친다. 해제 함수를 돌려준다.
   onExpand: (cb) => {
     const listener = () => cb();
