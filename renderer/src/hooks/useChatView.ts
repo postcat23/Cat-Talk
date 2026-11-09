@@ -3,7 +3,7 @@ import { rpc } from '../rpc';
 import { useUi, type Settings } from '../state/UiContext';
 import { errorText, noticeText, PROFILE_OPENING, TRADE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
-  accountStatus, connState, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
+  accountStatus, connState, displayName, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
   type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
 } from '../chat/model';
 import type { ReactionStack } from './useReactionStack';
@@ -33,6 +33,8 @@ export interface Chat {
   participants: Participant[];
   me: Participant | null;
   nicknames: Record<string, string>;   // 현재 계정의 표시 이름 덮어쓰기(steam_id → 이름, D-032)
+  blockedUsers: { id: string; name: string }[];   // 앱 차단 목록(D-033). name은 닉네임 반영, 이름을 모르면 Steam ID
+  blocksReady: boolean;                           // 차단 목록을 읽지 못했으면 false(업스트림이 상대 대화를 보류)
   conn: ConnState;
   accountStatus: string;
   notice: string;
@@ -54,6 +56,7 @@ export interface Chat {
   openProfile(uid: string): Promise<void>;
   openTrade(uid: string): Promise<void>;
   setNickname(uid: string, name: string): Promise<void>;   // 빈 값이면 초기화(기본 Steam 닉네임으로 복귀)
+  setBlocked(uid: string, blocked: boolean): Promise<void>;   // 앱 차단·해제(D-033). 성공 안내 없이 목록 변화로 보인다
   refresh(): Promise<void>;
   saveSettings(patch: Partial<Settings>): void;
   saveDraft(text: string, now?: boolean): void;
@@ -373,6 +376,18 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, [dispatch, poll, showError]);
 
+  // 앱 차단·해제(D-033). 업스트림이 차단한 사람의 채팅·입퇴장·반응을 거르고, 목록은 view의 blocked 플래그로 숨긴다.
+  // 성공하면 바로 view를 다시 받는다. 실패하면 오버레이를 닫고 에러 토스트(드로어·참여자 모달 아래에 깔리므로)
+  const setBlocked = useCallback(async (uid: string, blocked: boolean) => {
+    try {
+      await rpc('block_user', { account: viewRef.current?.context.account ?? '', steam_id: uid, blocked });
+      void poll();
+    } catch (error) {
+      dispatch({ type: 'closeOverlays' });
+      showError(error);
+    }
+  }, [dispatch, poll, showError]);
+
   const refresh = useCallback(async () => {
     try { await rpc('refresh'); }
     catch (error) { showError(error); }
@@ -410,10 +425,16 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     return item.kind === 'msg' ? item : null;
   }, [live, query, view, latest, timeline, avatarOf]);
   const participants = useMemo(
-    () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf, shown?.nicknames)),
+    // 앱에서 차단한 멤버는 목록·상단바 참여자 수에서 뺀다(D-033). view.participants에는 blocked 플래그와 함께 남아 있다
+    () => Object.entries(shown?.participants ?? {}).filter(([, p]) => !p.blocked)
+      .map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf, shown?.nicknames)),
     [shown, avatarOf],
   );
   const nicknames = useMemo(() => shown?.nicknames ?? {}, [shown]);
+  const blockedUsers = useMemo(
+    () => (shown?.blocked_users ?? []).map((u) => ({ id: u.steam_id, name: displayName(u.steam_id, u.name || u.steam_id, shown?.nicknames) })),
+    [shown],
+  );
   const account = shown?.context.account ?? '';
   const me = useMemo(
     () => (account && shown?.profiles[account] ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf) : null),
@@ -423,7 +444,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, nicknames, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, openTrade, setNickname, refresh, saveSettings, saveDraft, sending, hasDraft,
+    items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, openTrade, setNickname, setBlocked, refresh, saveSettings, saveDraft, sending, hasDraft,
+    blocksReady: shown?.blocks_ready ?? true,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),

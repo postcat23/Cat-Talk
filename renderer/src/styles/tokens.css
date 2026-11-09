@@ -8,6 +8,9 @@
      글자 대비 라이트 #e6e0f7 13.3:1(--own-fg = --fg) / 다크 #6b5fa6 4.95:1(--own-fg #f4f1ff) */
   --peer:#ececef; --own:#e6e0f7; --own-fg:var(--fg);
   --good:#2fa96b; --bad:#d8534f; --idle:#8a8a98;
+  /* --bad-text: 빨강 글자 전용(⋯ 메뉴 '차단', D-033). --bad는 상태 점에도 쓰여 분리한다. 라이트만 같은 색상(hue 2°)에서
+     채도·밝기를 낮춰 메뉴 배경(--surface) 대비 5.79:1, 마우스 올림(--line 겹침) 4.71:1. 다크는 --bad 그대로 */
+  --bad-text:#b63935;
   --notice:#f0ecff; --notice-fg:#4a3aa0;
   --ui:"Pretendard","Noto Sans KR",system-ui,sans-serif;
   /* 숫자 표시(시각·인원·카운터·버전)도 단일 폰트로. Pretendard 숫자는 비례폭이라 쓰는 곳에서 tabular-nums(tnum)로 고정 */
@@ -16,8 +19,8 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --backdrop:#121319; --backdrop-2:#0d0e13; --panel:#1a1b22; --surface:#23242d; --fg:#ececf2; --muted:#9a9aac; --line:rgba(255,255,255,.10);
   --accent:#a68bff; --accent-fg:#16131f; --peer:#2a2b35; --own:#6b5fa6; --own-fg:#f4f1ff;
-  --good:#4fd08a; --bad:#ff6b67; --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; color-scheme:dark}}
+  --good:#4fd08a; --bad:#ff6b67; --bad-text:var(--bad); --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; color-scheme:dark}}
 :root[data-theme="dark"]{
   --backdrop:#121319; --backdrop-2:#0d0e13; --panel:#1a1b22; --surface:#23242d; --fg:#ececf2; --muted:#9a9aac; --line:rgba(255,255,255,.10);
   --accent:#a68bff; --accent-fg:#16131f; --peer:#2a2b35; --own:#6b5fa6; --own-fg:#f4f1ff;
-  --good:#4fd08a; --bad:#ff6b67; --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; color-scheme:dark}
+  --good:#4fd08a; --bad:#ff6b67; --bad-text:var(--bad); --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; color-scheme:dark}

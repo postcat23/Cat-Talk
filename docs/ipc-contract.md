@@ -46,7 +46,7 @@
 | `setting` | `key,value` | `{ok:true}` | `invalid_setting` | key: `theme`/`collapsed`/`language`/`reactions_enabled`/`notification_flash`/`notification_toast`. Cat-Talk 추가: `chat_opacity`(정수 20~100)/`presence_notices`/`clear_cats`/`auto_open_chest`(bool) |
 | `delete` | `account,lobby?` | `{ok:true}` | `account_changed` | 현재 계정 기록 삭제 |
 | `refresh` | — | `{ok:true}` | — | 언어 재로드 + 저장소 복구 + 워커 refresh |
-| `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 원본은 차단 목록 영속. **Cat-Talk은 미구현** — `not_wired` 응답(D-009) |
+| `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 앱 차단(D-033, D-009의 미구현을 대체). 원본 Controller와 같은 배선 — 업스트림 `service.set_blocked`가 계정 일치·`blocked` bool·자기 자신 제외를 검사하고(아니면 `block_unavailable`), 차단한 사람의 채팅·입퇴장·반응·지난 기록을 거른다. 목록은 `VolatileStore`가 `settings`의 `blocked:<account>` 키(`{steam_id: name}` JSON)에 영속한다(계정별, 재실행·로비 이동 유지). 앱 종료 중이면 `block_unavailable` |
 | `open_steam_profile` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_profile_failed` | 네이티브 `QDesktopServices.openUrl` → Electron `shell.openExternal`. 사이드카는 검증 후 `{uri}`를 main에 주고, main이 열어 렌더러에는 `{ok:true}`만 돌려준다 |
 | `open_steam_trade` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_trade_failed` | Cat-Talk 추가(upstream 없음). 사이드카가 `open_steam_profile`과 같은 순서로 검증(형식·64비트·기준값 `76561197960265728` 미만 → `invalid_steam_id`, context 변경·현재 참여자 아님 → `steam_profile_unavailable`)한 뒤 `steam://openurl/https://steamcommunity.com/tradeoffer/new/?partner=<steamID64 − 기준값>`을 `{uri}`로 main에 준다(교환은 전용 딥링크가 없어 https 페이지를 `steam://openurl/`로 감싼다). main은 형식을 재확인해 `shell.openExternal`로 Steam 클라이언트에서 열고 렌더러에는 `{ok:true}`만 돌려준다 |
 | `set_nickname` | `account,steam_id,name` | `{ok:true}` | `account_changed`·`invalid_steam_id`·`invalid_nickname` | Cat-Talk 추가(upstream 없음, D-032). 참여자 표시 이름 덮어쓰기를 업스트림 범용 KV `settings`의 `nicknames:<account>` 키에 `{steam_id: name}` JSON으로 영속한다(계정별, 재실행·로비 이동 유지). `account`가 현재 계정이 아니면 `account_changed`, `steam_id`는 `open_steam_profile`과 같은 정규 uint64 검증, `name`은 문자열이고 앞뒤 공백 제거 후 15자(코드 포인트) 이하가 아니면 `invalid_nickname`. 빈 값이면 그 항목을 지워 기본 Steam 닉네임으로 돌아간다 |
@@ -84,7 +84,7 @@
 - `avatar_stage`(`disabled`/`loading`/`ready`/`unavailable`), `avatar_error` — Cat-Talk 추가
 - `default_avatar_id` — Cat-Talk 추가. 게임 기본 고양이(장착 해제 스킨 `Cat`, 모자 없음)를 worker가 1회 렌더한 이미지의 id. `avatars`로 받는다. 렌더러는 아바타 미해결·스킨 변경 중 플레이스홀더로 쓴다. 렌더 전·실패 시 키가 없다
 - `profile_targets[]`(Steam 프로필 열기 허용 대상)
-- `blocks_ready`, `blocked_users[{steam_id,name}]`
+- `blocks_ready`, `blocked_users[{steam_id,name}]` — Cat-Talk은 앱 차단 목록(D-033). 렌더러는 `participants`의 `blocked` 멤버를 목록·참여자 수에서 숨기고, 드로어 '차단 목록'에 `blocked_users`(이름은 닉네임 반영)를 보여 준다. `blocks_ready`가 false면(목록 읽기 실패) 업스트림이 상대 대화를 보류한다
 
 **설정·상태**
 - `theme`,`collapsed`,`language`,`language_preference`,`notifications{notification_flash,notification_toast}`,`reactions_enabled`
@@ -123,7 +123,7 @@
 
 ## 5. store — 휘발/영속 분할 (Cat-Talk 확정 모델)
 
-원본은 단일 `history.sqlite3`에 7개 테이블 + `timeline` TEMP 뷰. Cat-Talk은 **채팅 휘발 / 설정만 영속**으로 분할하고, 차단은 무력화한다(decisions D-003·D-009).
+원본은 단일 `history.sqlite3`에 7개 테이블 + `timeline` TEMP 뷰. Cat-Talk은 **채팅 휘발 / 설정만 영속**으로 분할하고(decisions D-003), 차단 목록은 settings 안에 계정별 키로 영속한다(D-033 — D-009의 무력화를 대체).
 
 | 테이블 | 내용 | Cat-Talk 처분 |
 |---|---|---|
@@ -133,11 +133,11 @@
 | `drafts` | 로비별 초안 | **휘발**(종료 시 삭제 확정) |
 | `presence_events` | 입·퇴장(→sessions CASCADE) | **휘발** |
 | `settings` | theme/collapsed/language/reactions_enabled/알림 + Cat-Talk 드로어 설정(`chat_opacity`·`presence_notices`·`clear_cats`·`auto_open_chest`) | **영속(디스크, `settings.sqlite3`)** |
-| `blocked_users` | 계정별 채팅 차단 목록 | **무력화·비영속** (`blocked_users()`→`{}`, `set_blocked()` 무동작) |
+| `blocked_users` | 계정별 채팅 차단 목록 | **테이블은 안 씀** — `blocked_users()`·`set_blocked()`를 `settings`의 `blocked:<account>` 키(`{steam_id: name}`)로 돌려 **영속**(D-033). 같은 settings에 닉네임 `nicknames:<account>`(D-032)도 있다 |
 
 **설정 저장 역할 분리:** 앱 설정은 `settings.sqlite3`(사이드카), 창 배치(도크·높이·작업표시줄 숨김·모니터)는 `window-state.json`(Electron main)에 둔다. 창 배치는 창 생성 전에 필요해 사이드카를 기다릴 수 없고, 두 저장소가 같은 키를 갖지 않는다. 렌더러는 시작 시 첫 `view`로 앱 설정을 1회 받고, 이후 변경은 `setting`으로 저장만 한다.
 
-**구현: `sidecar/volatile_store.py`의 `VolatileStore(Store)` 글루.** upstream `Store`를 상속해 부모 연결을 `:memory:`로 연다 — 7개 테이블과 `timeline` 뷰가 전부 메모리 DB에 생기고(빈 `blocked_users` 포함), FK(messages→sessions, receipts→messages, presence_events→sessions)도 그 안에서 성립한다. `setting()`만 별도 디스크 연결(`settings.sqlite3`)로 돌린다. `store.py`는 수정하지 않는다(D-009) — upstream 스키마·메서드가 바뀌면 이 글루를 함께 점검한다.
+**구현: `sidecar/volatile_store.py`의 `VolatileStore(Store)` 글루.** upstream `Store`를 상속해 부모 연결을 `:memory:`로 연다 — 7개 테이블과 `timeline` 뷰가 전부 메모리 DB에 생기고(빈 `blocked_users` 포함), FK(messages→sessions, receipts→messages, presence_events→sessions)도 그 안에서 성립한다. `setting()`만 별도 디스크 연결(`settings.sqlite3`)로 돌리고, 차단 목록 두 메서드도 그 settings를 쓴다(D-033). `store.py`는 수정하지 않는다(D-009) — upstream 스키마·메서드가 바뀌면 이 글루를 함께 점검한다.
 
 **무의미해지는 것(코드는 upstream 그대로 둠)**
 - `RETENTION_SECONDS`·`prune()`·60초 주기 프루닝: 매 실행 빈 메모리 DB라 지울 것이 사실상 없다.

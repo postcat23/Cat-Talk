@@ -39,7 +39,10 @@ export interface ViewProfile {
   avatar_id?: string;   // 이미지는 avatars 액션으로 받는다
   color?: string;  // 목업 데이터 전용. 실제 view에는 없다
   hat?: string | number;   // 목업은 이모지 문자열, 실제 view는 게임 아이템 번호(벗으면 -1)라 표시하지 않는다
+  blocked?: boolean;       // participants 항목에만: 앱에서 차단한 멤버(D-033). 목록·참여자 수에서 숨긴다
 }
+
+export interface BlockedUser { steam_id: string; name: string }   // 차단 시점의 Steam 이름(모르면 '')
 
 export interface ViewMessage {
   seq?: number;
@@ -98,6 +101,8 @@ export interface ViewResponse {
   latest_seq: number;
   incoming_count?: number;    // 수락된 타인 메시지 누적 수(사이드카 경로만)
   nicknames: Record<string, string>;   // 현재 계정의 표시 이름 덮어쓰기(steam_id → 이름, D-032). 사이드카가 항상 {} 이상 보낸다
+  blocks_ready: boolean;               // 차단 목록을 읽었는지. false면 업스트림이 상대 대화를 보류한다(D-033)
+  blocked_users: BlockedUser[];        // 앱 차단 목록(steam_id 순)
 }
 
 // 표시 이름: 닉네임 덮어쓰기가 있으면 그 값, 없거나 비었으면 base(Steam 이름)

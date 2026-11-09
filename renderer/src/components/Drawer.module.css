@@ -21,6 +21,11 @@
 .sw.on{background:var(--accent)}.sw.on::after{left:19px}
 .sw:disabled{opacity:.5;cursor:default}
 .range{flex:1;max-width:160px;accent-color:var(--accent);cursor:pointer}
+/* 차단 목록(D-033): 행은 .set과 같고, 긴 이름은 말줄임. [차단 해제]는 강조 없는 보조 버튼 */
+.bname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bbtn{flex:none;font:inherit;font-size:12.5px;font-weight:600;border:0;border-radius:9px;padding:6px 11px;background:var(--line);color:var(--fg);cursor:pointer}
+.bbtn:hover{background:color-mix(in srgb, var(--fg) 16%, var(--surface))}
+.bnote{margin:0;font-size:12.5px;color:var(--muted)}
 .update{display:flex;flex-direction:column;gap:9px}
 .uhead{font-size:13.5px;font-weight:600}
 .urow{display:flex;align-items:center;gap:8px}
