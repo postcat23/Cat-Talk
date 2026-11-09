@@ -23,6 +23,7 @@ export interface Overlays {
   drawerOpen: boolean;
   modalOpen: boolean;
   searchOpen: boolean;
+  nicknameFor: string | null;   // 닉네임 변경 모달 대상 참여자 id(D-032). 참여자 모달 위 앱 가운데에 뜬다
 }
 
 export interface UiState { settings: Settings; overlays: Overlays }
@@ -34,7 +35,9 @@ export type UiAction =
   | { type: 'toggleDrawer' }
   | { type: 'toggleModal' }
   | { type: 'closeOverlays' }
-  | { type: 'toggleSearch' };
+  | { type: 'toggleSearch' }
+  | { type: 'openNickname'; id: string }
+  | { type: 'closeNickname' };
 
 // 채팅 높이에 연동되는 값: 드로어·모달 최대 높이(--ovh), 반응 카드 최대 개수.
 // 100%는 뒤 채팅이 보이게 70%로 캡, 창이 작은 70%·50%는 오버레이가 창 전체 높이를 채운다.
@@ -51,7 +54,7 @@ const initialState: UiState = {
     taskbarAlert: true, toastAlert: true, catInteraction: true, clearCats: false, presence: true,
     hideTaskbarIcon: saved?.hideTaskbar ?? false, autoOpenChest: false,
   },
-  overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false },
+  overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false, nicknameFor: null },
 };
 
 function reducer(state: UiState, action: UiAction): UiState {
@@ -63,8 +66,11 @@ function reducer(state: UiState, action: UiAction): UiState {
     // 드로어·모달은 한쪽만 열린다. 열린 쪽 버튼을 다시 누르면 닫힘, 다른 쪽을 누르면 전환.
     case 'toggleDrawer': return { ...state, overlays: { ...o, drawerOpen: !o.drawerOpen, modalOpen: false } };
     case 'toggleModal': return { ...state, overlays: { ...o, modalOpen: !o.modalOpen, drawerOpen: false } };
-    case 'closeOverlays': return { ...state, overlays: { ...o, drawerOpen: false, modalOpen: false } };
+    case 'closeOverlays': return { ...state, overlays: { ...o, drawerOpen: false, modalOpen: false, nicknameFor: null } };
     case 'toggleSearch': return { ...state, overlays: { ...o, searchOpen: !o.searchOpen } };
+    // 닉네임 모달은 참여자 모달을 닫지 않고 그 위에 뜬다(저장 뒤 바뀐 이름을 목록에서 바로 본다)
+    case 'openNickname': return { ...state, overlays: { ...o, nicknameFor: action.id } };
+    case 'closeNickname': return { ...state, overlays: { ...o, nicknameFor: null } };
   }
 }
 

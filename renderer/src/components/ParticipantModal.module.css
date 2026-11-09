@@ -19,7 +19,7 @@
 .nm{flex:1;min-width:0;font-weight:600;color:var(--fg);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0}
 .meBadge{font-size:11px;background:var(--accent);color:var(--accent-fg);border-radius:6px;padding:2px 7px;font-family:var(--mono);font-variant-numeric:tabular-nums}
 .dots{background:none;border:0;color:var(--muted);cursor:pointer;font-size:18px;padding:2px 6px}
-/* 더보기 메뉴(세로 2항목): 높이는 MENU_HEIGHT(ParticipantModal.tsx)와 맞춘다. 항목 30px × 2 + 안쪽 여백 8 + 테두리 2 */
-.menu{position:absolute;z-index:1;height:70px;padding:4px;display:flex;flex-direction:column;background:var(--surface);border:1px solid color-mix(in srgb, var(--fg) 22%, var(--surface));border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.16)}
+/* 더보기 메뉴(세로 3항목): 높이는 MENU_HEIGHT(ParticipantModal.tsx)와 맞춘다. 항목 30px × 3 + 안쪽 여백 8 + 테두리 2 */
+.menu{position:absolute;z-index:1;height:100px;padding:4px;display:flex;flex-direction:column;background:var(--surface);border:1px solid color-mix(in srgb, var(--fg) 22%, var(--surface));border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.16)}
 .menu button{flex:1;padding:0 10px;border:0;border-radius:7px;background:none;color:var(--fg);font:inherit;font-size:13px;text-align:left;white-space:nowrap;cursor:pointer}
 .menu button:hover{background:var(--line)}
