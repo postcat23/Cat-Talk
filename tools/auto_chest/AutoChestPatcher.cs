@@ -303,6 +303,7 @@ static class Program {
                 case "verify": Need(args, 5); return Verify(args[1], args[2], args[3], args[4]);
                 case "backup": Need(args, 3); return Backup(args[1], args[2]);
                 case "restore": Need(args, 3); return Restore(args[1], args[2]);
+                case "version": Need(args, 1); return ToolVersion();
                 default: throw new ArgumentException("usage");
             }
         } catch (Incompatible e) {
@@ -350,6 +351,14 @@ static class Program {
     }
 
     const int PatchVersion = 2;
+    // 인자 규약 버전. 1 = patch/verify 3인자, 2 = Managed 인자 추가(D-028). 규약이나 PatchVersion을 바꾸면
+    // electron/auto-chest.js의 기대값(PATCHER_CLI·PATCH_VERSION)도 같이 바꾼다. 앱은 다르면 설치를 막는다(D-029).
+    const int CliVersion = 2;
+
+    // 앱이 기대하는 패처인지 판정하는 용도. 기기마다 빌드하는 산출물이라 소스보다 오래된 패처가 남을 수 있다.
+    static int ToolVersion() {
+        return Emit(0, new Dictionary<string, object> { { "ok", true }, { "cli", CliVersion }, { "patchVersion", PatchVersion } });
+    }
 
     // 패치 세트 버전. 0 = 원본, 1 = 상자 자동 오픈만, 2 = 두 훅. 그 밖의 조합은 우리가 만든 적 없는 상태다.
     static int Version(Target t) {

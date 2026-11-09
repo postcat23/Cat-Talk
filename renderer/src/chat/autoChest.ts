@@ -1,12 +1,13 @@
 // 상자 자동 오픈·모든 고양이 투명화 상태·진행 문구(electron/auto-chest.js와 짝, D-019·D-028).
 // 두 기능은 게임 패치 하나를 함께 쓴다. 설치 상태는 공통, 켜짐/꺼짐만 기능별이다.
 export type Feature = 'chest' | 'transparent';
-export type ChestState = 'not_installed' | 'on' | 'off' | 'incompatible' | 'needs_reapply' | 'installing' | 'no_game' | 'error';
+// patcher_mismatch: 설치 도구(패처)가 없거나 앱과 버전이 다름 — 재적용으로는 못 고친다(D-029)
+export type ChestState = 'not_installed' | 'on' | 'off' | 'incompatible' | 'needs_reapply' | 'installing' | 'no_game' | 'error' | 'patcher_mismatch';
 // state: 설치 상태(설치돼 있으면 상자 자동 오픈 on/off), transparent: 같은 판정의 투명화 on/off
 export interface ChestStatus { state: ChestState; transparent?: ChestState; reason?: string }
 export interface ChestResult { ok: boolean; reason?: string; rolledBack?: boolean }
 export interface ChestProgress {
-  phase: 'countdown' | 'cancelled' | 'stopping_worker' | 'closing_game' | 'patching' | 'launching' | 'verifying' | 'done' | 'failed';
+  phase: 'checking' | 'countdown' | 'cancelled' | 'stopping_worker' | 'closing_game' | 'patching' | 'launching' | 'verifying' | 'done' | 'failed';
   seconds?: number;
   reason?: string;
   rolledBack?: boolean;
@@ -24,6 +25,9 @@ function object(features?: Feature[]) {
 }
 
 export const reapplyNotice = (features: Feature[]) => `${names(features)} 재적용이 필요합니다`;
+// 설치 도구가 없거나 앱과 맞지 않을 때(patcher_mismatch) 설정이 켜져 있으면 띄운다. 재적용으로는 못 고친다.
+// [재설치] 버튼은 재설치 수단(설치 파일·업데이터)이 생기는 배포 셋업에서 붙인다(D-029).
+export const REINSTALL_NOTICE = '앱 재설치가 필요합니다';
 
 export const STATE_LABEL: Record<ChestState, string> = {
   not_installed: '미설치',
@@ -34,6 +38,7 @@ export const STATE_LABEL: Record<ChestState, string> = {
   installing: '설치 중',
   no_game: '게임을 찾지 못함',
   error: '상태 확인 실패',
+  patcher_mismatch: '앱 재설치 필요',
 };
 
 const FAILURE: Record<string, string> = {
@@ -42,10 +47,12 @@ const FAILURE: Record<string, string> = {
   incompatible: '현재 게임 버전과 호환되지 않아 설치하지 않았습니다.',
   game_start_failed: '게임이 시작되지 않았습니다.',
   game_crashed: '설치 후 게임이 종료되었습니다.',
+  preflight_failed: '설치 전 점검을 통과하지 못해 게임을 종료하지 않고 중단했습니다.',
 };
 
 export function progressText(p: ChestProgress) {
   switch (p.phase) {
+    case 'checking': return '설치 가능 여부를 확인 중입니다.';
     case 'countdown': return `${p.seconds}초 뒤 게임을 종료하고 ${object(p.features)} 적용합니다.`;
     case 'stopping_worker': return '채팅 연결을 잠시 끊는 중입니다.';
     case 'closing_game': return '게임을 종료하는 중입니다.';

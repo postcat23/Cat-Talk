@@ -194,15 +194,16 @@ Cat-Talk 전송 계층 추가 코드: `not_wired`(사이드카 미배선 액션)
 | 채널 | 방향 | 내용 |
 |---|---|---|
 | `chest:status(wanted)` | invoke | `{state, reason?}`. 판정만 한다(쓰기 없음). `wanted`는 설정 `auto_open_chest` 값 |
-| `chest:enable()` | invoke | 설치돼 있으면 플래그만 생성. 아니면 카운트다운 후 설치. `{ok, reason?, rolledBack?}` |
+| `chest:enable()` | invoke | 설치돼 있으면 플래그만 생성. 아니면 사전 점검 → 카운트다운 → 설치. `{ok, reason?, rolledBack?}` |
 | `chest:disable()` | invoke | 플래그 삭제 |
-| `chest:reapply()` | invoke | 재적용 토스트의 [재시작]. 카운트다운 없이 바로 설치 흐름. 재적용이 필요한 상태가 아니면 아무것도 하지 않는다. 토스트 [X]는 `chest:disable` + 설정 끄기 |
+| `chest:reapply()` | invoke | 재적용 토스트의 [재시작]. 사전 점검을 통과하면 카운트다운 없이 바로 설치 흐름. 재적용이 필요한 상태가 아니면 아무것도 하지 않는다. 토스트 [X]는 `chest:disable` + 설정 끄기 |
 | `chest:cancel` | send | 카운트다운 취소 |
 | `chest:progress` | main → 렌더러 | `{phase, seconds?, reason?, rolledBack?}` |
 
-- `state`: `not_installed`·`on`·`off`·`incompatible`·`needs_reapply`·`installing`·`no_game`·`error`.
-- `phase`: `countdown`·`cancelled`·`stopping_worker`·`closing_game`·`patching`·`launching`·`verifying`·`done`·`failed`.
-- 설치 순서: 구조 사전 점검 → 카운트다운 → 사이드카(worker) 종료 → 게임 종료 → Steam 해제 대기 → 백업(clean일 때만) → 패치·verify → 교체·재검증 → Steam 재실행 → 기동 확인 → 플래그 생성 → 사이드카 재시작. 교체 후 실패하면 백업으로 복원한다.
+- `state`: `not_installed`·`on`·`off`·`incompatible`·`needs_reapply`·`installing`·`no_game`·`error`·`patcher_mismatch`.
+  - `patcher_mismatch`(D-029): 패처가 없거나(`reason: missing`) 앱이 기대하는 규약과 다름(`reason: mismatch`, `version` 명령 없음·값 다름·의존 DLL 누락 포함). 재적용으로는 못 고쳐 켜기·재적용을 막는다(끄기는 허용). prod는 앱 재설치, dev는 `tools/auto_chest/build.ps1`. 렌더러는 설정이 켜져 있으면 '앱 재설치가 필요합니다' 토스트를 띄운다([X] = 이번 실행 동안 숨김).
+- `phase`: `checking`·`countdown`·`cancelled`·`stopping_worker`·`closing_game`·`patching`·`launching`·`verifying`·`done`·`failed`.
+- 설치 순서: 구조 판정(패처 규약 포함) → 사전 점검(별도 파일에 패치·verify, 재적용이면 원본 백업 SHA도) → 카운트다운(켜기만) → 사이드카(worker) 종료 → 게임 종료 → Steam 해제 대기 → 백업(clean일 때만) → 패치·verify → 교체·재검증 → Steam 재실행 → 기동 확인 → 플래그 생성 → 사이드카 재시작. 사전 점검에 실패하면 worker·게임을 건드리지 않고 `failed`(`incompatible`·`preflight_failed`)로 끝난다. 교체 후 실패하면 백업으로 복원한다.
 - 설정 저장은 기존 `setting` 액션(`auto_open_chest`)을 그대로 쓴다. 렌더러가 결과가 `ok`일 때만 저장한다.
 
 ---

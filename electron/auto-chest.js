@@ -1,6 +1,8 @@
 // 상자 자동 오픈(D-019)·모든 고양이 투명화(D-028): 패처 호출·게임 종료/재실행·백업/롤백·플래그를 메인 프로세스에서 조율한다.
 // 두 기능은 패치 하나를 함께 쓰고 플래그만 따로다. 설치는 한 번(재실행), 이후 켜기/끄기는 플래그만(게임이 0.5초~ 주기로 본다).
 // 시스템 조작(sys)과 worker 제어는 주입받아, 실게임 없이 사본으로 흐름을 검증할 수 있다(tools/auto_chest/test-flow.js).
+// 설치·재적용은 worker·게임을 건드리기 전에 사전 점검(별도 파일에 패치·verify)을 통과해야 시작한다(D-029).
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -15,6 +17,9 @@ const GAME_CLOSE_MS = 20000;     // 일반 종료 요청 후 대기. 넘기면 �
 const STEAM_RELEASE_MS = 15000;  // Steam이 앱을 '실행 중'에서 풀 때까지(D-019: worker가 살아 있으면 안 풀린다)
 const LAUNCH_MS = 60000;
 const STABLE_MS = 20000;         // 기동 후 이 시간 살아 있어야 성공
+// 앱이 기대하는 패처(AutoChestPatcher.cs의 CliVersion·PatchVersion). 다르거나 패처가 없으면 설치·재적용을 막는다(D-029).
+const PATCHER_CLI = 2;
+const PATCH_VERSION = 2;
 
 const run = (file, args) => new Promise((resolve) => {
   execFile(file, args, { windowsHide: true, maxBuffer: 1 << 20 }, (error, stdout) => resolve({ code: error ? (error.code ?? 1) : 0, stdout: String(stdout) }));
@@ -70,7 +75,9 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
   const backupDir = path.join(home, 'backup');
   const staging = path.join(home, 'staging', 'Assembly-CSharp.dll');
   const original = path.join(backupDir, 'Assembly-CSharp.dll.orig');
+  const preflightOut = path.join(home, 'staging', 'preflight', 'Assembly-CSharp.dll');
   let busy = false, cancelled = false;
+  let toolCheck = null;   // 맞다고 확인한 패처·Mono.Cecil 파일의 (수정 시각·크기). 바뀌면 다시 묻는다
 
   // managed: 패처가 결과의 모든 참조를 게임 런타임 어셈블리로 해석해 보는 폴더(스트리핑된 API 차단, D-028)
   // flag: 패처에 넘기는 상자 자동 오픈 플래그(투명화 플래그 경로는 패처가 이 옆으로 정한다)
@@ -88,6 +95,29 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     return { code: r.code, json };
   }
 
+  // 패처가 앱과 같은 규약인지(D-029). 패처는 기기마다 빌드하는 산출물이라 소스보다 오래된 것이 남을 수 있다
+  // (2026-11-09 실측: 구버전이 5인자 호출을 거부해 재적용 때마다 게임만 재시작되고 실패). 'ok' | 'missing' | 'mismatch'.
+  async function patcherState() {
+    const stamp = (f) => { try { const s = fs.statSync(f); return `${s.mtimeMs}:${s.size}`; } catch { return null; } };
+    const exe = stamp(patcherExe);
+    if (!exe) return 'missing';
+    // 의존 DLL이 빠지거나 바뀌어도(백신 격리 등) 다시 묻는다. 빠지면 version이 CLR 예외로 끝나 불일치가 된다(실측).
+    const key = `${exe}|${stamp(path.join(path.dirname(patcherExe), 'Mono.Cecil.dll'))}`;
+    if (toolCheck === key) return 'ok';
+    const r = await patcher('version');
+    if (r.code !== 0 || r.json.cli !== PATCHER_CLI || r.json.patchVersion !== PATCH_VERSION) return 'mismatch';   // 실패는 기억하지 않는다(일시 잠금 등은 다음 판정에서 풀린다)
+    toolCheck = key;
+    return 'ok';
+  }
+
+  // 원본 백업이 기록된 SHA와 같은지(패처 restore가 게임을 끈 뒤에야 하던 확인을 앞당긴다). 없거나 다르면 false.
+  function backupIntact() {
+    try {
+      const want = fs.readFileSync(`${original}.sha256`, 'utf-8').trim().toLowerCase();
+      return crypto.createHash('sha256').update(fs.readFileSync(original)).digest('hex') === want;
+    } catch { return false; }
+  }
+
   // 판정만 한다(쓰기 없음). wanted = 어느 기능이든 설정 ON 여부: 켜 뒀는데 clean이면 업데이트로 패치가 사라진 것.
   // state = 설치 상태(설치돼 있으면 상자 자동 오픈 플래그로 on/off), transparent = 같은 판정에서 투명화 플래그로 on/off.
   async function status(wanted) {
@@ -100,6 +130,8 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     if (busy) return { state: 'installing' };
     const game = await sys.findGame();
     if (!game) return { state: 'no_game' };
+    const tool = await patcherState();
+    if (tool !== 'ok') return { state: 'patcher_mismatch', reason: tool };   // 재적용으로는 못 고친다: 앱 재설치(dev는 build.ps1)
     const { dll, flag } = paths(game);
     const r = await patcher('inspect', dll);
     if (r.code === 2) return { state: 'incompatible', reason: r.json.reason };
@@ -144,6 +176,38 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     await waitFor(async () => !(await sys.gameRunning()), GAME_CLOSE_MS);
     if (await sys.gameRunning()) return false;   // 켜진 게임의 DLL은 건드리지 않는다
     return (await patcher('restore', backupDir, paths(game).dll)).code === 0;
+  }
+
+  // 사전 점검(D-029): worker·게임을 건드리기 전에, 실제 설치와 같은 입력으로 별도 파일에 패치·verify를 해 본다.
+  // 통과하지 못하면 여기서 끝낸다(게임 종료·재실행 없음). 쓰는 곳은 데이터 폴더의 preflightOut뿐이다.
+  // 이미 패치된 DLL(재적용)은 원본 백업에서 다시 만들므로(patchInstalled의 restore) 백업도 여기서 확인한다.
+  async function preflight(game, features) {
+    const notify = (p) => notifyRaw({ ...p, features });
+    busy = true;
+    notify({ phase: 'checking' });
+    try {
+      const { managed, dll, flag } = paths(game);
+      let r = await patcher('inspect', dll);
+      if (r.code !== 0) throw new Failure(r.code === 2 ? 'incompatible' : 'preflight_failed');
+      let source = dll;
+      if (r.json.state === 'patched') {
+        if (!backupIntact()) throw new Failure('preflight_failed');
+        source = original;
+      }
+      fs.mkdirSync(path.dirname(preflightOut), { recursive: true });
+      fs.rmSync(preflightOut, { force: true });
+      r = await patcher('patch', source, preflightOut, flag, managed);
+      if (r.code !== 0) throw new Failure(r.code === 2 ? 'incompatible' : 'preflight_failed');   // 참조 해석 실패(스트리핑)도 2
+      if ((await patcher('verify', source, preflightOut, flag, managed)).code !== 0) throw new Failure('preflight_failed');
+      return { ok: true };
+    } catch (e) {
+      const reason = e instanceof Failure ? e.message : 'preflight_failed';
+      notify({ phase: 'failed', reason, rolledBack: false });
+      return { ok: false, reason, rolledBack: false };
+    } finally {
+      try { fs.rmSync(preflightOut, { force: true }); } catch { /* 다음 점검이 지운다 */ }
+      busy = false;
+    }
   }
 
   // features: 설치가 끝나면 켤 기능들. 진행 알림에도 실어 렌더러가 기능 이름으로 문구를 쓴다.
@@ -200,15 +264,17 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     status,
     cancel() { cancelled = true; },
 
-    // 켜기(feature = 'chest' | 'transparent'): 설치돼 있으면 그 기능 플래그만(즉시, 재실행 없음). 아니면 카운트다운 후 설치.
+    // 켜기(feature = 'chest' | 'transparent'): 설치돼 있으면 그 기능 플래그만(즉시, 재실행 없음). 아니면 사전 점검 → 카운트다운 → 설치.
     // 이전 패치 세트(v1)도 여기서 재적용 대상이라 설치 흐름으로 v2가 된다.
     async enable(feature = 'chest') {
       if (!known(feature)) return { ok: false, reason: 'unknown_feature' };
       if (busy) return { ok: false, reason: 'busy' };
       const current = await installState(false);
-      if (current.state === 'incompatible' || current.state === 'error' || current.state === 'no_game') return { ok: false, reason: current.state };
+      if (['incompatible', 'error', 'no_game', 'patcher_mismatch'].includes(current.state)) return { ok: false, reason: current.state };
       if (current.state === 'installed') { fs.writeFileSync(featureFlag(current.game, feature), ''); return { ok: true }; }
       const game = await sys.findGame();
+      const pre = await preflight(game, [feature]);   // 카운트다운 전에: 안 되는 설치로 게임을 끄지 않는다
+      if (!pre.ok) return pre;
       if (!(await countdown([feature]))) return { ok: false, reason: 'cancelled' };
       return install(game, [feature]);
     },
@@ -222,13 +288,17 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     },
 
     // 재적용(features = 설정이 켜진 기능들): 업데이트로 패치가 사라졌을 때 토스트의 [재시작]으로만 불린다(버튼이 곧 확인이라 카운트다운 없음).
-    // 재적용이 필요한 상태가 아니면(구조가 바뀌어 호환 안 됨 포함) 아무것도 하지 않는다.
+    // 재적용이 필요한 상태가 아니면(구조가 바뀌어 호환 안 됨·패처 불일치 포함) 아무것도 하지 않는다. 사전 점검을 통과해야 시작한다.
     async reapply(features = ['chest']) {
       if (!Array.isArray(features) || features.length === 0 || !features.every(known)) return { ok: false, reason: 'unknown_feature' };
       if (busy) return { ok: false, reason: 'busy' };
       const current = await status(true);
       if (current.state !== 'needs_reapply') return { ok: false, reason: current.state };
-      return install(await sys.findGame(), [...new Set(features)]);
+      const game = await sys.findGame();
+      const wanted = [...new Set(features)];
+      const pre = await preflight(game, wanted);
+      if (!pre.ok) return pre;
+      return install(game, wanted);
     },
   };
 }
