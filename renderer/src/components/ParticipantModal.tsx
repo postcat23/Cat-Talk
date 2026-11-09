@@ -4,12 +4,12 @@ import { useChat } from '../hooks/useChatView';
 import Cat from './Cat';
 import styles from './ParticipantModal.module.css';
 
-const MENU_HEIGHT = 100;   // .menu 높이(3항목). 모달 아래로 잘리지 않게 위치를 올릴 때 쓴다
+const MENU_HEIGHT = 130;   // .menu 높이(4항목). 모달 아래로 잘리지 않게 위치를 올릴 때 쓴다
 const stop = (e: PointerEvent) => e.stopPropagation();
 
 export default function ParticipantModal() {
   const { settings, overlays, dispatch } = useUi();
-  const { participants, me, openProfile, openTrade } = useChat();
+  const { participants, me, openProfile, openTrade, setBlocked } = useChat();
   const modal = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{ id: string; top: number; right: number } | null>(null);
 
@@ -58,6 +58,8 @@ export default function ParticipantModal() {
           <button role="menuitem" onClick={() => { setMenu(null); void openProfile(menu.id); }}>프로필 열기</button>
           <button role="menuitem" onClick={() => { setMenu(null); void openTrade(menu.id); }}>교환 요청</button>
           <button role="menuitem" onClick={() => { setMenu(null); dispatch({ type: 'openNickname', id: menu.id }); }}>닉네임 변경</button>
+          {/* 앱 차단(D-033): 확인 없이 바로. 차단하면 목록에서 사라지고, 해제는 드로어 '차단 목록'에서 */}
+          <button role="menuitem" className={styles.danger} onClick={() => { setMenu(null); void setBlocked(menu.id, true); }}>차단</button>
         </div>
       )}
     </div>

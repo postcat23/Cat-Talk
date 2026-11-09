@@ -50,7 +50,7 @@ UI_SETTINGS = {
 }
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",
-    "block_user", "legal", "check_updates", "restart_update", "update_permission",
+    "legal", "check_updates", "restart_update", "update_permission",
 }
 # Steam 개인 계정 steamID64의 기준값(universe 1·type 1·instance 1, account id 0).
 # 교환 제안 페이지의 partner는 steamID64 - 기준값, 곧 32비트 account id다.
@@ -325,6 +325,13 @@ class Sidecar:
             else:
                 nicknames.pop(steam_id, None)
             self.store.setting(nickname_key(account), nicknames)
+        elif action == "block_user":
+            # D-033: 업스트림 차단 파이프라인 재활성화(desktop.py Controller와 같은 배선). 계정 일치·자기 자신 제외·
+            # bool 검사는 service.set_blocked가 한다(아니면 block_unavailable, 형식이 틀리면 invalid_steam_id).
+            # 목록은 VolatileStore가 settings의 'blocked:<account>'에 영속하고, 채팅·입퇴장·반응은 업스트림이 거른다.
+            if self.closed:
+                raise ValueError("block_unavailable")
+            self.service.set_blocked(args.get("steam_id"), args.get("blocked"), args.get("account"))
         else:
             raise ValueError("unknown_action")
         return {"ok": True}

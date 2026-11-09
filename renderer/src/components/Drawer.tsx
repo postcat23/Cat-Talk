@@ -3,6 +3,7 @@ import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
 import { useUpdate, type UpdateState } from '../hooks/useAppUpdate';
 import { STATE_LABEL } from '../chat/autoChest';
+import { BLOCKS_UNAVAILABLE, NO_BLOCKED_USERS } from '../chat/messages';
 import Cat from './Cat';
 import styles from './Drawer.module.css';
 
@@ -44,7 +45,7 @@ function Switch({ on, label, onToggle, disabled }: { on: boolean; label: string;
 
 export default function Drawer() {
   const { settings, overlays, dispatch } = useUi();
-  const { me, accountStatus, saveSettings, sending, hasDraft } = useChat();
+  const { me, accountStatus, saveSettings, sending, hasDraft, blockedUsers, blocksReady, setBlocked } = useChat();
   const apply = (patch: Partial<Settings>) => dispatch({ type: 'setSettings', patch });
   const set = (patch: Partial<Settings>) => { apply(patch); saveSettings(patch); };
   const chest = useChest();
@@ -106,7 +107,7 @@ export default function Drawer() {
             : <Switch on={settings[key]} label={label} onToggle={() => set({ [key]: !settings[key] })} />}
         </div>
       ))}
-      {/* 구분선은 프로필↔설정, 설정 영역↔앱 업데이트 2개뿐. 상자 카드는 자체 배경이 구분 역할.
+      {/* 구분선은 프로필↔설정, 설정 영역↔차단 목록, 차단 목록↔앱 업데이트 3개. 상자 카드는 자체 배경이 구분 역할.
           켜기 = 설치돼 있으면 플래그만, 아니면 카운트다운 후 설치(재적용 포함), 끄기 = 플래그 삭제(D-019) */}
       <div className={styles.chest}>
         <span className={styles.cicon}>📦</span>
@@ -121,6 +122,17 @@ export default function Drawer() {
             onClick={() => void turnChest(false)}>끄기</button>
         </div>
       </div>
+      <div className={styles.divider} />
+      {/* 차단 목록(D-033): 앱에서 차단한 사람(이름은 닉네임 반영). 해제하면 목록·대화에 다시 보인다 */}
+      <h3>차단 목록</h3>
+      {!blocksReady ? <p className={styles.bnote}>{BLOCKS_UNAVAILABLE}</p>
+        : blockedUsers.length === 0 ? <p className={styles.bnote}>{NO_BLOCKED_USERS}</p>
+        : blockedUsers.map((u) => (
+          <div key={u.id} className={styles.set}>
+            <span className={styles.bname}>{u.name}</span>
+            <button className={styles.bbtn} onClick={() => void setBlocked(u.id, false)}>차단 해제</button>
+          </div>
+        ))}
       <div className={styles.divider} />
       <div className={styles.update}>
         <div className={styles.uhead}>앱 업데이트</div>

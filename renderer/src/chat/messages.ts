@@ -22,6 +22,10 @@ const ERROR_TEXT: Record<string, string> = {
   request_failed: REQUEST_FAILED,
 };
 
+// 드로어 차단 목록(D-033). 문구는 업스트림 원본 UI(ui/index.html·app.js)의 것
+export const NO_BLOCKED_USERS = '차단한 사용자가 없습니다.';
+export const BLOCKS_UNAVAILABLE = '차단 목록을 확인할 수 없어 상대 대화를 보류합니다. 연결 상태 새로고침 후 다시 확인해 주세요.';
+
 export const PROFILE_OPENING = 'Steam 프로필을 여는 중입니다.';
 export const TRADE_OPENING = 'Steam 교환 페이지를 여는 중입니다.';
 
