@@ -48,6 +48,7 @@
 | `refresh` | — | `{ok:true}` | — | 언어 재로드 + 저장소 복구 + 워커 refresh |
 | `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 원본은 차단 목록 영속. **Cat-Talk은 미구현** — `not_wired` 응답(D-009) |
 | `open_steam_profile` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_profile_failed` | 네이티브 `QDesktopServices.openUrl` → Electron `shell.openExternal`. 사이드카는 검증 후 `{uri}`를 main에 주고, main이 열어 렌더러에는 `{ok:true}`만 돌려준다 |
+| `open_steam_trade` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_trade_failed` | Cat-Talk 추가(upstream 없음). 사이드카가 `open_steam_profile`과 같은 순서로 검증(형식·64비트·기준값 `76561197960265728` 미만 → `invalid_steam_id`, context 변경·현재 참여자 아님 → `steam_profile_unavailable`)한 뒤 `steam://openurl/https://steamcommunity.com/tradeoffer/new/?partner=<steamID64 − 기준값>`을 `{uri}`로 main에 준다(교환은 전용 딥링크가 없어 https 페이지를 `steam://openurl/`로 감싼다). main은 형식을 재확인해 `shell.openExternal`로 Steam 클라이언트에서 열고 렌더러에는 `{ok:true}`만 돌려준다 |
 | `check_updates` | — | `{ok:true}` | — | |
 | `restart_update` | — | `{ok:true}` / `{ok:false,reason}` | — | reason: `auto_merge`·`unavailable`·`storage`·`sending` |
 | `update_permission` | `allowed` | `{ok:true}` / `{error:update_permission_failed}` | — | |
@@ -184,6 +185,7 @@
 `invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large` → `request_failed`로 접힘(내부에선 발생하지만 렌더러로 나가지 않음).
 그 외 전부 → `request_failed`. SQLite/OS → `storage_failed`. `update_permission` 실패 → `{error:update_permission_failed}`.
 Cat-Talk 전송 계층 추가 코드: `not_wired`(사이드카 미배선 액션), `bridge_down`(main↔사이드카 전송 실패).
+Cat-Talk main 추가 코드: `steam_trade_failed`(교환 요청 URI 형식 재확인 또는 `shell.openExternal` 실패. 사이드카 허용 목록과 무관하게 main이 만든다).
 
 ---
 

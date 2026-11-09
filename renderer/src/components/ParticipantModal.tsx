@@ -4,12 +4,12 @@ import { useChat } from '../hooks/useChatView';
 import Cat from './Cat';
 import styles from './ParticipantModal.module.css';
 
-const MENU_HEIGHT = 40;   // .menu 높이. 모달 아래로 잘리지 않게 위치를 올릴 때 쓴다
+const MENU_HEIGHT = 70;   // .menu 높이(2항목). 모달 아래로 잘리지 않게 위치를 올릴 때 쓴다
 const stop = (e: PointerEvent) => e.stopPropagation();
 
 export default function ParticipantModal() {
   const { settings, overlays, dispatch } = useUi();
-  const { participants, me, openProfile } = useChat();
+  const { participants, me, openProfile, openTrade } = useChat();
   const modal = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{ id: string; top: number; right: number } | null>(null);
 
@@ -40,7 +40,7 @@ export default function ParticipantModal() {
       <div className={styles.mhead}>
         <button className={styles.close} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
         <h2><span className={styles.sil} aria-hidden="true" />함께 있는 고양이</h2>
-        <p>더보기에서 Steam 프로필을 열 수 있습니다.</p>
+        <p>더보기에서 Steam 프로필 열기와 교환 요청을 할 수 있습니다.</p>
       </div>
       <div className={`${styles.mlist} thin-scroll`} onScroll={() => setMenu(null)}>
         {sorted.map((p) => (
@@ -55,7 +55,8 @@ export default function ParticipantModal() {
       </div>
       {menu && (
         <div className={styles.menu} role="menu" style={{ top: menu.top, right: menu.right }} onPointerDown={stop}>
-          <button role="menuitem" onClick={() => { setMenu(null); void openProfile(menu.id); }}>Steam 프로필 열기</button>
+          <button role="menuitem" onClick={() => { setMenu(null); void openProfile(menu.id); }}>프로필 열기</button>
+          <button role="menuitem" onClick={() => { setMenu(null); void openTrade(menu.id); }}>교환 요청</button>
         </div>
       )}
     </div>

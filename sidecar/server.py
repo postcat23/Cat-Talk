@@ -11,6 +11,7 @@ import multiprocessing as mp
 import os
 from pathlib import Path
 import queue
+import re
 import sqlite3
 import sys
 import threading
@@ -50,6 +51,25 @@ NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",
     "block_user", "legal", "check_updates", "restart_update", "update_permission",
 }
+# Steam 개인 계정 steamID64의 기준값(universe 1·type 1·instance 1, account id 0).
+# 교환 제안 페이지의 partner는 steamID64 - 기준값, 곧 32비트 account id다.
+STEAM_ID64_BASE = 76561197960265728
+
+
+def steam_trade_uri(service, steam_id, context):
+    """Steam 앱에서 여는 교환 요청 페이지 URI. 대상 검증은 프로필 열기(service.profile_uri)와 같은 순서·같은 에러다.
+
+    형식(bongo_chat.profiles와 같은 숫자·64비트 규칙)이 아니거나 기준값 미만이면 invalid_steam_id,
+    연결 context가 바뀌었거나 현재 참여자가 아니면 steam_profile_unavailable. upstream은 호출만 한다.
+    교환은 전용 steam:// 딥링크가 없어 https 페이지를 steam://openurl/로 감싼다(프로필처럼 Steam 클라이언트에서 열린다).
+    """
+    if (not isinstance(steam_id, str)
+            or re.fullmatch(r"[1-9][0-9]{0,19}", steam_id) is None
+            or not STEAM_ID64_BASE <= int(steam_id) <= (1 << 64) - 1):
+        raise ValueError("invalid_steam_id")
+    if context != service.context() or steam_id not in service.profile_targets():
+        raise ValueError("steam_profile_unavailable")
+    return f"steam://openurl/https://steamcommunity.com/tradeoffer/new/?partner={int(steam_id) - STEAM_ID64_BASE}"
 
 
 def data_dir():
@@ -209,6 +229,9 @@ class Sidecar:
         if action == "open_steam_profile":
             # 대상 검증과 URI 생성만 한다. 실제로 여는 일은 Electron main이 맡는다.
             return {"uri": self.service.profile_uri(args.get("steam_id"), args.get("context"))}
+        if action == "open_steam_trade":
+            # Cat-Talk 추가(upstream 없음). 프로필 열기와 같은 대상 검증 후 교환 페이지 URI만 만든다.
+            return {"uri": steam_trade_uri(self.service, args.get("steam_id"), args.get("context"))}
         if action == "avatars":
             ids = args["ids"]
             if not isinstance(ids, list) or len(ids) > MAX_AVATAR_REQUEST:

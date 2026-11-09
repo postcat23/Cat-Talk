@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { rpc } from '../rpc';
 import { useUi, type Settings } from '../state/UiContext';
-import { errorText, noticeText, PROFILE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
+import { errorText, noticeText, PROFILE_OPENING, TRADE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
   accountStatus, connState, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
   type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
@@ -51,6 +51,7 @@ export interface Chat {
   jumpTo(seq: number): Promise<void>;
   send(text: string): Promise<boolean>;
   openProfile(uid: string): Promise<void>;
+  openTrade(uid: string): Promise<void>;
   refresh(): Promise<void>;
   saveSettings(patch: Partial<Settings>): void;
   saveDraft(text: string, now?: boolean): void;
@@ -84,6 +85,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const requestedAvatars = useRef(new Set<string>());
   const nextToast = useRef(1);
   const openingProfile = useRef(false);
+  const openingTrade = useRef(false);
   const draftScope = useRef<Pick<ViewContext, 'account' | 'lobby'> | null>(null);   // 입력창 글이 속한 계정·로비
   const pendingDraft = useRef<{ text: string; timer: number } | null>(null);
   const draftText = useRef('');   // 입력창의 마지막 글. 입력(saveDraft)과 로비 초안 복원(takeDraft) 둘 다 기록한다
@@ -342,6 +344,21 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, [dispatch, showError]);
 
+  // 교환 요청(거래 제안) 페이지 열기. 프로필 열기와 같은 구조이고, 대상 검증도 사이드카가 같은 기준으로 한다
+  const openTrade = useCallback(async (uid: string) => {
+    if (openingTrade.current) return;
+    openingTrade.current = true;
+    dispatch({ type: 'closeOverlays' });
+    setToast({ id: nextToast.current++, text: TRADE_OPENING });
+    try {
+      await rpc('open_steam_trade', { steam_id: uid, context: viewRef.current?.context });
+    } catch (error) {
+      showError(error);
+    } finally {
+      openingTrade.current = false;
+    }
+  }, [dispatch, showError]);
+
   const refresh = useCallback(async () => {
     try { await rpc('refresh'); }
     catch (error) { showError(error); }
@@ -391,7 +408,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, refresh, saveSettings, saveDraft, sending, hasDraft,
+    items, participants, me, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, openTrade, refresh, saveSettings, saveDraft, sending, hasDraft,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),
