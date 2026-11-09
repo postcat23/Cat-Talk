@@ -1,0 +1,13 @@
+/* 닉네임 변경 모달(D-032): 패널(.panel) 전체를 덮는 배경 + 가운데 카드. 배경색은 대화 영역 스크림과 같다 */
+.backdrop{position:absolute;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.45)}
+.card{width:min(300px,100%);display:flex;flex-direction:column;gap:8px;padding:16px;background:var(--surface);border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.3)}
+.card h2{margin:0 0 4px;font-size:16px;color:var(--fg)}
+/* 입력란은 메시지 입력창과 같은 테두리·포커스 표시 */
+.card input{width:100%;height:40px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);font:inherit;font-size:14px}
+.card input:focus{outline:2px solid var(--accent)}
+.card input::placeholder{color:var(--muted)}
+.count{align-self:flex-end;font-size:11.5px;color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}
+.actions{display:flex;align-items:center;gap:6px;margin-top:4px}
+.actions button{height:32px;padding:0 12px;border:0;border-radius:8px;background:var(--line);color:var(--fg);font:inherit;font-size:13px;cursor:pointer}
+.spacer{flex:1}
+.actions .save{background:var(--accent);color:var(--accent-fg);font-weight:600}

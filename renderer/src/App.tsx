@@ -12,6 +12,7 @@ import TopBar from './components/TopBar';
 import SearchBar from './components/SearchBar';
 import Conversation from './components/Conversation';
 import Composer from './components/Composer';
+import NicknameModal from './components/NicknameModal';
 
 const HEIGHT_PCT: Record<ChatHeight, 100 | 70 | 50> = { '100%': 100, '70%': 70, '50%': 50 };
 
@@ -58,6 +59,8 @@ function Panel() {
             <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen)}
               restored={chat.restoredDraft} onSend={chat.send} onDraft={chat.saveDraft} />
           </div>
+          {/* 닉네임 변경(D-032): 패널 전체 기준 가운데. 대화 영역 오버레이와 달리 상단바·입력창까지 덮는다 */}
+          <NicknameModal />
         </section>
       </AppUpdateContext.Provider>
       </AutoChestContext.Provider>

@@ -5,7 +5,8 @@ export type ConnState = 'good' | 'off' | 'nolobby' | 'checking';
 
 export interface Participant {
   id: string;
-  name: string;
+  name: string;    // 표시 이름: 닉네임 덮어쓰기(D-032)가 있으면 그 값, 없으면 base
+  base: string;    // 원본 Steam 이름. 닉네임 모달 placeholder
   color: string;   // 아바타 배경
   hat: string;     // 고양이 모자(이모지 임시 표시). 없거나 실제 아이템 번호면 ''
   avatar?: string; // 실아바타 data URI(스킨+모자 합성 정지 PNG). 없으면 이모지 폴백
@@ -96,7 +97,11 @@ export interface ViewResponse {
   has_newer: boolean;         // 응답 창보다 최신이 더 있다
   latest_seq: number;
   incoming_count?: number;    // 수락된 타인 메시지 누적 수(사이드카 경로만)
+  nicknames: Record<string, string>;   // 현재 계정의 표시 이름 덮어쓰기(steam_id → 이름, D-032). 사이드카가 항상 {} 이상 보낸다
 }
+
+// 표시 이름: 닉네임 덮어쓰기가 있으면 그 값, 없거나 비었으면 base(Steam 이름)
+export const displayName = (uid: string, base: string, nicks?: Record<string, string>) => nicks?.[uid]?.trim() || base;
 
 // view에 색 정보가 없어 uid 해시로 목업 팔레트에서 고른다. 같은 uid는 항상 같은 색.
 const PALETTE = ['#f2c0a0', '#ffe08a', '#b7e0ff', '#ffc2d1', '#d8c0ff', '#c8f0c8', '#cfd6ff', '#ffd27d', '#ffd0b0', '#ccffee', '#ffccdd'];
@@ -110,9 +115,11 @@ function paletteColor(uid: string) {
 // avatar_id → 받아 둔 data URI. 아직 없거나 아바타가 준비 전이면 undefined(이모지 폴백)
 export type AvatarLookup = (avatarId: string | undefined) => string | undefined;
 
-export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string, avatarOf?: AvatarLookup): Participant {
+export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string, avatarOf?: AvatarLookup,
+  nicks?: Record<string, string>): Participant {
+  const base = profile?.name || fallbackName;
   return {
-    id: uid, name: profile?.name || fallbackName, color: profile?.color ?? paletteColor(uid),
+    id: uid, name: displayName(uid, base, nicks), base, color: profile?.color ?? paletteColor(uid),
     hat: typeof profile?.hat === 'string' ? profile.hat : '',
     avatar: avatarOf?.(profile?.avatar_id),
   };
@@ -137,14 +144,14 @@ export const isPresence = (m: ViewMessage) => m.kind === 'member_joined' || m.ki
 export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatItem[] {
   return view.messages.map((m): ChatItem => {
     if (isPresence(m)) {
-      const name = m.name || '이름 확인 중';
+      const name = displayName(m.sender, m.name || '이름 확인 중', view.nicknames);
       return { kind: 'presence', id: m.id, text: `${name}님이 ${m.kind === 'member_joined' ? '들어왔습니다.' : '나갔습니다.'}` };
     }
     const own = Boolean(m.own);
     return {
       kind: 'msg', id: m.id, seq: m.seq, sender: m.sender, own, text: m.body, time: clock(m.received),
       // 나간 참여자는 profiles에 없어도 메시지에 남은 이름으로 표시한다
-      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf),
+      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf, view.nicknames),
       status: m.unsaved ? UNSAVED_LABEL : STATUS_LABEL[m.status],
     };
   });

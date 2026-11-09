@@ -4,7 +4,7 @@ import { useChat } from '../hooks/useChatView';
 import Cat from './Cat';
 import styles from './ParticipantModal.module.css';
 
-const MENU_HEIGHT = 70;   // .menu 높이(2항목). 모달 아래로 잘리지 않게 위치를 올릴 때 쓴다
+const MENU_HEIGHT = 100;   // .menu 높이(3항목). 모달 아래로 잘리지 않게 위치를 올릴 때 쓴다
 const stop = (e: PointerEvent) => e.stopPropagation();
 
 export default function ParticipantModal() {
@@ -57,6 +57,7 @@ export default function ParticipantModal() {
         <div className={styles.menu} role="menu" style={{ top: menu.top, right: menu.right }} onPointerDown={stop}>
           <button role="menuitem" onClick={() => { setMenu(null); void openProfile(menu.id); }}>프로필 열기</button>
           <button role="menuitem" onClick={() => { setMenu(null); void openTrade(menu.id); }}>교환 요청</button>
+          <button role="menuitem" onClick={() => { setMenu(null); dispatch({ type: 'openNickname', id: menu.id }); }}>닉네임 변경</button>
         </div>
       )}
     </div>

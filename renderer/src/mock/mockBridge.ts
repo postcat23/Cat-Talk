@@ -1,7 +1,7 @@
 // 브리지 없는 브라우저 dev(npm run dev)용 사이드카 대역. 메모리에서만 동작하고 어디에도 송신하지 않는다.
 import type { UiSettings, ViewResponse } from '../chat/model';
 import type { Theme } from '../state/UiContext';
-import { INITIAL_MESSAGES, ME_ID, PROFILES } from './mockData';
+import { INITIAL_MESSAGES, INITIAL_NICKNAMES, ME_ID, PROFILES } from './mockData';
 
 const SEND_ACK_MS = 700;   // 목업의 '전송 중…' → '전송됨' 시뮬레이션
 
@@ -13,6 +13,8 @@ const notifications = { notification_flash: true, notification_toast: true };
 let reactionsEnabled = true;
 const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clear_cats: false, auto_open_chest: false };
 const drafts = new Map<string, string>();
+const nicknames: Record<string, string> = { ...INITIAL_NICKNAMES };
+const NICKNAME_MAX = 15;   // 사이드카와 같은 상한(코드 포인트)
 
 const CONTEXT = { account: ME_ID, lobby: 'mock-lobby', generation: 'mock' };
 
@@ -35,7 +37,19 @@ function view({ query = '', before, start, limit = 100 }: ViewArgs): ViewRespons
     profiles: PROFILES, participants: PROFILES,
     theme, notifications: { ...notifications }, reactions_enabled: reactionsEnabled, ui_settings: { ...uiSettings }, reactions: [],
     draft: drafts.get(CONTEXT.lobby) ?? '',
+    nicknames: { ...nicknames },
   };
+}
+
+// 사이드카 set_nickname 대역(D-032). 목업 id(p1…)는 Steam ID가 아니어서 uint64 검증 대신 PROFILES에 있는지만 본다.
+// 에러는 사이드카가 렌더러에 주는 코드와 맞춘다(account_changed·invalid_nickname은 request_failed로 접힘).
+function setNickname({ account, steam_id: uid, name }: Record<string, unknown>) {
+  if (account !== CONTEXT.account) return { error: 'request_failed' };
+  if (typeof uid !== 'string' || !(uid in PROFILES)) return { error: 'invalid_steam_id' };
+  if (typeof name !== 'string' || [...name.trim()].length > NICKNAME_MAX) return { error: 'request_failed' };
+  if (name.trim()) nicknames[uid] = name.trim();
+  else delete nicknames[uid];
+  return { ok: true };
 }
 
 function send(text: string) {
@@ -64,6 +78,7 @@ function dispatch(args: Record<string, unknown>) {
     case 'refresh': return { ok: true };
     case 'open_steam_profile': return { ok: true };
     case 'open_steam_trade': return { ok: true };
+    case 'set_nickname': return setNickname(args);
     default: return { error: 'not_wired' };
   }
 }

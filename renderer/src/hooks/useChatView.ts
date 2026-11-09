@@ -32,6 +32,7 @@ export interface Chat {
   items: ChatItem[];
   participants: Participant[];
   me: Participant | null;
+  nicknames: Record<string, string>;   // 현재 계정의 표시 이름 덮어쓰기(steam_id → 이름, D-032)
   conn: ConnState;
   accountStatus: string;
   notice: string;
@@ -52,6 +53,7 @@ export interface Chat {
   send(text: string): Promise<boolean>;
   openProfile(uid: string): Promise<void>;
   openTrade(uid: string): Promise<void>;
+  setNickname(uid: string, name: string): Promise<void>;   // 빈 값이면 초기화(기본 Steam 닉네임으로 복귀)
   refresh(): Promise<void>;
   saveSettings(patch: Partial<Settings>): void;
   saveDraft(text: string, now?: boolean): void;
@@ -359,6 +361,18 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, [dispatch, showError]);
 
+  // 참여자 표시 이름 덮어쓰기(D-032). 저장 뒤 바로 view를 다시 받아 목록·대화에 반영한다(낙관적 갱신 없음)
+  const setNickname = useCallback(async (uid: string, name: string) => {
+    try {
+      await rpc('set_nickname', { account: viewRef.current?.context.account ?? '', steam_id: uid, name: name.trim() });
+      void poll();
+    } catch (error) {
+      // 에러 토스트는 참여자 모달 아래에 깔리므로 닫아서 보이게 한다(프로필 열기와 같은 방식)
+      dispatch({ type: 'closeOverlays' });
+      showError(error);
+    }
+  }, [dispatch, poll, showError]);
+
   const refresh = useCallback(async () => {
     try { await rpc('refresh'); }
     catch (error) { showError(error); }
@@ -396,9 +410,10 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     return item.kind === 'msg' ? item : null;
   }, [live, query, view, latest, timeline, avatarOf]);
   const participants = useMemo(
-    () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf)),
+    () => Object.entries(shown?.participants ?? {}).map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf, shown?.nicknames)),
     [shown, avatarOf],
   );
+  const nicknames = useMemo(() => shown?.nicknames ?? {}, [shown]);
   const account = shown?.context.account ?? '';
   const me = useMemo(
     () => (account && shown?.profiles[account] ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf) : null),
@@ -408,7 +423,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, openTrade, refresh, saveSettings, saveDraft, sending, hasDraft,
+    items, participants, me, nicknames, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, openTrade, setNickname, refresh, saveSettings, saveDraft, sending, hasDraft,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),

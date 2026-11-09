@@ -49,6 +49,7 @@
 | `block_user` | `steam_id,blocked,account` | `{ok:true}` | `block_unavailable`·`invalid_steam_id` | 원본은 차단 목록 영속. **Cat-Talk은 미구현** — `not_wired` 응답(D-009) |
 | `open_steam_profile` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_profile_failed` | 네이티브 `QDesktopServices.openUrl` → Electron `shell.openExternal`. 사이드카는 검증 후 `{uri}`를 main에 주고, main이 열어 렌더러에는 `{ok:true}`만 돌려준다 |
 | `open_steam_trade` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_trade_failed` | Cat-Talk 추가(upstream 없음). 사이드카가 `open_steam_profile`과 같은 순서로 검증(형식·64비트·기준값 `76561197960265728` 미만 → `invalid_steam_id`, context 변경·현재 참여자 아님 → `steam_profile_unavailable`)한 뒤 `steam://openurl/https://steamcommunity.com/tradeoffer/new/?partner=<steamID64 − 기준값>`을 `{uri}`로 main에 준다(교환은 전용 딥링크가 없어 https 페이지를 `steam://openurl/`로 감싼다). main은 형식을 재확인해 `shell.openExternal`로 Steam 클라이언트에서 열고 렌더러에는 `{ok:true}`만 돌려준다 |
+| `set_nickname` | `account,steam_id,name` | `{ok:true}` | `account_changed`·`invalid_steam_id`·`invalid_nickname` | Cat-Talk 추가(upstream 없음, D-032). 참여자 표시 이름 덮어쓰기를 업스트림 범용 KV `settings`의 `nicknames:<account>` 키에 `{steam_id: name}` JSON으로 영속한다(계정별, 재실행·로비 이동 유지). `account`가 현재 계정이 아니면 `account_changed`, `steam_id`는 `open_steam_profile`과 같은 정규 uint64 검증, `name`은 문자열이고 앞뒤 공백 제거 후 15자(코드 포인트) 이하가 아니면 `invalid_nickname`. 빈 값이면 그 항목을 지워 기본 Steam 닉네임으로 돌아간다 |
 | `check_updates` | — | `{ok:true}` | — | |
 | `restart_update` | — | `{ok:true}` / `{ok:false,reason}` | — | reason: `auto_merge`·`unavailable`·`storage`·`sending` |
 | `update_permission` | `allowed` | `{ok:true}` / `{error:update_permission_failed}` | — | |
@@ -89,6 +90,7 @@
 - `theme`,`collapsed`,`language`,`language_preference`,`notifications{notification_flash,notification_toast}`,`reactions_enabled`
 - `storage_error`,`revision`(변경 감지용 단조 증가)
 - `ui_settings{chat_opacity,presence_notices,clear_cats,auto_open_chest}` — Cat-Talk 추가. 읽기 실패 회차에는 키가 없다
+- `nicknames{steam_id: name}` — Cat-Talk 추가(D-032). 현재 계정의 표시 이름 덮어쓰기(`set_nickname`). 항상 있다 — 계정이 없거나 비었으면 `{}`, 읽기 실패 회차는 `{}` + `storage_error`. 렌더러는 참여자 목록·채팅 작성자·입퇴장 문구·반응 카드의 이름을 이 값으로 바꾸고, 없으면 Steam 이름을 쓴다
 - `translations`(요청 `language`가 현재와 다를 때만, `en`이면 사전)
 
 **추가분(dispatch)**
@@ -182,7 +184,7 @@
 ## 8. 에러 코드 목록
 
 렌더러로 통과되는 코드: `connection_changed`, `development_limit_50`, `control_character`, `storage_failed_before_send`, `legal_unavailable`, `invalid_steam_id`, `steam_profile_unavailable`, `steam_profile_failed`, `block_unavailable`.
-`invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large` → `request_failed`로 접힘(내부에선 발생하지만 렌더러로 나가지 않음).
+`invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large`, `invalid_nickname`(Cat-Talk) → `request_failed`로 접힘(내부에선 발생하지만 렌더러로 나가지 않음).
 그 외 전부 → `request_failed`. SQLite/OS → `storage_failed`. `update_permission` 실패 → `{error:update_permission_failed}`.
 Cat-Talk 전송 계층 추가 코드: `not_wired`(사이드카 미배선 액션), `bridge_down`(main↔사이드카 전송 실패).
 Cat-Talk main 추가 코드: `steam_trade_failed`(교환 요청 URI 형식 재확인 또는 `shell.openExternal` 실패. 사이드카 허용 목록과 무관하게 main이 만든다).

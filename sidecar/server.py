@@ -20,6 +20,7 @@ import time
 # spawn 자식도 이 모듈을 재import하므로 경로 설정은 모듈 최상단에 둔다.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from bongo_chat.profiles import steam_profile_uri
 from bongo_chat.reactions import png
 from bongo_chat.service import ChatService, NOTIFICATION_KEYS
 from bongo_chat.worker import unavailable
@@ -70,6 +71,15 @@ def steam_trade_uri(service, steam_id, context):
     if context != service.context() or steam_id not in service.profile_targets():
         raise ValueError("steam_profile_unavailable")
     return f"steam://openurl/https://steamcommunity.com/tradeoffer/new/?partner={int(steam_id) - STEAM_ID64_BASE}"
+
+
+# 참여자 닉네임 덮어쓰기(D-032): 업스트림 범용 KV(settings)를 계정 네임스페이스 키로 쓴다(upstream 무수정).
+# 값은 {steam_id: name} JSON이고 재실행·로비 이동 뒤에도 남는다. 이름은 앞뒤 공백 제거 후 15자(코드 포인트) 이하.
+NICKNAME_MAX = 15
+
+
+def nickname_key(account):
+    return f"nicknames:{account}"
 
 
 def data_dir():
@@ -185,6 +195,13 @@ class Sidecar:
             return None
         return values
 
+    def nicknames(self, account):
+        """현재 계정의 닉네임 덮어쓰기(steam_id → 이름). 계정이 없으면 {}, 깨진 저장값은 버린다."""
+        value = self.store.setting(nickname_key(account), default={}) if account else {}
+        if not isinstance(value, dict):
+            return {}
+        return {k: v for k, v in value.items() if isinstance(k, str) and isinstance(v, str)}
+
     def request(self, args, size):
         try:
             if size > MAX_REQUEST:
@@ -225,6 +242,12 @@ class Sidecar:
             settings = self.ui_settings()
             if settings is not None:
                 result["ui_settings"] = settings
+            # 렌더러는 항상 맵을 받는다(D-032). 읽기 실패 회차는 {} — 표시는 기본 Steam 닉네임으로 돌아간다
+            try:
+                result["nicknames"] = self.nicknames(account)
+            except (sqlite3.Error, OSError):
+                self.service.storage_error = True
+                result["nicknames"] = {}
             return result
         if action == "open_steam_profile":
             # 대상 검증과 URI 생성만 한다. 실제로 여는 일은 Electron main이 맡는다.
@@ -288,6 +311,20 @@ class Sidecar:
                 self.service.storage_error = True
             if self.worker and self.worker.is_alive():
                 self.commands.put_nowait({"type": "refresh"})
+        elif action == "set_nickname":
+            # Cat-Talk 추가(upstream 없음, D-032): 계정별·Steam ID 기준 표시 이름 덮어쓰기. 빈 값은 초기화.
+            if not account or args["account"] != account:
+                raise ValueError("account_changed")
+            steam_id, name = args.get("steam_id"), args.get("name")
+            steam_profile_uri(steam_id)   # 프로필 열기와 같은 정규 uint64 Steam ID 검증만 쓴다(아니면 invalid_steam_id)
+            if not isinstance(name, str) or len(name.strip()) > NICKNAME_MAX:
+                raise ValueError("invalid_nickname")
+            nicknames = self.nicknames(account)
+            if name.strip():
+                nicknames[steam_id] = name.strip()
+            else:
+                nicknames.pop(steam_id, None)
+            self.store.setting(nickname_key(account), nicknames)
         else:
             raise ValueError("unknown_action")
         return {"ok": True}

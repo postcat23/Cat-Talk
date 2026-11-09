@@ -18,6 +18,9 @@ export const PROFILES: Record<string, ViewProfile> = {
 
 export const ME_ID = 'p8';
 
+// 닉네임 덮어쓰기 시작값(D-032). 비어 있으면 모두 기본 이름. 목업에서 [저장]으로 바뀐 값은 메모리에만 둔다
+export const INITIAL_NICKNAMES: Record<string, string> = {};
+
 function today(hours: number, minutes: number) {
   const d = new Date();
   d.setHours(hours, minutes, 0, 0);
