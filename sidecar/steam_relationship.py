@@ -4,16 +4,16 @@
 서브클래스로 바꿔 끼운다(default_avatar 선례). 관계값은 ISteamFriends::GetFriendRelationship(EFriendRelationship)이고,
 프로필과 같이 약 1초마다 멤버별로 읽는다.
 
-내가 '모든 대화 차단'한 상대 = 5(k_EFriendRelationshipIgnored). 실측(친구 아닌 멤버 차단 0→5, 해제 5→0, 2026-11-09)과
-Steamworks 문서("the current user has explicit blocked this other user … This is stored")가 일치한다. 6(IgnoredFriend)은
-문서상 상대가 나를 무시한 경우, 1(Blocked)은 저장되지 않는 일시 값이라 쓰지 않는다(사용자 결정).
+차단 판정 = 관계값 1(k_EFriendRelationshipBlocked, 구 표현) 또는 5(k_EFriendRelationshipIgnored) — 비친구를 '모든 대화
+차단'한 경우의 구/신 표현(사용자 결정). 5는 실측(친구 아닌 멤버 차단 0→5, 해제 5→0, 2026-11-09)과 Steamworks 문서가 일치한다.
+6(IgnoredFriend, 친구 차단)은 의도적으로 뺀다 — 친구는 Steam 감지로 숨기지 않고 앱 차단으로 처리한다. 0·2·3·4·6·7은 노출.
 읽기에 실패하면 차단 아님으로 둔다 — 이 표시만 빠질 뿐 채팅과 앱 차단은 그대로 동작한다.
 """
 import ctypes as C
 
 from bongo_chat import worker as worker_module
 
-STEAM_IGNORED = 5   # k_EFriendRelationshipIgnored
+STEAM_BLOCKED_RELATIONSHIPS = frozenset({1, 5})   # k_EFriendRelationshipBlocked(구) · k_EFriendRelationshipIgnored
 
 
 def install():
@@ -25,7 +25,7 @@ def install():
             try:
                 if not hasattr(self, "_relationship"):
                     self._relationship = self.bind("ISteamFriends_GetFriendRelationship", C.c_int, C.c_void_p, C.c_uint64)
-                row["steam_blocked"] = int(self._relationship(self.friends, int(uid))) == STEAM_IGNORED
+                row["steam_blocked"] = int(self._relationship(self.friends, int(uid))) in STEAM_BLOCKED_RELATIONSHIPS
             except Exception:
                 row["steam_blocked"] = False
             return row
