@@ -15,3 +15,15 @@
 Electron 셸은 **electron-builder NSIS 설치본**(Windows x64, 원클릭·사용자별 설치 `%LOCALAPPDATA%\Programs\cat-talk`, 시작 메뉴 바로가기만, 게시자 `postcat23`, 서명 없음)으로 묶는다(D-030). `npm run dist`가 `dist/Cat-Talk-Setup-<버전>.exe`와 업데이트 메타데이터(`latest.yml`)를 만든다. 실행·읽기 파일(사이드카 `sidecar/`, upstream 소스 `src/`, 호환성 도구 `artifacts/compatibility`, 상자 자동 오픈 패처 `artifacts/auto_chest`)은 asar 밖 `resources/`에 레포와 같은 상대 위치로 넣어, 사이드카 코드는 경로를 바꾸지 않는다. 설치본과 dev는 데이터 폴더(`%LOCALAPPDATA%\CatTalk-dev`)와 단일 실행 잠금을 공유한다(둘이 함께 켜져 사이드카가 둘 붙지 않게).
 
 파이썬 사이드카는 아직 번들하지 않아 **설치 PC에 Python 3.11(py 런처)과 `sidecar/requirements.txt` 패키지가 필요**하다. Python 없는 PC를 위한 **PyInstaller** 번들은 공개 배포 단계에서 한다. 설치본은 게임 메모리 읽기에 필요한 `steam_api64.dll`·Mono 런타임 접근 경로와 권한을 보장해야 한다. 게임 DLL과 백업은 배포물에 포함하지 않는다.
+
+## 공개 배포 체크리스트
+
+<!-- sw:section id=dist-checklist source=- owner=user gate=min_items:1 -->
+레포를 공개하고 배포를 시작할 때 확인한다. 레포가 비공개인 동안에는 GitHub Releases 채널이 동작하지 않아 시험할 수 없는 항목도 여기에 둔다.
+
+- [ ] 코드 서명 도입 여부 — 도입하면 electron-updater의 업데이트 서명 검증이 자동으로 켜진다(`code-signing.md`, D-030).
+- [ ] 사이드카 PyInstaller 번들 — Python 3.11이 없는 PC에서도 실행되게 한다(위 '패키지').
+- [ ] 데이터 폴더 이름 정리 — 지금은 dev와 같은 `%LOCALAPPDATA%\CatTalk-dev`를 쓴다(D-030).
+- [ ] '앱 재설치가 필요합니다' 토스트에 [재설치] 버튼 — 사이드카의 호환성 검사 파일 누락 안내와 묶을지도 정한다(D-029).
+- [ ] 첫 릴리스 — `npm run release`(빌드 PC에 `GH_TOKEN`)로 올라간 초안 릴리스를 게시하고, 같은 버전이 설치된 앱의 드로어에 '최신'이 뜨는지 확인한다(`auto-update.md`).
+- [ ] 실제 업데이트 루프 — 이전 버전 설치 → 새 버전 게시 → 백그라운드 내려받기 → 드로어 '업데이트 가능' → [업데이트](사이드카 정상 종료 → 조용히 설치 → 재실행) → 드로어 버전 확인. [업데이트]를 누르지 않고 앱을 정상 종료했을 때 설치되는 경로도 확인한다(D-030).
