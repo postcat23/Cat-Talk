@@ -98,6 +98,8 @@ class Sidecar:
         self.avatar_images = OrderedDict()   # id -> data URI
         self.default_avatar = None   # (id, data URI): 게임 기본 고양이. 아바타 미해결 시 렌더러 플레이스홀더
         self.incoming_count = 0   # 수락된 타인 메시지 누적 수. 렌더러가 증가를 보고 알림을 판단한다
+        self.steam_hidden = set()   # Steam '모든 대화 차단'한 사람(D-033 2단계). 앱 차단 목록(service.blocked)과 별개
+        self.steam_hidden_account = ""
         self.worker = None
         self.closed = False
         self.last_prune = time.monotonic()
@@ -125,8 +127,10 @@ class Sidecar:
                     if event.get("account"):
                         self.known_accounts.add(event["account"])
                     self.service.update(event)
+                    self.update_steam_hidden()
                 elif event.get("type") == "message":
-                    if self.service.receive(event):
+                    # Steam 차단한 사람의 메시지는 업스트림이 받아 두지만(앱 차단이 아니므로) 화면에서 숨기니 알림 수에서 뺀다
+                    if self.service.receive(event) and event.get("sender") not in self.steam_hidden:
                         self.incoming_count += 1
                 elif event.get("type") == "reaction":
                     self.service.receive_reaction(event)
@@ -195,6 +199,43 @@ class Sidecar:
             return None
         return values
 
+    def update_steam_hidden(self):
+        """Steam '모든 대화 차단'한 사람(worker가 멤버 프로필에 steam_blocked로 싣는다, D-033 2단계).
+
+        지금 멤버는 플래그대로 넣고 빼고, 나간 사람은 마지막 판정을 유지한다(차단한 채 나가도 이번 실행의 지난 대화는
+        계속 숨김). 계정이 바뀌면 비운다. 글루 저장소에도 넘겨 대화 조회에서 앱 차단과 같은 단계로 빼게 한다.
+        """
+        state = self.service.state
+        account = state.get("account", "")
+        if account != self.steam_hidden_account:
+            self.steam_hidden.clear()
+            self.steam_hidden_account = account
+        members = set(state.get("members") or [])
+        for uid, profile in (state.get("profiles") or {}).items():
+            if uid in members and uid != account and isinstance(profile, dict) and "steam_blocked" in profile:
+                if profile["steam_blocked"] is True:
+                    self.steam_hidden.add(uid)
+                else:
+                    self.steam_hidden.discard(uid)
+        self.store.hidden_senders = frozenset(self.steam_hidden)
+
+    def hide_steam_blocked(self, result):
+        """view 결과에서 Steam 차단한 사람을 뺀다. 지난 대화·입퇴장은 이미 대화 조회(VolatileStore.message_page)에서
+        빠졌고, 여기서는 저장 못 한 메시지·참여자·프로필·반응·프로필 대상·앱 차단 목록(= 앱 차단 − 스팀 차단)을 정리한다.
+        steam_blocked 플래그는 렌더러로 보내지 않는다."""
+        hidden = self.steam_hidden
+        if hidden:
+            gone = {m["id"] for m in result["messages"] if m.get("sender") in hidden}
+            result["messages"] = [m for m in result["messages"] if m.get("sender") not in hidden]
+            result["volatile_peer_ids"] = [i for i in result.get("volatile_peer_ids", []) if i not in gone]
+            result["profile_targets"] = [u for u in result.get("profile_targets", []) if u not in hidden]
+            result["blocked_users"] = [u for u in result.get("blocked_users", []) if u.get("steam_id") not in hidden]
+            if "reactions" in result:
+                result["reactions"] = [r for r in result["reactions"] if r.get("sender") not in hidden]
+        for group in ("profiles", "participants"):
+            result[group] = {uid: {k: v for k, v in profile.items() if k != "steam_blocked"}
+                             for uid, profile in result[group].items() if uid not in hidden}
+
     def nicknames(self, account):
         """현재 계정의 닉네임 덮어쓰기(steam_id → 이름). 계정이 없으면 {}, 깨진 저장값은 버린다."""
         value = self.store.setting(nickname_key(account), default={}) if account else {}
@@ -232,10 +273,12 @@ class Sidecar:
                     or before is not None and start is not None
                     or type(limit) is not int or not 1 <= limit <= 1000):
                 raise ValueError("invalid_query")
+            self.update_steam_hidden()   # 대화 조회 전에 글루 저장소의 숨김 대상을 최신으로
             result = self.service.view(lobby, query, before, start, seen, limit)
             if "reactions" in args:
                 result["reactions"] = self.service.take_reactions(result["lobby"],
                     args["reactions"] is True and not query and not self.closed)
+            self.hide_steam_blocked(result)   # 아바타 이미지를 싣기 전에 뺀다
             # TODO(2c): update/auto_merge/notification/language 서브시스템 배선
             self.publish_avatars(result)
             result["incoming_count"] = self.incoming_count

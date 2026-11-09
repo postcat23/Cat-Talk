@@ -6,6 +6,7 @@ upstream src/bongo_chat/store.py는 수정하지 않는다. Store를 그대로 �
 - setting()만 별도 디스크 연결로 돌리며,
 - 차단 목록(blocked_users/set_blocked)은 그 settings에 계정별 키 'blocked:<account>'로 영속한다(D-033).
   업스트림 blocked_users 테이블은 인메모리라 쓰지 않는다.
+- Steam '모든 대화 차단'한 사람(hidden_senders, 사이드카가 채운다)은 대화 조회에서 앱 차단과 같은 단계로 뺀다(D-033 2단계).
 """
 import json
 from pathlib import Path
@@ -25,6 +26,7 @@ def blocked_key(account):
 
 class VolatileStore(Store):
     def __init__(self, settings_path: Path):
+        self.hidden_senders = frozenset()   # Steam 차단(D-033 2단계). 사이드카가 worker 프로필 플래그로 갱신한다
         # ChatService.__init__가 곧바로 setting()을 부르므로 영속 연결을 먼저 연다.
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         self.settings_db = sqlite3.connect(settings_path, timeout=0.25)
@@ -43,6 +45,14 @@ class VolatileStore(Store):
                 self.settings_db.execute("INSERT OR REPLACE INTO settings VALUES(?,?)", (key, json.dumps(value)))
         row = self.settings_db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
         return json.loads(row[0]) if row else default
+
+    def message_page(self, account, lobby, allowed, query="", before=None, limit=100, start=None, seen=None, blocked=None):
+        # Steam 차단한 사람의 지난 대화·입퇴장을 앱 차단(history_blocks)과 같은 조회에서 뺀다. 그래야 latest_seq·has_more·
+        # has_newer·unseen도 숨긴 행을 가리키지 않는다. blocked가 None(차단 목록을 못 읽음)이면 업스트림이 대화를 보류하므로
+        # 건드리지 않는다. service.blocked에는 넣지 않으므로 앱 차단 목록(blocked_users)에는 뜨지 않는다.
+        if blocked is not None and self.hidden_senders:
+            blocked = set(blocked) | self.hidden_senders
+        return super().message_page(account, lobby, allowed, query, before, limit, start, seen, blocked)
 
     def blocked_users(self, account):
         # 업스트림 Store와 같은 반환: {steam_id: name}, steam_id 순. 깨진 저장값은 버린다
