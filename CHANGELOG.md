@@ -78,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - README 상단에 최신 릴리즈 배지(버전 자동 표기)와 '⬇ 최신 버전 다운로드' 링크 추가 — 둘 다 GitHub 최신 릴리즈 페이지로 연결
 - 설치본이 Python 없이 동작 — 사이드카를 PyInstaller 번들(`resources/sidecar-bin/cattalk-sidecar.exe`)로 넣고 설치본은 이것을 실행(설치본 +15MB). 소스 실행(dev)은 계속 시스템 Python 3.11. `npm run dist`·`release`가 사이드카 번들을 먼저 빌드(`scripts/build-sidecar.ps1`)
 - THIRD-PARTY-NOTICES에 사이드카 번들 구성요소(Python 3.11.5·OpenSSL·SQLite·VC++ 런타임·PyInstaller 등)를 추가하고 FMOD 설명 정정 — 개발 실행은 아바타를 읽을 때 FMOD를 불러오지만 설치본 번들에는 없음
+- 코드 서명은 하지 않기로 결정(토이·소규모 배포) — README에 다운로드 링크 옆 보안 경고 안내와 '설치 안내'(SmartScreen [추가 정보] → [실행], '알 수 없는 게시자' 표시, 백신 오탐·스마트 앱 컨트롤 차단 가능성) 추가
 
 ### Fixed
 

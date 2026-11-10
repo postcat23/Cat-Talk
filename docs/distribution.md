@@ -21,7 +21,7 @@ Electron 셸은 **electron-builder NSIS 설치본**(Windows x64, 원클릭·사�
 <!-- sw:section id=dist-checklist source=- owner=user gate=min_items:1 -->
 레포를 공개하고 배포를 시작할 때 확인한다. 레포가 비공개인 동안에는 GitHub Releases 채널이 동작하지 않아 시험할 수 없는 항목도 여기에 둔다.
 
-- [ ] 코드 서명 도입 여부 — 도입하면 electron-updater의 업데이트 서명 검증이 자동으로 켜진다(`code-signing.md`, D-030).
+- [x] 코드 서명 — 안 함으로 결정(토이·소규모, D-037). README '설치 안내'의 SmartScreen 안내로 대체한다. 업데이트는 서명 검증 없이 해시만 확인한다(`code-signing.md`, D-030).
 - [x] 사이드카 PyInstaller 번들 — Python 3.11이 없는 PC에서도 실행되게 한다(위 '패키지', D-036). 2026-11-10 완료: 설치본 +15.4MB. 수락 시험은 PATH에서 Python·py 런처를 뺀 환경에서 설치본을 실행해, 연결·아바타·채팅·게임 패치 기능을 확인했다(Python 프로세스 없음). Python이 아예 설치되지 않은 다른 PC에서의 확인은 남아 있다.
 - [ ] 데이터 폴더 이름 정리 — 지금은 dev와 같은 `%LOCALAPPDATA%\CatTalk-dev`를 쓴다(D-030).
 - [ ] '앱 재설치가 필요합니다' 토스트에 [재설치] 버튼 — 사이드카의 호환성 검사 파일 누락 안내와 묶을지도 정한다(D-029).
