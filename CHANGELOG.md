@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `sidecar` — Steam에서 '모든 대화 차단'한 참여자를 앱에서도 숨김: 채팅·입퇴장·참여자 목록·참여자 수·반응·알림에서 빠지고 앱 차단 목록에는 뜨지 않음(Steam에서 풀면 약 1초 안에 돌아옴)
 - `auto-chest` — 차단한 참여자(앱 차단 ∪ Steam 차단)의 고양이를 게임 화면에서도 숨김(패치 세트 3): 게임의 멤버별 숨김을 써서 고양이가 꺼짐. 입장·재입장·자동 숨김 토글 때는 처음부터 숨고, 게임 참여자 목록에서 '보이기'를 직접 누르면 최대 0.5초 뒤 다시 숨음. 차단을 풀면 게임 '자동 숨김' 설정대로 돌아감. 앱이 게임 폴더 `CatTalkHidden.ids`에 목록을 쓰고(앱 실행 때·목록이 바뀔 때, 앱을 꺼도 유지) 게임이 0.5초마다 읽음. 이전 패치(세트 1·2) 설치본은 '재적용 필요'로 게임 한 번 재시작. 패치하지 않은 기기는 앱 화면 숨김까지만
 - `auto-chest` — 설치 사전 점검에 Cat Talk 연결 호환성 지문 비교 추가: 패치 결과가 Cat Talk의 게임 연결 판정 지문을 바꾸면 게임을 끄기 전에 '호환 안 됨'으로 중단(패처 사본 검증에도 같은 비교)
+- `sidecar` — 자가 점검 `--selftest` 추가: 게임 프로세스·Steam에 붙지 않고 자식 프로세스 실행, 호환성 판정, 기본 고양이 아바타 합성, FMOD 미적재를 확인해 JSON 한 줄로 결과를 냄(설치본 번들 검증용)
 
 ### Changed
 
@@ -75,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 라이선스를 MIT에서 PolyForm Noncommercial 1.0.0으로 변경 (Cat-Talk 자체 코드에만 적용: 비상업 사용·수정·재배포 허용, 상업적 이용 불가). "Cat Talk" 이름·앱 아이콘·로고는 라이선스 대상에서 빼고 권리 유보(NOTICE). upstream bongo-cat-chat 유래 코드와 번들 의존성·폰트는 원래 라이선스 유지 — 범위와 원문은 THIRD-PARTY-NOTICES.md·LICENSES/, 설치본에도 함께 포함
 - README를 공개용으로 정리 — 아이콘·기술 배지·한 줄 소개, 원본 서술은 '원본과의 관계 · 라이선스' 절로 모음('포크' → '클론'), 기술 선택 근거를 표로 압축, 아키텍처·주요 기능을 현재 구현 기준으로 다시 씀(로드맵·노션 참조·변경 이력 표 제거). 선택 기능의 게임 DLL 패치, 대화 휘발 보관, Python 3.11 별도 설치 필요를 사실대로 명시
 - README 상단에 최신 릴리즈 배지(버전 자동 표기)와 '⬇ 최신 버전 다운로드' 링크 추가 — 둘 다 GitHub 최신 릴리즈 페이지로 연결
+- 설치본이 Python 없이 동작 — 사이드카를 PyInstaller 번들(`resources/sidecar-bin/cattalk-sidecar.exe`)로 넣고 설치본은 이것을 실행(설치본 +15MB). 소스 실행(dev)은 계속 시스템 Python 3.11. `npm run dist`·`release`가 사이드카 번들을 먼저 빌드(`scripts/build-sidecar.ps1`)
+- THIRD-PARTY-NOTICES에 사이드카 번들 구성요소(Python 3.11.5·OpenSSL·SQLite·VC++ 런타임·PyInstaller 등)를 추가하고 FMOD 설명 정정 — 개발 실행은 아바타를 읽을 때 FMOD를 불러오지만 설치본 번들에는 없음
 
 ### Fixed
 

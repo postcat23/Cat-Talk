@@ -49,15 +49,19 @@ function windowlessPython(exe) {
 }
 
 function startSidecar() {
-  // upstream 소스는 3.10+ 문법(`dict | None`)이라 기본은 py 런처의 3.11. CATTALK_PYTHON으로 override.
-  // dev는 로그 확인용으로 콘솔을 유지한다(py.exe + stderr 상속).
+  // 설치본(app.isPackaged)은 PyInstaller 번들(resources/sidecar-bin, 창 없는 exe, D-036)을 띄운다 — 기기에 Python이 없어도 된다.
+  // 소스 실행(dev·빌드 후 npm start)은 그대로 Python: upstream 소스는 3.10+ 문법(`dict | None`)이라 기본은 py 런처의 3.11,
+  // CATTALK_PYTHON으로 override. dev는 로그 확인용으로 콘솔을 유지한다(py.exe + stderr 상속).
   const custom = process.env.CATTALK_PYTHON;
-  const [py, ...pyArgs] = DEV
-    ? (custom ? [custom] : ['py', '-3.11'])
-    : (custom ? [windowlessPython(custom)] : ['pyw', '-3.11']);
+  const script = path.join(RES, 'sidecar', 'server.py');
+  const [cmd, ...args] = app.isPackaged
+    ? [path.join(RES, 'sidecar-bin', 'cattalk-sidecar.exe')]
+    : DEV
+      ? [...(custom ? [custom] : ['py', '-3.11']), script]
+      : [...(custom ? [windowlessPython(custom)] : ['pyw', '-3.11']), script];
   // libuv는 상속 stdio가 하나도 없을 때만 CREATE_NO_WINDOW를 붙인다. 그래서 prod는 stderr를 상속 대신
   // 파이프로 받아 Electron stderr로 넘긴다(사이드카가 fd2를 fd1로 복제하므로 버리면 안 된다).
-  const child = spawn(py, [...pyArgs, path.join(RES, 'sidecar', 'server.py')], {
+  const child = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', DEV ? 'inherit' : 'pipe'],
     windowsHide: !DEV,
   });

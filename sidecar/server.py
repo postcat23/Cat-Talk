@@ -18,7 +18,9 @@ import threading
 import time
 
 # spawn 자식도 이 모듈을 재import하므로 경로 설정은 모듈 최상단에 둔다.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+# PyInstaller 번들(prod)은 bongo_chat을 번들 안에 넣으므로 소스 트리의 src/를 쓰지 않는다(D-036).
+if not getattr(sys, "frozen", False):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from bongo_chat.profiles import steam_profile_uri
 from bongo_chat.reactions import png
@@ -496,4 +498,7 @@ def main():
 
 if __name__ == "__main__":
     mp.freeze_support()
+    if sys.argv[1:2] == ["--selftest"]:   # 번들 점검용. Electron은 이 인자를 넘기지 않는다(selftest.py)
+        from selftest import run
+        sys.exit(run(sys.argv[2:]))
     main()

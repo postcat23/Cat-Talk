@@ -34,7 +34,7 @@ React 렌더러  ◀── IPC ──▶  Electron main  ◀── stdio JSON �
 
 | 레이어 | 처리 |
 |---|---|
-| Electron main | 창·트레이·단일 인스턴스, 사이드카 실행(시스템 Python 3.11), 자동 업데이트, 선택 기능의 게임 패치 관리 |
+| Electron main | 창·트레이·단일 인스턴스, 사이드카 실행(설치본은 함께 묶인 실행 파일, 소스 실행은 시스템 Python 3.11), 자동 업데이트, 선택 기능의 게임 패치 관리 |
 | React 렌더러 | 메신저 화면(대화·참여자·반응 카드·설정 드로어) |
 | IPC | main ↔ 사이드카 stdio JSON 라인([docs/ipc-contract.md](docs/ipc-contract.md)) |
 | Python 사이드카 | Steam 연동·게임 메모리 읽기·채팅 서비스. 대화는 메모리에만, 설정만 디스크에 저장 |
@@ -56,7 +56,6 @@ React 렌더러  ◀── IPC ──▶  Electron main  ◀── stdio JSON �
 
 - Windows x64, Steam 실행, Bongo Cat 설치. `steam_api64.dll`·Mono 런타임에 접근합니다.
 - 게임 프로세스 메모리를 읽으므로 게임 업데이트 시 주소·타입 구조 재검증이 필요합니다. 게임의 이용약관·안티치트 정책과의 관계는 사용자가 직접 검토해야 합니다.
-- 설치본에는 Python이 들어 있지 않습니다. Python 3.11과 사이드카 패키지(`sidecar/requirements.txt`)를 따로 설치해야 합니다.
 - 개발 환경이 없는 다른 PC에서의 동작은 아직 확인하지 않았습니다.
 
 ## 라이선스

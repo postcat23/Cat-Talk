@@ -1,0 +1,5 @@
+# Keep this file ASCII-only: pip<24 decodes it with the system locale (cp949 on Korean Windows).
+# Build-only dependencies for scripts/build-sidecar.ps1 (PyInstaller onedir bundle of the sidecar).
+# Runtime dependencies stay in sidecar/requirements.txt.
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.10
