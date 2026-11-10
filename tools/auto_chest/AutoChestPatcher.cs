@@ -1,5 +1,6 @@
-// Cat-Talk 게임 패처. 게임 어셈블리(Assembly-CSharp.dll)를 Mono.Cecil로 읽어 두 훅을 함께 넣는다.
-// 게임 어셈블리를 로드·실행하지 않는다. 패치 세트 버전: 1 = 상자 자동 오픈만, 2 = 상자 자동 오픈 + 투명화.
+// Cat-Talk 게임 패처. 게임 어셈블리(Assembly-CSharp.dll)를 Mono.Cecil로 읽어 훅 세 묶음을 함께 넣는다.
+// 게임 어셈블리를 로드·실행하지 않는다. 패치 세트 버전: 1 = 상자 자동 오픈만, 2 = 상자 자동 오픈 + 투명화,
+//   3 = 상자 자동 오픈 + 투명화 + 차단 멤버 고양이 숨김. 세트는 누적이다(높은 버전은 낮은 버전의 훅을 모두 포함).
 // 상자 자동 오픈(D-019): Shop.TimerUpdate 상태머신 MoveNext의 "ChestIsReady = true; OnChestReady();" 직후에
 //   "if (File.Exists(<플래그>)) this._shopItem.Buy();"를 삽입한다.
 // 투명화(D-028): 고양이마다 하나인 TranslucentOnHover의 알파 경로에 플래그를 건다. 삽입은 여덟 곳이다.
@@ -12,11 +13,25 @@
 //     OnUIHoverCallback.IsPointerOverUIElement와 OnSpecificUIHoverCallback의 결과 필터에서 투명화 중에는 레이어 2를 뺀다.
 //   팝업 두 곳: 이모트 도넛·말풍선 버튼은 레이캐스트가 아니라 커서 거리로 열린다(실게임 확인). 게임이 반투명 중에 켜는
 //     TranslucentOnHoverSetting.DisablePopups를 EmoteDonut.Update와 CatSpeech.Update가 읽는 분기에서, 투명화 중에도 꺼진 쪽으로 보낸다.
+// 차단 멤버 고양이 숨김(D-033 3단계): 게임의 멤버별 숨김(LobbyMemberInstance.IsHidden: 고양이 오브젝트를 끄고 자리를 비운다)을 쓴다.
+//   목록 파일은 플래그 옆 CatTalkHidden.ids(한 줄에 SteamID64 하나, LF). 없거나 비면 아무도 숨기지 않는다. 앱이 통째로 다시 쓴다.
+//   숨김 setter·getter·PlayerDataCache·LobbyMemberVisibility.SetVisibility와 그 호출 대상은 Cat Talk 연결 호환성 지문(업스트림
+//   feature-contract.json의 privacy)이 본문까지 본다. 여기를 바꾸면 Cat Talk가 '지원하지 않는 게임 빌드'로 연결을 멈춘다(2026-11-10 실측:
+//   setter 입구 훅 시험본). 그래서 지문 범위 밖 세 곳에만 훅을 건다(세 곳 모두 업스트림 FeatureProbe로 지문 불변 실측).
+//   LobbyMemberInstance에 정적 필드 둘(적용한 목록, 다음 확인 시각)과 정적 메서드 넷(CatTalkListed·CatTalkHide·CatTalkVisible·CatTalkPoll)을 더한다.
+//   훅 ① LobbyMemberInstance.Start의 set_IsHidden 호출 직전: value = CatTalkHide(value, this) — 입장·재입장 때 처음부터 숨김.
+//   훅 ② LobbyMemberVisibility.HandleAutoHideUpdated의 SetVisibility 호출 직전: visible = CatTalkVisible(visible, _steamUserData)
+//     — 자동 숨김 토글·참여자 목록 행 생성 때 목록에 있는 멤버는 '숨김'으로(게임 버튼 상태도 맞는다).
+//   훅 ③ CatSpawnManager.Update 처음: CatTalkPoll() — 0.5초마다 목록 파일을 읽어 전 멤버에 적용한다. 목록에 있는데 보이는 멤버는 숨기고
+//     (새로 든 멤버, 게임 참여자 목록의 '보이기'를 직접 누른 경우 — 이 버튼은 지문 범위라 훅을 걸 수 없어 최대 0.5초 보인다),
+//     목록에서 빠진 멤버는 게임 '자동 숨김' 설정값으로 되돌린다(D-033 결정 A). 그 밖의 멤버는 건드리지 않는다.
+//     파일 읽기·적용은 try/catch 안이다. 실패하면 이번 확인만 건너뛰고(게임 Update는 그대로 진행) 0.5초 뒤 다시 본다.
+//   투명화(알파 0)와 독립이다: 숨긴 고양이는 오브젝트가 꺼지고, 나머지 고양이에는 투명화가 그대로다.
 // 게임 런타임 어셈블리는 스트리핑돼 공개 Unity API도 없을 수 있다(실측: CanvasGroup.set_blocksRaycasts 없음).
 // 그래서 patch·verify는 결과의 모든 참조를 게임 Managed 폴더에서 해석해 보고, 하나라도 안 되면 거부한다.
 // 명령: inspect <dll> | patch <in> <out> <flag> <managedDir> | verify <orig> <patched> <flag> <managedDir>
 //       backup <dll> <backupDir> | restore <backupDir> <target>
-// <flag>는 상자 자동 오픈 플래그다. 투명화 플래그는 같은 폴더의 CatTalkTransparent.on으로 정해지고, 두 플래그는 독립이다.
+// <flag>는 상자 자동 오픈 플래그다. 투명화 플래그(CatTalkTransparent.on)와 숨김 목록(CatTalkHidden.ids)은 같은 폴더로 정해지고, 셋은 독립이다.
 // 출력은 JSON 한 줄. 종료 코드: 0 성공, 2 호환 안 됨/거부, 3 이미 패치됨(건너뜀), 1 오류.
 // C# 5(.NET Framework csc v4)로 빌드한다.
 using System;
@@ -54,6 +69,16 @@ sealed class Target {
     internal int DonutAnchor, SpeechAnchor;                 // "if (DisablePopups) 숨김"의 brtrue 위치
     internal List<int> DonutMarkers, SpeechMarkers;
 
+    // 차단 멤버 고양이 숨김(D-033 3단계)
+    internal TypeDefinition Member, SpawnManager, Visibility;
+    internal FieldDefinition SteamUserDataField, VisibilityUserField, Instances, SettingsInstance, AutoHide, HiddenIdsField, HiddenPollField;
+    internal MethodDefinition Getter, Setter, MemberStart, SetVisibility, VisibilityToggle, SpawnUpdate, ToggleValue;
+    internal MethodDefinition ListedMethod, HideMethod, VisibleMethod, PollMethod;
+    internal MethodReference GetData, GetIdStr, Values, ToArrayOpen;
+    internal TypeReference UserDataType;
+    internal int StartCall, ToggleCall;   // Start의 set_IsHidden 호출, HandleAutoHideUpdated의 SetVisibility 호출 위치(삽입은 그 바로 앞)
+    internal List<int> MemberStartMarkers, ToggleMarkers, SpawnMarkers;   // CatTalkHide·CatTalkVisible·CatTalkPoll 호출 위치
+
     internal const string FlagName = "CatTalkAutoChest.on";
     internal const string TransparentFlagName = "CatTalkTransparent.on";
     internal const string StateFieldName = "CatTalkTransparent";
@@ -64,6 +89,14 @@ sealed class Target {
     internal const int LayerMarkerAt = 6;                                       // 레이어 블록 안의 ldsfld CatTalkTransparent 위치
     internal const int OverUIInsert = 2, FilterInsert = 9, PopupInsert = 2;     // 호버·팝업 블록(마커 = 첫 명령 ldsfld CatTalkTransparent)
     internal const int IgnoreRaycastLayer = 2;                                  // Unity 고정 레이어. 게임 클릭 판정도 상수 2를 쓴다
+    internal const string HiddenFileName = "CatTalkHidden.ids";
+    internal const string HiddenIdsFieldName = "CatTalkHiddenIds", HiddenPollFieldName = "CatTalkHiddenPoll";
+    internal const string ListedName = "CatTalkListed", HideName = "CatTalkHide", VisibleName = "CatTalkVisible", PollName = "CatTalkPoll";
+    internal const string MemberTypeName = "BongoCat.Multiplayer.LobbyMemberInstance";
+    internal const string VisibilityTypeName = "BongoCat.Multiplayer.LobbyMemberVisibility";
+    internal const string SteamUserDataTypeName = "Heathen.SteamworksIntegration.SteamUserData";
+    internal const string InstancesTypeName = "System.Collections.Generic.Dictionary`2<Heathen.SteamworksIntegration.UserData," + MemberTypeName + ">";
+    internal const int MemberStartInsert = 2, ToggleInsert = 3, SpawnInsert = 1;   // 호출 직전 삽입(①②), Update 처음(③)
 
     static T One<T>(IEnumerable<T> items, string code) where T : class {
         var list = items.ToList();
@@ -106,6 +139,7 @@ sealed class Target {
         if (anchors.Count != 1) throw new Incompatible("anchor_count_" + anchors.Count);
         t.AnchorIndex = anchors[0];
         t.FindHover(module);
+        t.FindHidden(module);
         return t;
     }
 
@@ -252,6 +286,134 @@ sealed class Target {
         }
     }
 
+    // 차단 멤버 고양이 숨김 대상(D-033 3단계). 게임 숨김 기능의 구조가 분석 때와 같을 때만 받는다.
+    // 숨김 setter·getter·PlayerDataCache·SetVisibility와 그 호출 대상은 Cat Talk 연결 지문 범위라 읽기만 하고 고치지 않는다.
+    void FindHidden(ModuleDefinition module) {
+        Member = One(module.GetTypes().Where(x => x.FullName == MemberTypeName), "member_type");
+        Visibility = One(module.GetTypes().Where(x => x.FullName == VisibilityTypeName), "visibility_type");
+        SpawnManager = One(module.GetTypes().Where(x => x.FullName == "BongoCat.Multiplayer.Spawning.CatSpawnManager"), "spawn_type");
+        var lobbyRefs = One(module.GetTypes().Where(x => x.FullName == "BongoCat.Multiplayer.MultiplayerLobbyReferences"), "lobbyrefs_type");
+        var settings = One(module.GetTypes().Where(x => x.FullName == "BongoCat.SettingsManager"), "settings_type");
+        var toggle = One(module.GetTypes().Where(x => x.FullName == "BongoCat.PlayerPrefsToggle"), "toggle_type");
+        SteamUserDataField = One(Member.Fields.Where(f => f.Name == "steamUserData" && !f.IsStatic && f.FieldType.FullName == SteamUserDataTypeName), "member_steamuserdata");
+        VisibilityUserField = One(Visibility.Fields.Where(f => f.Name == "_steamUserData" && !f.IsStatic && f.FieldType.FullName == SteamUserDataTypeName), "visibility_steamuserdata");
+        Getter = One(Member.Methods.Where(m => m.Name == "get_IsHidden" && !m.IsStatic && m.HasBody && m.Parameters.Count == 0 && m.ReturnType.MetadataType == MetadataType.Boolean), "member_getter");
+        Setter = One(Member.Methods.Where(m => m.Name == "set_IsHidden" && !m.IsStatic && m.HasBody && m.Parameters.Count == 1
+            && m.Parameters[0].ParameterType.MetadataType == MetadataType.Boolean && m.ReturnType.MetadataType == MetadataType.Void), "member_setter");
+        MemberStart = One(Member.Methods.Where(m => m.Name == "Start" && !m.IsStatic && m.HasBody && m.Parameters.Count == 0 && m.ReturnType.MetadataType == MetadataType.Void), "member_start");
+        SetVisibility = One(Visibility.Methods.Where(m => m.Name == "SetVisibility" && !m.IsStatic && m.HasBody && m.Parameters.Count == 1
+            && m.Parameters[0].ParameterType.MetadataType == MetadataType.Boolean && m.ReturnType.MetadataType == MetadataType.Void), "visibility_set");
+        VisibilityToggle = One(Visibility.Methods.Where(m => m.Name == "HandleAutoHideUpdated" && !m.IsStatic && m.HasBody && m.Parameters.Count == 1
+            && m.Parameters[0].ParameterType.MetadataType == MetadataType.Boolean && m.ReturnType.MetadataType == MetadataType.Void), "visibility_toggle");
+        SpawnUpdate = One(SpawnManager.Methods.Where(m => m.Name == "Update" && !m.IsStatic && m.HasBody && m.Parameters.Count == 0 && m.ReturnType.MetadataType == MetadataType.Void), "spawn_update");
+        Instances = One(lobbyRefs.Fields.Where(f => f.Name == "GameplayInstances" && f.IsStatic && f.FieldType.FullName == InstancesTypeName), "lobbyrefs_instances");
+        SettingsInstance = One(settings.Fields.Where(f => f.Name == "Instance" && f.IsStatic && f.FieldType.FullName == "BongoCat.SettingsManager"), "settings_instance");
+        AutoHide = One(settings.Fields.Where(f => f.Name == "AutoHideCats" && !f.IsStatic && f.FieldType.FullName == "BongoCat.PlayerPrefsToggle"), "settings_autohide");
+        ToggleValue = One(toggle.Methods.Where(m => m.Name == "get_Value" && !m.IsStatic && m.Parameters.Count == 0 && m.ReturnType.MetadataType == MetadataType.Boolean), "toggle_value");
+        // 멤버 사전 값 목록과 Enumerable.ToArray는 게임이 이미 참조하는 것을 쓴다(FlipAllCats·EmoteDonut, 실측)
+        var refs = module.GetMemberReferences().OfType<MethodReference>().ToList();
+        Values = One(refs.Where(m => m.Name == "get_Values" && m.DeclaringType.FullName == InstancesTypeName && m.Parameters.Count == 0), "instances_values");
+        ToArrayOpen = One(refs.Where(m => m.Name == "ToArray" && m.DeclaringType.FullName == "System.Linq.Enumerable" && m.HasGenericParameters && m.Parameters.Count == 1), "enumerable_toarray");
+
+        // 게임 숨김의 키: get_IsHidden = PlayerDataCache.GetIsHidden(steamUserData.Data.IdStr)(SteamID64 십진 문자열). 같은 참조로 멤버 ID를 읽는다.
+        var g = Getter.Body.Instructions;
+        bool getterOk = g.Count == 8 && Getter.Body.Variables.Count == 1
+            && g[0].OpCode == OpCodes.Ldarg_0 && g[1].OpCode == OpCodes.Ldfld && Same(g[1].Operand as FieldReference, SteamUserDataField)
+            && g[2].OpCode == OpCodes.Callvirt && CallsNamed(g[2], "SteamUserData", "get_Data")
+            && g[3].OpCode == OpCodes.Stloc_0 && g[4].OpCode == OpCodes.Ldloca_S
+            && g[5].OpCode == OpCodes.Call && CallsNamed(g[5], "UserData", "get_IdStr")
+            && g[6].OpCode == OpCodes.Call && CallsNamed(g[6], "PlayerDataCache", "GetIsHidden")
+            && g[7].OpCode == OpCodes.Ret;
+        if (!getterOk) throw new Incompatible("member_getter_shape");
+        GetData = (MethodReference)g[2].Operand;
+        GetIdStr = (MethodReference)g[5].Operand;
+        UserDataType = Getter.Body.Variables[0].VariableType;
+        if (UserDataType.FullName != "Heathen.SteamworksIntegration.UserData" || GetData.ReturnType.FullName != UserDataType.FullName
+            || GetIdStr.ReturnType.MetadataType != MetadataType.String || GetIdStr.Parameters.Count != 0) throw new Incompatible("member_getter_shape");
+        // set_IsHidden은 게임 숨김 저장(PlayerDataCache.SetIsHidden)과 고양이 켜고 끄기(GameObject.SetActive)를 하는 그 setter여야 한다
+        var s = Setter.Body.Instructions;
+        if (!s.Any(i => CallsNamed(i, "PlayerDataCache", "SetIsHidden")) || !s.Any(i => CallsNamed(i, "GameObject", "SetActive"))) throw new Incompatible("member_setter_shape");
+        // setter에 우리 훅이 있으면(2026-11-10 시험본: setter 입구 훅 — Cat Talk 연결 지문을 깨 연결이 멈췄다) 다시 패치하지 않는다
+        if (s.Any(i => { var r = i.Operand as MethodReference; return r != null && r.DeclaringType.FullName == MemberTypeName && r.Name.StartsWith("CatTalk", StringComparison.Ordinal); }))
+            throw new Incompatible("hidden_setter_hook");
+        // SetVisibility(게임 참여자 목록의 보이기/숨기기 버튼·자동 숨김 토글)는 그 setter를 부르는 경로여야 한다
+        if (!SetVisibility.Body.Instructions.Any(i => (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt) && Same(i.Operand as MethodReference, Setter)))
+            throw new Incompatible("visibility_set_shape");
+
+        // 앵커 ①: Start의 set_IsHidden 호출(정확히 하나). Start는 자동 숨김 설정을 읽어 처음 숨김 상태를 정한다.
+        var start = MemberStart.Body.Instructions;
+        var startCalls = CallsTo(start, Setter);
+        if (startCalls.Count != 1) throw new Incompatible("member_start_call_" + startCalls.Count);
+        StartCall = startCalls[0];
+        if (!start.Any(i => i.OpCode == OpCodes.Ldfld && Same(i.Operand as FieldReference, AutoHide))) throw new Incompatible("member_start_shape");
+        // 앵커 ②: HandleAutoHideUpdated의 SetVisibility 호출(정확히 하나). 자동 숨김 설정값으로 보이기 여부를 정한다.
+        var tog = VisibilityToggle.Body.Instructions;
+        var toggleCalls = CallsTo(tog, SetVisibility);
+        if (toggleCalls.Count != 1) throw new Incompatible("visibility_toggle_call_" + toggleCalls.Count);
+        ToggleCall = toggleCalls[0];
+        if (!tog.Any(i => i.OpCode == OpCodes.Ldfld && Same(i.Operand as FieldReference, AutoHide))) throw new Incompatible("visibility_toggle_shape");
+
+        HiddenIdsField = Member.Fields.SingleOrDefault(f => f.Name == HiddenIdsFieldName);
+        HiddenPollField = Member.Fields.SingleOrDefault(f => f.Name == HiddenPollFieldName);
+        ListedMethod = Member.Methods.SingleOrDefault(m => m.Name == ListedName);
+        HideMethod = Member.Methods.SingleOrDefault(m => m.Name == HideName);
+        VisibleMethod = Member.Methods.SingleOrDefault(m => m.Name == VisibleName);
+        PollMethod = Member.Methods.SingleOrDefault(m => m.Name == PollName);
+        MemberStartMarkers = MemberCalls(MemberStart, HideName);
+        ToggleMarkers = MemberCalls(VisibilityToggle, VisibleName);
+        SpawnMarkers = MemberCalls(SpawnUpdate, PollName);
+    }
+
+    static List<int> CallsTo(IList<Instruction> ins, MethodDefinition target) {
+        return Enumerable.Range(0, ins.Count).Where(i => (ins[i].OpCode == OpCodes.Call || ins[i].OpCode == OpCodes.Callvirt) && Same(ins[i].Operand as MethodReference, target)).ToList();
+    }
+
+    static bool CallsNamed(Instruction i, string type, string name) {
+        var m = i.Operand as MethodReference;
+        return (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt) && m != null && m.Name == name && m.DeclaringType.Name == type;
+    }
+
+    // LobbyMemberInstance의 (우리가 더한) 메서드를 부르는 명령 위치
+    static List<int> MemberCalls(MethodDefinition m, string name) {
+        var ins = m.Body.Instructions;
+        return Enumerable.Range(0, ins.Count).Where(i => {
+            var r = ins[i].Operand as MethodReference;
+            return (ins[i].OpCode == OpCodes.Call || ins[i].OpCode == OpCodes.Callvirt) && r != null && r.Name == name && r.DeclaringType.FullName == MemberTypeName;
+        }).ToList();
+    }
+
+    // 숨김 훅이 전부 제자리에 있는지. 전부 없으면 false, 일부만 있으면 호환 안 됨.
+    internal bool HiddenHooked {
+        get {
+            bool any = HiddenIdsField != null || HiddenPollField != null || ListedMethod != null || HideMethod != null || VisibleMethod != null || PollMethod != null
+                || MemberStartMarkers.Count > 0 || ToggleMarkers.Count > 0 || SpawnMarkers.Count > 0;
+            if (!any) return false;
+            var start = MemberStart.Body.Instructions;
+            var tog = VisibilityToggle.Body.Instructions;
+            bool whole = HiddenIdsField != null && HiddenIdsField.IsStatic && HiddenIdsField.FieldType.MetadataType == MetadataType.String
+                && HiddenPollField != null && HiddenPollField.IsStatic && HiddenPollField.FieldType.MetadataType == MetadataType.Single
+                && new[] { ListedMethod, HideMethod, VisibleMethod, PollMethod }.All(m => m != null && m.IsStatic && m.HasBody)
+                && MemberStartMarkers.Count == 1 && StartCall >= 2 && MemberStartMarkers[0] == StartCall - 1 && start[StartCall - 2].OpCode == OpCodes.Ldarg_0
+                && ToggleMarkers.Count == 1 && ToggleCall >= 3 && ToggleMarkers[0] == ToggleCall - 1 && tog[ToggleCall - 3].OpCode == OpCodes.Ldarg_0
+                && tog[ToggleCall - 2].OpCode == OpCodes.Ldfld && Same(tog[ToggleCall - 2].Operand as FieldReference, VisibilityUserField)
+                && SpawnMarkers.Count == 1 && SpawnMarkers[0] == 0;
+            if (!whole) throw new Incompatible("hidden_partial");
+            return true;
+        }
+    }
+
+    // 숨김 목록 파일 경로(CatTalkPoll이 File.Exists로 보는 리터럴). 훅이 없으면 null.
+    internal string HiddenFile {
+        get {
+            if (PollMethod == null || !PollMethod.HasBody) return null;
+            var i = PollMethod.Body.Instructions.FirstOrDefault(x => x.OpCode == OpCodes.Ldstr && ((string)x.Operand).EndsWith("\\" + HiddenFileName, StringComparison.OrdinalIgnoreCase));
+            return i == null ? null : (string)i.Operand;
+        }
+    }
+
+    // 우리가 더한 메서드(본문 전체가 패치 산출물)
+    internal MethodDefinition[] HiddenAdded { get { return new[] { ListedMethod, HideMethod, VisibleMethod, PollMethod }.Where(m => m != null).ToArray(); } }
+
     static TypeReference IteratorStateMachine(MethodDefinition m) {
         var attrs = m.CustomAttributes.Where(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.IteratorStateMachineAttribute").ToList();
         if (attrs.Count == 0) return null;
@@ -285,7 +447,7 @@ sealed class Target {
     static bool Same(MethodReference a, MethodDefinition b) { return a != null && a.Name == b.Name && a.DeclaringType.FullName == b.DeclaringType.FullName && a.Parameters.Count == b.Parameters.Count; }
 
     // 패치가 본문을 바꾸는 메서드 전부.
-    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate, OverUI, HoverFilter, DonutUpdate, SpeechUpdate }; } }
+    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate, OverUI, HoverFilter, DonutUpdate, SpeechUpdate, MemberStart, VisibilityToggle, SpawnUpdate }; } }
 
     // 삽입 시퀀스(분기 대상 제외). Buy가 non-void면 pop 포함.
     internal int InsertLength { get { return Buy.ReturnType.MetadataType == MetadataType.Void ? 7 : 8; } }
@@ -350,9 +512,10 @@ static class Program {
         }
     }
 
-    const int PatchVersion = 2;
+    const int PatchVersion = 3;
     // 인자 규약 버전. 1 = patch/verify 3인자, 2 = Managed 인자 추가(D-028). 규약이나 PatchVersion을 바꾸면
     // electron/auto-chest.js의 기대값(PATCHER_CLI·PATCH_VERSION)도 같이 바꾼다. 앱은 다르면 설치를 막는다(D-029).
+    // 패치 세트 3(D-033 3단계)은 인자 규약을 바꾸지 않았다(inspect 출력에 hiddenFile만 더함).
     const int CliVersion = 2;
 
     // 앱이 기대하는 패처인지 판정하는 용도. 기기마다 빌드하는 산출물이라 소스보다 오래된 패처가 남을 수 있다.
@@ -360,18 +523,21 @@ static class Program {
         return Emit(0, new Dictionary<string, object> { { "ok", true }, { "cli", CliVersion }, { "patchVersion", PatchVersion } });
     }
 
-    // 패치 세트 버전. 0 = 원본, 1 = 상자 자동 오픈만, 2 = 두 훅. 그 밖의 조합은 우리가 만든 적 없는 상태다.
+    // 패치 세트 버전. 0 = 원본, 1 = 상자 자동 오픈만, 2 = + 투명화, 3 = + 차단 멤버 고양이 숨김. 그 밖의 조합은 우리가 만든 적 없는 상태다.
     static int Version(Target t) {
         bool chest = t.Markers.Count == 1 && t.Markers[0] == t.AnchorIndex + 1;
         if (t.Markers.Count != 0 && !chest) throw new Incompatible("marker_unexpected");
         bool transparent = t.TransparentHooked;
         if (transparent && !chest) throw new Incompatible("marker_unexpected");
-        return transparent ? 2 : chest ? 1 : 0;
+        bool hidden = t.HiddenHooked;
+        if (hidden && !transparent) throw new Incompatible("marker_unexpected");
+        return hidden ? 3 : transparent ? 2 : chest ? 1 : 0;
     }
 
     static string State(Target t) { return Version(t) == 0 ? "clean" : "patched"; }
 
     static string TransparentFlag(string chestFlag) { return Path.Combine(Path.GetDirectoryName(chestFlag), Target.TransparentFlagName); }
+    static string HiddenFile(string chestFlag) { return Path.Combine(Path.GetDirectoryName(chestFlag), Target.HiddenFileName); }
 
     static int Inspect(string dll) {
         var t = Target.Find(Read(dll));
@@ -380,6 +546,7 @@ static class Program {
             { "stateMachine", t.StateMachine.Name }, { "buyReturnsValue", t.Buy.ReturnType.MetadataType != MetadataType.Void } };
         if (version >= 1) o["flag"] = (string)t.MoveNext.Body.Instructions[t.Markers[0]].Operand;
         if (version >= 2) o["transparentFlag"] = (string)t.Smooth.Body.Instructions[t.SmoothMarkers[0]].Operand;
+        if (version >= 3) o["hiddenFile"] = t.HiddenFile;
         return Emit(0, o);
     }
 
@@ -390,8 +557,8 @@ static class Program {
         var t = Target.Find(module);
         int version = Version(t);
         if (version == PatchVersion) return Emit(3, new Dictionary<string, object> { { "ok", true }, { "state", "patched" }, { "patchVersion", version }, { "skipped", true } });
-        // 자동 오픈만 패치된 입력은 투명화 훅만 더한다. 플래그가 다르면 게임이 옮겨진 것이라 원본에서 다시 패치해야 한다.
-        if (version == 1 && !string.Equals((string)t.MoveNext.Body.Instructions[t.Markers[0]].Operand, flag, StringComparison.Ordinal)) throw new Incompatible("upgrade_flag_mismatch");
+        // 이전 세트(v1·v2)로 패치된 입력은 없는 훅만 더한다. 플래그가 다르면 게임이 옮겨진 것이라 원본에서 다시 패치해야 한다.
+        if (version >= 1 && !string.Equals((string)t.MoveNext.Body.Instructions[t.Markers[0]].Operand, flag, StringComparison.Ordinal)) throw new Incompatible("upgrade_flag_mismatch");
 
         // File.Exists는 게임 어셈블리가 이미 참조하는 코어 라이브러리(mscorlib) 기준으로 참조를 만든다.
         var fileType = new TypeReference("System.IO", "File", module, module.TypeSystem.CoreLibrary);
@@ -400,19 +567,21 @@ static class Program {
         exists = module.ImportReference(exists);
 
         int inserted = version == 0 ? InsertChest(module, t, flag, exists) : 0;
-        inserted += InsertTransparent(module, t, TransparentFlag(flag), exists);
+        if (version < 2) inserted += InsertTransparent(module, t, TransparentFlag(flag), exists);
+        inserted += InsertHidden(module, t, HiddenFile(flag), fileType, exists);
         // 삽입으로 거리가 늘어 sbyte 범위(-128~127)를 넘는 기존 짧은 분기는 같은 의미의 긴 분기로 바꾼다.
         // (실측: bgt.s가 삽입 구간을 건너뛰며 범위를 넘어 Cecil이 잘못된 오프셋을 썼다.) 그 외 명령은 그대로.
+        // 더한 메서드는 처음부터 긴 분기만 쓴다.
         int widened = t.Patched.Sum(m => WidenShortBranches(m.Body));
 
         module.Write(output);
         var reread = Read(output);
         var check = Target.Find(reread);
         if (Version(check) != PatchVersion) throw new InvalidDataException("post_patch_state");
-        if (!check.Patched.All(m => BranchTargetsResolved(m.Body))) throw new InvalidDataException("post_patch_branch");
+        if (!check.Patched.Concat(check.HiddenAdded).All(m => BranchTargetsResolved(m.Body))) throw new InvalidDataException("post_patch_branch");
         try { ReferencesResolve(output, managedDir); }
         catch { File.Delete(output); throw; }   // 게임에서 깨질 결과물은 남기지 않는다
-        return Emit(0, new Dictionary<string, object> { { "ok", true }, { "state", "patched" }, { "patchVersion", PatchVersion }, { "upgraded", version == 1 }, { "sha256", Sha256(output) }, { "inserted", inserted }, { "widenedBranches", widened } });
+        return Emit(0, new Dictionary<string, object> { { "ok", true }, { "state", "patched" }, { "patchVersion", PatchVersion }, { "upgraded", version > 0 }, { "sha256", Sha256(output) }, { "inserted", inserted }, { "widenedBranches", widened } });
     }
 
     static int InsertChest(ModuleDefinition module, Target t, string flag, MethodReference exists) {
@@ -591,6 +760,181 @@ static class Program {
         return seq;
     }
 
+    // 차단 멤버 고양이 숨김(D-033 3단계). LobbyMemberInstance에 정적 필드 둘·메서드 넷을 더하고, 게임 메서드 세 곳에 호출을 넣는다.
+    // 숨김 setter와 그 호출 대상(Cat Talk 연결 지문 범위)은 고치지 않고 부르기만 한다.
+    static int InsertHidden(ModuleDefinition module, Target t, string path, TypeReference fileType, MethodReference exists) {
+        var sys = module.TypeSystem;
+        // 문자열·파일 API는 스트리핑된 게임 mscorlib에 있다고 확인한 것만 쓴다(Exists·ReadAllText·Contains·Concat·op_Equality).
+        // 참조는 게임 어셈블리의 코어 라이브러리 기준이고, 결과는 ReferencesResolve가 게임 런타임으로 다시 해석해 본다.
+        var readAll = CoreMethod("ReadAllText", fileType, sys.String, false, sys.String);
+        var concat2 = CoreMethod("Concat", sys.String, sys.String, false, sys.String, sys.String);
+        var concat3 = CoreMethod("Concat", sys.String, sys.String, false, sys.String, sys.String, sys.String);
+        var contains = CoreMethod("Contains", sys.String, sys.Boolean, true, sys.String);
+        var equality = CoreMethod("op_Equality", sys.String, sys.Boolean, false, sys.String, sys.String);
+        var exception = new TypeReference("System", "Exception", module, sys.CoreLibrary);
+        var toArray = new GenericInstanceMethod(t.ToArrayOpen);
+        toArray.GenericArguments.Add(t.Member);
+        var userType = t.SteamUserDataField.FieldType;
+
+        // 적용한 목록("\n" + 파일 내용. 아직 안 읽었으면 null)과 다음 확인 시각. 우리 메서드만 읽고 쓴다.
+        var ids = new FieldDefinition(Target.HiddenIdsFieldName, FieldAttributes.Private | FieldAttributes.Static, sys.String);
+        var nextPoll = new FieldDefinition(Target.HiddenPollFieldName, FieldAttributes.Private | FieldAttributes.Static, sys.Single);
+        t.Member.Fields.Add(ids);
+        t.Member.Fields.Add(nextPoll);
+
+        // static bool CatTalkListed(SteamUserData user, string ids) => ids != null && user != null && ids.Contains("\n" + user.Data.IdStr + "\n");
+        // ID 키는 게임 get_IsHidden과 같은 참조(SteamUserData.Data.IdStr, SteamID64 십진)다. 줄 구분자까지 맞춰 다른 ID의 일부와는 맞지 않는다.
+        var listed = new MethodDefinition(Target.ListedName, MethodAttributes.Private | MethodAttributes.Static | MethodAttributes.HideBySig, sys.Boolean);
+        listed.Parameters.Add(new ParameterDefinition("user", ParameterAttributes.None, userType));
+        listed.Parameters.Add(new ParameterDefinition("ids", ParameterAttributes.None, sys.String));
+        var userData = new VariableDefinition(t.UserDataType);
+        listed.Body.Variables.Add(userData);
+        listed.Body.InitLocals = true;
+        var il = listed.Body.GetILProcessor();
+        var no = il.Create(OpCodes.Ldc_I4_0);
+        Append(il, il.Create(OpCodes.Ldarg_1), il.Create(OpCodes.Brfalse, no), il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Brfalse, no),
+            il.Create(OpCodes.Ldarg_1), il.Create(OpCodes.Ldstr, "\n"),
+            il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Callvirt, t.GetData), il.Create(OpCodes.Stloc_0), il.Create(OpCodes.Ldloca_S, userData), il.Create(OpCodes.Call, t.GetIdStr),
+            il.Create(OpCodes.Ldstr, "\n"), il.Create(OpCodes.Call, concat3), il.Create(OpCodes.Callvirt, contains), il.Create(OpCodes.Ret),
+            no, il.Create(OpCodes.Ret));
+        t.Member.Methods.Add(listed);
+
+        // static bool CatTalkHide(bool value, LobbyMemberInstance member) => value || CatTalkListed(member.steamUserData, CatTalkHiddenIds);
+        // 인자 순서는 Start의 호출 지점 스택([this, value])에 ldarg.0 하나만 더해 맞춘 것이다.
+        var hide = new MethodDefinition(Target.HideName, MethodAttributes.Private | MethodAttributes.Static | MethodAttributes.HideBySig, sys.Boolean);
+        hide.Parameters.Add(new ParameterDefinition("value", ParameterAttributes.None, sys.Boolean));
+        hide.Parameters.Add(new ParameterDefinition("member", ParameterAttributes.None, t.Member));
+        il = hide.Body.GetILProcessor();
+        var check = il.Create(OpCodes.Ldarg_1);
+        Append(il, il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Brfalse, check), il.Create(OpCodes.Ldc_I4_1), il.Create(OpCodes.Ret),
+            check, il.Create(OpCodes.Ldfld, t.SteamUserDataField), il.Create(OpCodes.Ldsfld, ids), il.Create(OpCodes.Call, listed), il.Create(OpCodes.Ret));
+        t.Member.Methods.Add(hide);
+
+        // internal static bool CatTalkVisible(bool visible, SteamUserData user) => visible && !CatTalkListed(user, CatTalkHiddenIds);
+        // LobbyMemberVisibility(다른 타입)에서 부르므로 어셈블리 내부 공개다. 그 타입의 private 필드는 호출 지점에서 읽어 넘긴다.
+        var visible = new MethodDefinition(Target.VisibleName, MethodAttributes.Assembly | MethodAttributes.Static | MethodAttributes.HideBySig, sys.Boolean);
+        visible.Parameters.Add(new ParameterDefinition("visible", ParameterAttributes.None, sys.Boolean));
+        visible.Parameters.Add(new ParameterDefinition("user", ParameterAttributes.None, userType));
+        il = visible.Body.GetILProcessor();
+        var shown = il.Create(OpCodes.Ldc_I4_0);
+        Append(il, il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Brfalse, shown),
+            il.Create(OpCodes.Ldarg_1), il.Create(OpCodes.Ldsfld, ids), il.Create(OpCodes.Call, listed), il.Create(OpCodes.Ldc_I4_0), il.Create(OpCodes.Ceq), il.Create(OpCodes.Ret),
+            shown, il.Create(OpCodes.Ret));
+        t.Member.Methods.Add(visible);
+
+        // internal static void CatTalkPoll(): 0.5초마다 목록 파일을 읽어 전 멤버에 적용한다.
+        //   if (Time.unscaledTime < next) return; next = Time.unscaledTime + 0.5f;
+        //   try {
+        //     string text = ""; if (File.Exists(path)) text = File.ReadAllText(path);
+        //     text = "\n" + text; string prev = CatTalkHiddenIds; CatTalkHiddenIds = text;   // 훅 ①②도 이 목록을 본다
+        //     if (text == "\n" && prev == "\n") return;   // 지금도 이전에도 목록이 비었으면 멤버를 돌지 않는다
+        //     var all = Enumerable.ToArray(MultiplayerLobbyReferences.GameplayInstances.Values);   // 사본: 적용 중 사전이 바뀌어도 안전
+        //     for (int i = 0; i < all.Length; i++) {
+        //       var m = all[i];
+        //       if (CatTalkListed(m.steamUserData, text)) { if (!m.IsHidden) m.IsHidden = true; }   // 새로 든 멤버, 게임 '보이기'로 켜진 멤버
+        //       else if (CatTalkListed(m.steamUserData, prev)) m.IsHidden = SettingsManager.Instance.AutoHideCats.Value;   // 해제 = 자동 숨김 기본값(결정 A)
+        //     }
+        //   } catch (Exception) { }   // 읽기 실패(쓰는 중 등)는 이번 확인만 건너뛴다. 게임 Update는 그대로 진행한다
+        var poll = new MethodDefinition(Target.PollName, MethodAttributes.Assembly | MethodAttributes.Static | MethodAttributes.HideBySig, sys.Void);
+        var body = poll.Body;
+        var member = new VariableDefinition(t.Member);
+        foreach (var v in new[] { new VariableDefinition(sys.String), new VariableDefinition(sys.String), new VariableDefinition(new ArrayType(t.Member)),
+            new VariableDefinition(sys.Int32), member }) body.Variables.Add(v);
+        body.InitLocals = true;
+        il = body.GetILProcessor();
+        var ret = il.Create(OpCodes.Ret);
+        var tryStart = il.Create(OpCodes.Ldstr, "");
+        var normalize = il.Create(OpCodes.Ldstr, "\n");
+        var work = il.Create(OpCodes.Ldsfld, t.Instances);
+        var leave = il.Create(OpCodes.Leave, ret);
+        var loop = il.Create(OpCodes.Ldloc_2);
+        var unlisted = il.Create(OpCodes.Ldloc_S, member);
+        var next = il.Create(OpCodes.Ldloc_3);
+        var cond = il.Create(OpCodes.Ldloc_3);
+        var handler = il.Create(OpCodes.Pop);
+        Append(il,
+            il.Create(OpCodes.Call, t.UnscaledTime), il.Create(OpCodes.Ldsfld, nextPoll), il.Create(OpCodes.Blt, ret),
+            il.Create(OpCodes.Call, t.UnscaledTime), il.Create(OpCodes.Ldc_R4, Target.PollSeconds), il.Create(OpCodes.Add), il.Create(OpCodes.Stsfld, nextPoll),
+            tryStart, il.Create(OpCodes.Stloc_0),
+            il.Create(OpCodes.Ldstr, path), il.Create(OpCodes.Call, exists), il.Create(OpCodes.Brfalse, normalize),
+            il.Create(OpCodes.Ldstr, path), il.Create(OpCodes.Call, readAll), il.Create(OpCodes.Stloc_0),
+            normalize, il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Call, concat2), il.Create(OpCodes.Stloc_0),
+            il.Create(OpCodes.Ldsfld, ids), il.Create(OpCodes.Stloc_1),
+            il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Stsfld, ids),
+            il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Ldstr, "\n"), il.Create(OpCodes.Call, equality), il.Create(OpCodes.Brfalse, work),
+            il.Create(OpCodes.Ldloc_1), il.Create(OpCodes.Ldstr, "\n"), il.Create(OpCodes.Call, equality), il.Create(OpCodes.Brtrue, leave),
+            work, il.Create(OpCodes.Callvirt, t.Values), il.Create(OpCodes.Call, toArray), il.Create(OpCodes.Stloc_2),
+            il.Create(OpCodes.Ldc_I4_0), il.Create(OpCodes.Stloc_3), il.Create(OpCodes.Br, cond),
+            loop, il.Create(OpCodes.Ldloc_3), il.Create(OpCodes.Ldelem_Ref), il.Create(OpCodes.Stloc_S, member),
+            il.Create(OpCodes.Ldloc_S, member), il.Create(OpCodes.Ldfld, t.SteamUserDataField), il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Call, listed), il.Create(OpCodes.Brfalse, unlisted),
+            il.Create(OpCodes.Ldloc_S, member), il.Create(OpCodes.Callvirt, t.Getter), il.Create(OpCodes.Brtrue, next),
+            il.Create(OpCodes.Ldloc_S, member), il.Create(OpCodes.Ldc_I4_1), il.Create(OpCodes.Callvirt, t.Setter), il.Create(OpCodes.Br, next),
+            unlisted, il.Create(OpCodes.Ldfld, t.SteamUserDataField), il.Create(OpCodes.Ldloc_1), il.Create(OpCodes.Call, listed), il.Create(OpCodes.Brfalse, next),
+            il.Create(OpCodes.Ldloc_S, member), il.Create(OpCodes.Ldsfld, t.SettingsInstance), il.Create(OpCodes.Ldfld, t.AutoHide), il.Create(OpCodes.Callvirt, t.ToggleValue),
+            il.Create(OpCodes.Callvirt, t.Setter),
+            next, il.Create(OpCodes.Ldc_I4_1), il.Create(OpCodes.Add), il.Create(OpCodes.Stloc_3),
+            cond, il.Create(OpCodes.Ldloc_2), il.Create(OpCodes.Ldlen), il.Create(OpCodes.Conv_I4), il.Create(OpCodes.Blt, loop),
+            leave,
+            handler, il.Create(OpCodes.Leave, ret),
+            ret);
+        body.ExceptionHandlers.Add(new ExceptionHandler(ExceptionHandlerType.Catch) {
+            TryStart = tryStart, TryEnd = handler, HandlerStart = handler, HandlerEnd = ret, CatchType = exception });
+        t.Member.Methods.Add(poll);
+
+        // 훅 ① LobbyMemberInstance.Start의 set_IsHidden 호출 직전: [this, value] → [this, CatTalkHide(value, this)]. 입장·재입장 때 처음부터 숨김.
+        // 게임은 자동 숨김 경로에서 이 호출로 바로 분기한다(br.s) — 그 분기도 블록 처음으로 옮겨 모든 경로가 블록을 지나게 한다.
+        var start = t.MemberStart.Body;
+        il = start.GetILProcessor();
+        var seqStart = new List<Instruction> { il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Call, hide) };
+        InsertBeforeRetarget(start, start.Instructions[t.StartCall], seqStart);
+
+        // 훅 ② LobbyMemberVisibility.HandleAutoHideUpdated의 SetVisibility 호출 직전: [this, visible] → [this, CatTalkVisible(visible, _steamUserData)].
+        // 자동 숨김 토글·참여자 목록 행 생성 때 목록에 있는 멤버는 '숨김'으로 간다(게임 보이기/숨기기 버튼 상태도 그에 맞춰진다).
+        var toggleBody = t.VisibilityToggle.Body;
+        il = toggleBody.GetILProcessor();
+        var seqToggle = new List<Instruction> { il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Ldfld, t.VisibilityUserField), il.Create(OpCodes.Call, visible) };
+        InsertBeforeRetarget(toggleBody, toggleBody.Instructions[t.ToggleCall], seqToggle);
+
+        // 훅 ③ CatSpawnManager.Update 처음: CatTalkPoll()
+        var update = t.SpawnUpdate.Body;
+        il = update.GetILProcessor();
+        var seqUpdate = new List<Instruction> { il.Create(OpCodes.Call, poll) };
+        InsertBefore(il, update.Instructions[0], seqUpdate);
+
+        foreach (var b in new[] { start, toggleBody }) if (b.MaxStackSize < 3) b.MaxStackSize = 3;
+        listed.Body.MaxStackSize = 4; hide.Body.MaxStackSize = 2; visible.Body.MaxStackSize = 2; body.MaxStackSize = 3;   // Cecil이 쓸 때 다시 계산한다
+        return seqStart.Count + seqToggle.Count + seqUpdate.Count
+            + listed.Body.Instructions.Count + hide.Body.Instructions.Count + visible.Body.Instructions.Count + body.Instructions.Count;
+    }
+
+    // target 앞에 seq를 넣고, target으로 가던 분기·switch·예외 처리 경계를 seq 처음으로 옮긴다(모든 경로가 블록을 지나게).
+    static void InsertBeforeRetarget(MethodBody body, Instruction target, List<Instruction> seq) {
+        var il = body.GetILProcessor();
+        foreach (var i in seq) il.InsertBefore(target, i);
+        var first = seq[0];
+        foreach (var i in body.Instructions) {
+            if (seq.Contains(i)) continue;
+            if (i.Operand == target) i.Operand = first;
+            var many = i.Operand as Instruction[];
+            if (many != null) for (int k = 0; k < many.Length; k++) if (many[k] == target) many[k] = first;
+        }
+        foreach (var h in body.ExceptionHandlers) {
+            if (h.TryStart == target) h.TryStart = first;
+            if (h.TryEnd == target) h.TryEnd = first;
+            if (h.HandlerStart == target) h.HandlerStart = first;
+            if (h.HandlerEnd == target) h.HandlerEnd = first;
+            if (h.FilterStart == target) h.FilterStart = first;
+        }
+    }
+
+    static MethodReference CoreMethod(string name, TypeReference declaring, TypeReference result, bool hasThis, params TypeReference[] parameters) {
+        var m = new MethodReference(name, result, declaring) { HasThis = hasThis };
+        foreach (var p in parameters) m.Parameters.Add(new ParameterDefinition(p));
+        return m;
+    }
+
+    static void Append(ILProcessor il, params Instruction[] seq) { foreach (var i in seq) il.Append(i); }
+
     static readonly Dictionary<Code, OpCode> LongForm = new Dictionary<Code, OpCode> {
         { Code.Br_S, OpCodes.Br }, { Code.Brfalse_S, OpCodes.Brfalse }, { Code.Brtrue_S, OpCodes.Brtrue },
         { Code.Beq_S, OpCodes.Beq }, { Code.Bge_S, OpCodes.Bge }, { Code.Bgt_S, OpCodes.Bgt }, { Code.Ble_S, OpCodes.Ble },
@@ -697,9 +1041,12 @@ static class Program {
         if (Version(tb) != PatchVersion) throw new Incompatible("verify_not_patched");
         var ma = a.GetTypes().SelectMany(t => t.Methods).ToDictionary(m => m.FullName);
         var mb = b.GetTypes().SelectMany(t => t.Methods).ToDictionary(m => m.FullName);
-        if (!ma.Keys.OrderBy(k => k).SequenceEqual(mb.Keys.OrderBy(k => k))) throw new Incompatible("verify_method_set");
-        // 패치가 더하는 필드는 정확히 둘이다. 그 밖의 타입·필드 차이는 거부한다.
-        Func<FieldDefinition, bool> added = f => f == tb.StateField || f == tb.NextPollField;
+        // 패치가 더하는 메서드는 숨김 넷(CatTalkListed·CatTalkHide·CatTalkVisible·CatTalkPoll)뿐이다. 그 밖의 메서드 차이는 거부한다.
+        var addedMethods = new HashSet<string>(tb.HiddenAdded.Select(m => m.FullName));
+        if (addedMethods.Count != 4 || !ma.Keys.OrderBy(k => k).SequenceEqual(mb.Keys.Where(k => !addedMethods.Contains(k)).OrderBy(k => k)))
+            throw new Incompatible("verify_method_set");
+        // 패치가 더하는 필드는 정확히 넷이다(투명화 둘, 숨김 둘). 그 밖의 타입·필드 차이는 거부한다.
+        Func<FieldDefinition, bool> added = f => f == tb.StateField || f == tb.NextPollField || f == tb.HiddenIdsField || f == tb.HiddenPollField;
         var ta2 = a.GetTypes().Select(t => t.FullName + "|" + string.Join(",", t.Fields.Select(f => f.FullName))).OrderBy(x => x);
         var tb2 = b.GetTypes().Select(t => t.FullName + "|" + string.Join(",", t.Fields.Where(f => !added(f)).Select(f => f.FullName))).OrderBy(x => x);
         if (!ta2.SequenceEqual(tb2)) throw new Incompatible("verify_type_or_field_set");
@@ -714,6 +1061,10 @@ static class Program {
             { ta.SpeechUpdate.FullName, new[] { tb.SpeechAnchor + 1, Target.PopupInsert } },
             { ta.HoverStart.FullName, new[] { tb.HoverStart.Body.Instructions.Count - 1 - Target.StartInsert, Target.StartInsert } },
             { ta.SettingUpdate.FullName, new[] { 0, Target.UpdateInsert } },
+            // 숨김 setter는 사이트가 아니다: 원본과 전체가 같아야 한다(Cat Talk 연결 지문 범위)
+            { ta.MemberStart.FullName, new[] { ta.StartCall, Target.MemberStartInsert } },
+            { ta.VisibilityToggle.FullName, new[] { ta.ToggleCall, Target.ToggleInsert } },
+            { ta.SpawnUpdate.FullName, new[] { 0, Target.SpawnInsert } },
         };
         int compared = 0, diffs = 0;
         string firstDiff = null;
@@ -741,9 +1092,10 @@ static class Program {
             && ins[p + 6].OpCode == OpCodes.Callvirt && ((MethodReference)ins[p + 6].Operand).Name == "Buy"
             && (tb.InsertLength == 7 || ins[p + 7].OpCode == OpCodes.Pop);
         bool transparentOk = TransparentSequencesOk(tb, TransparentFlag(flag));
-        bool branchesOk = tb.Patched.All(m => BranchTargetsResolved(m.Body));
-        bool ok = diffs == 0 && seqOk && transparentOk && branchesOk && tb.MoveNext.Body.MaxStackSize >= Math.Max(ta.MoveNext.Body.MaxStackSize, 2);
-        var o = new Dictionary<string, object> { { "ok", ok }, { "patchVersion", Version(tb) }, { "methodsCompared", compared }, { "methodDiffs", diffs }, { "insertSequenceOk", seqOk }, { "transparentSequenceOk", transparentOk }, { "branchTargetsOk", branchesOk },
+        bool hiddenOk = HiddenSequencesOk(tb, HiddenFile(flag));
+        bool branchesOk = tb.Patched.Concat(tb.HiddenAdded).All(m => BranchTargetsResolved(m.Body));
+        bool ok = diffs == 0 && seqOk && transparentOk && hiddenOk && branchesOk && tb.MoveNext.Body.MaxStackSize >= Math.Max(ta.MoveNext.Body.MaxStackSize, 2);
+        var o = new Dictionary<string, object> { { "ok", ok }, { "patchVersion", Version(tb) }, { "methodsCompared", compared }, { "methodDiffs", diffs }, { "insertSequenceOk", seqOk }, { "transparentSequenceOk", transparentOk }, { "hiddenSequenceOk", hiddenOk }, { "branchTargetsOk", branchesOk },
             { "maxStack", new[] { ta.MoveNext.Body.MaxStackSize, tb.MoveNext.Body.MaxStackSize } } };
         if (firstDiff != null) o["firstDiff"] = firstDiff;
         return Emit(ok ? 0 : 2, o);
@@ -806,6 +1158,110 @@ static class Program {
         return a + 2 < ins.Count
             && Brief(ins[a + 1], ins, a + 1) == "ldsfld TranslucentOnHoverSetting::" + Target.StateFieldName
             && (ins[a + 2].OpCode == OpCodes.Brtrue_S || ins[a + 2].OpCode == OpCodes.Brtrue) && ins[a + 2].Operand == ins[a].Operand;
+    }
+
+    // 숨김 훅·더한 메서드가 기대 형태 그대로인지(D-033 3단계). 패치 코드와 따로 적어 둔 표로, 멤버 참조는 전체 이름까지 비교한다.
+    // 숨김 setter는 사이트가 아니라 원본과 전체 대조된다(Verify) — 지문 범위를 건드리지 않았다는 보증이다.
+    static bool HiddenSequencesOk(Target t, string path) {
+        const string member = Target.MemberTypeName;
+        const string user = Target.SteamUserDataTypeName;
+        const string ids = "System.String " + member + "::" + Target.HiddenIdsFieldName;
+        const string next = "System.Single " + member + "::" + Target.HiddenPollFieldName;
+        const string memberUser = user + " " + member + "::steamUserData";
+        const string listed = "System.Boolean " + member + "::" + Target.ListedName + "(" + user + ",System.String)";
+        const string hide = "System.Boolean " + member + "::" + Target.HideName + "(System.Boolean," + member + ")";
+        const string visible = "System.Boolean " + member + "::" + Target.VisibleName + "(System.Boolean," + user + ")";
+        const string poll = "System.Void " + member + "::" + Target.PollName + "()";
+        const string setHidden = "System.Void " + member + "::set_IsHidden(System.Boolean)";
+        const string time = "call System.Single UnityEngine.Time::get_unscaledTime()";
+        var start = new[] { "ldarg.0", "call " + hide, "call " + setHidden };
+        var toggle = new[] { "ldarg.0", "ldfld " + user + " " + Target.VisibilityTypeName + "::_steamUserData", "call " + visible,
+            "call System.Void " + Target.VisibilityTypeName + "::SetVisibility(System.Boolean)" };
+        var update = new[] { "call " + poll };
+        var listedBody = new[] { "ldarg.1", "brfalse +15", "ldarg.0", "brfalse +15", "ldarg.1", "ldstr \n", "ldarg.0",
+            "callvirt Heathen.SteamworksIntegration.UserData " + user + "::get_Data()",
+            "stloc.0", "ldloca.s V_0", "call System.String Heathen.SteamworksIntegration.UserData::get_IdStr()", "ldstr \n",
+            "call System.String System.String::Concat(System.String,System.String,System.String)",
+            "callvirt System.Boolean System.String::Contains(System.String)", "ret", "ldc.i4.0", "ret" };
+        var hideBody = new[] { "ldarg.0", "brfalse +4", "ldc.i4.1", "ret", "ldarg.1", "ldfld " + memberUser, "ldsfld " + ids, "call " + listed, "ret" };
+        var visibleBody = new[] { "ldarg.0", "brfalse +8", "ldarg.1", "ldsfld " + ids, "call " + listed, "ldc.i4.0", "ceq", "ret", "ldc.i4.0", "ret" };
+        var pollBody = new[] {
+            time, "ldsfld " + next, "blt +76", time, "ldc.r4 0.5", "add", "stsfld " + next,
+            "ldstr ", "stloc.0", "ldstr " + path, "call System.Boolean System.IO.File::Exists(System.String)", "brfalse +15",
+            "ldstr " + path, "call System.String System.IO.File::ReadAllText(System.String)", "stloc.0",
+            "ldstr \n", "ldloc.0", "call System.String System.String::Concat(System.String,System.String)", "stloc.0",
+            "ldsfld " + ids, "stloc.1", "ldloc.0", "stsfld " + ids,
+            "ldloc.0", "ldstr \n", "call System.Boolean System.String::op_Equality(System.String,System.String)", "brfalse +31",
+            "ldloc.1", "ldstr \n", "call System.Boolean System.String::op_Equality(System.String,System.String)", "brtrue +73",
+            "ldsfld " + Target.InstancesTypeName + " BongoCat.Multiplayer.MultiplayerLobbyReferences::GameplayInstances",
+            "callvirt System.Collections.Generic.Dictionary`2/ValueCollection<!0,!1> " + Target.InstancesTypeName + "::get_Values()",
+            "call !!0[] System.Linq.Enumerable::ToArray<" + member + ">(System.Collections.Generic.IEnumerable`1<!!0>)", "stloc.2",
+            "ldc.i4.0", "stloc.3", "br +68",
+            "ldloc.2", "ldloc.3", "ldelem.ref", "stloc.s V_4",
+            "ldloc.s V_4", "ldfld " + memberUser, "ldloc.0", "call " + listed, "brfalse +54",
+            "ldloc.s V_4", "callvirt System.Boolean " + member + "::get_IsHidden()", "brtrue +64",
+            "ldloc.s V_4", "ldc.i4.1", "callvirt " + setHidden, "br +64",
+            "ldloc.s V_4", "ldfld " + memberUser, "ldloc.1", "call " + listed, "brfalse +64",
+            "ldloc.s V_4", "ldsfld BongoCat.SettingsManager BongoCat.SettingsManager::Instance",
+            "ldfld BongoCat.PlayerPrefsToggle BongoCat.SettingsManager::AutoHideCats",
+            "callvirt System.Boolean BongoCat.PlayerPrefsToggle::get_Value()", "callvirt " + setHidden,
+            "ldloc.3", "ldc.i4.1", "add", "stloc.3",
+            "ldloc.3", "ldloc.2", "ldlen", "conv.i4", "blt +38",
+            "leave +76", "pop", "leave +76", "ret" };
+        var pollLocals = new[] { "System.String", "System.String", member + "[]", "System.Int32", member };
+        var startIns = t.MemberStart.Body.Instructions;
+        var toggleIns = t.VisibilityToggle.Body.Instructions;
+        return Exactly(t.MemberStart.Body, t.StartCall - 2, start) && !Targeted(t.MemberStart.Body, startIns[t.StartCall])
+            && Exactly(t.VisibilityToggle.Body, t.ToggleCall - 3, toggle) && !Targeted(t.VisibilityToggle.Body, toggleIns[t.ToggleCall])
+            && Exactly(t.SpawnUpdate.Body, 0, update)
+            && Whole(t.ListedMethod, listedBody, "System.Boolean", new[] { user, "System.String" }, new[] { "Heathen.SteamworksIntegration.UserData" }, MethodAttributes.Private)
+            && Whole(t.HideMethod, hideBody, "System.Boolean", new[] { "System.Boolean", member }, new string[0], MethodAttributes.Private)
+            && Whole(t.VisibleMethod, visibleBody, "System.Boolean", new[] { "System.Boolean", user }, new string[0], MethodAttributes.Assembly)
+            && Whole(t.PollMethod, pollBody, "System.Void", new string[0], pollLocals, MethodAttributes.Assembly)
+            && t.ListedMethod.Body.ExceptionHandlers.Count == 0 && t.HideMethod.Body.ExceptionHandlers.Count == 0
+            && t.VisibleMethod.Body.ExceptionHandlers.Count == 0 && PollHandlerOk(t.PollMethod.Body)
+            && t.HiddenIdsField.IsPrivate && t.HiddenPollField.IsPrivate;
+    }
+
+    // 원래 호출로 바로 가는 분기·예외 경계가 남았는지(남았으면 그 경로는 삽입 블록을 건너뛴다)
+    static bool Targeted(MethodBody body, Instruction target) {
+        return body.Instructions.Any(i => i.Operand == target || (i.Operand is Instruction[] && ((Instruction[])i.Operand).Contains(target)))
+            || body.ExceptionHandlers.Any(h => h.TryStart == target || h.TryEnd == target || h.HandlerStart == target || h.HandlerEnd == target || h.FilterStart == target);
+    }
+
+    // 블록 한 명령을 적는다. 분기는 블록 시작 기준 상대 위치, 멤버는 전체 이름(시그니처 포함).
+    static string Exact(Instruction i, IList<Instruction> all, int start) {
+        var o = i.Operand;
+        if (o is Instruction) return i.OpCode.Name + " +" + (all.IndexOf((Instruction)o) - start);
+        var m = o as MemberReference;
+        if (m != null) return i.OpCode.Name + " " + m.FullName;
+        if (o == null) return i.OpCode.Name;
+        if (o is float) return i.OpCode.Name + " " + ((float)o).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        return i.OpCode.Name + " " + Convert.ToString(o, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    static bool Exactly(MethodBody body, int start, string[] expected) {
+        var all = body.Instructions;
+        if (start < 0 || start + expected.Length > all.Count) return false;
+        return Enumerable.Range(0, expected.Length).All(k => Exact(all[start + k], all, start) == expected[k]);
+    }
+
+    // 더한 메서드 전체: 정적·접근 수준·시그니처·지역 변수·본문이 표와 같아야 한다.
+    static bool Whole(MethodDefinition m, string[] body, string result, string[] parameters, string[] locals, MethodAttributes access) {
+        return m.IsStatic && !m.IsVirtual && (m.Attributes & MethodAttributes.MemberAccessMask) == access
+            && m.ReturnType.FullName == result
+            && m.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(parameters)
+            && m.Body.Variables.Select(v => v.VariableType.FullName).SequenceEqual(locals)
+            && m.Body.Instructions.Count == body.Length && Exactly(m.Body, 0, body);
+    }
+
+    // 확인 본문(파일 읽기~적용)만 try, 처리기는 예외를 버리고 끝낸다.
+    static bool PollHandlerOk(MethodBody b) {
+        if (b.ExceptionHandlers.Count != 1) return false;
+        var h = b.ExceptionHandlers[0];
+        var ins = b.Instructions;
+        return h.HandlerType == ExceptionHandlerType.Catch && h.CatchType != null && h.CatchType.FullName == "System.Exception"
+            && ins.IndexOf(h.TryStart) == 7 && ins.IndexOf(h.TryEnd) == 74 && ins.IndexOf(h.HandlerStart) == 74 && ins.IndexOf(h.HandlerEnd) == 76;
     }
 
     // ---- backup/restore: clean일 때만 백업, SHA-256 기록. 복원은 SHA·clean 확인 후 byte-exact 복사 ----

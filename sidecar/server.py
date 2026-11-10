@@ -82,6 +82,11 @@ def nickname_key(account):
     return f"nicknames:{account}"
 
 
+# 게임 고양이 숨김 목록(D-033 3단계)에 넣는 Steam ID 형식(bongo_chat.profiles의 정규 uint64 문자열 규칙과 같은 숫자 모양).
+# 목록은 게임 폴더 파일의 한 줄씩이 되므로 다른 문자가 섞이지 않게 거른다.
+STEAM_ID64_TEXT = re.compile(r"[1-9][0-9]{0,19}")
+
+
 def data_dir():
     configured = os.environ.get("CATTALK_DATA")
     if configured:
@@ -100,6 +105,7 @@ class Sidecar:
         self.incoming_count = 0   # 수락된 타인 메시지 누적 수. 렌더러가 증가를 보고 알림을 판단한다
         self.steam_hidden = set()   # Steam '모든 대화 차단'한 사람(D-033 2단계). 앱 차단 목록(service.blocked)과 별개
         self.steam_hidden_account = ""
+        self.hidden_pushed = None   # main에 마지막으로 알린 게임 고양이 숨김 목록(D-033 3단계). 이번 실행에서 아직 없으면 None
         self.worker = None
         self.closed = False
         self.last_prune = time.monotonic()
@@ -235,6 +241,35 @@ class Sidecar:
         for group in ("profiles", "participants"):
             result[group] = {uid: {k: v for k, v in profile.items() if k != "steam_blocked"}
                              for uid, profile in result[group].items() if uid not in hidden}
+
+    def hidden_ids(self):
+        """게임 고양이 숨김 목록(D-033 3단계): (앱 차단 ∪ Steam 차단) SteamID64, 정렬. 판정이 덜 끝났으면 None.
+
+        현재 계정의 앱 차단 목록을 읽었고, 지금 로비 멤버(나 제외) 모두의 Steam 차단 판정(worker가 프로필에 싣는 steam_blocked)이
+        도착했을 때만 낸다. 판정 전에 내면 이미 숨긴 Steam 차단 멤버가 목록에서 잠깐 빠져 게임에서 다시 보인다.
+        계정이 없거나(게임 꺼짐·연결 대기) 차단 목록을 못 읽었으면 None — 파일을 비우지 않고 그대로 둔다.
+        """
+        if self.closed:
+            return None
+        state = self.service.state
+        account = state.get("account", "")
+        blocked = self.service.blocked
+        if not account or blocked is None or self.service.block_account != account or self.steam_hidden_account != account:
+            return None
+        profiles = state.get("profiles") or {}
+        for uid in state.get("members") or []:
+            profile = profiles.get(uid)
+            if uid != account and not (isinstance(profile, dict) and "steam_blocked" in profile):
+                return None
+        return sorted(uid for uid in set(blocked) | self.steam_hidden if isinstance(uid, str) and STEAM_ID64_TEXT.fullmatch(uid))
+
+    def hidden_update(self):
+        """main에 알릴 새 목록. 판정이 끝난 뒤 이번 실행의 첫 목록(앱 실행 때 1회)과, 그 뒤 바뀐 목록만 낸다. 아니면 None."""
+        ids = self.hidden_ids()
+        if ids is None or ids == self.hidden_pushed:
+            return None
+        self.hidden_pushed = ids
+        return ids
 
     def nicknames(self, account):
         """현재 계정의 닉네임 덮어쓰기(steam_id → 이름). 계정이 없으면 {}, 깨진 저장값은 버린다."""
@@ -443,6 +478,14 @@ def main():
                 except queue.Empty:
                     break
                 ipc.write(json.dumps(handle(sidecar, line), ensure_ascii=False) + "\n")
+                ipc.flush()
+            # 요청 응답이 아닌 알림 줄(D-033 3단계). main만 받아 게임 폴더 숨김 목록 파일에 쓴다(렌더러로 가지 않는다).
+            try:
+                ids = sidecar.hidden_update()
+            except (sqlite3.Error, OSError):
+                ids = None
+            if ids is not None:
+                ipc.write(json.dumps({"event": "hidden_ids", "ids": ids}) + "\n")
                 ipc.flush()
             if shutdown.is_set() and inbox.empty():
                 break
