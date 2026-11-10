@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 라이트 테마의 내 말풍선을 연라벤더 배경과 어두운 글자로 변경
 - 안내 카드의 문장별 강제 줄바꿈을 없애고 카드 폭에 맞춰 이어 표시
 - 라이선스를 MIT에서 PolyForm Noncommercial 1.0.0으로 변경 (Cat-Talk 자체 코드에만 적용: 비상업 사용·수정·재배포 허용, 상업적 이용 불가). "Cat Talk" 이름·앱 아이콘·로고는 라이선스 대상에서 빼고 권리 유보(NOTICE). upstream bongo-cat-chat 유래 코드와 번들 의존성·폰트는 원래 라이선스 유지 — 범위와 원문은 THIRD-PARTY-NOTICES.md·LICENSES/, 설치본에도 함께 포함
+- README를 공개용으로 정리 — 아이콘·기술 배지·한 줄 소개, 원본 서술은 '원본과의 관계 · 라이선스' 절로 모음('포크' → '클론'), 기술 선택 근거를 표로 압축, 아키텍처·주요 기능을 현재 구현 기준으로 다시 씀(로드맵·노션 참조·변경 이력 표 제거). 선택 기능의 게임 DLL 패치, 대화 휘발 보관, Python 3.11 별도 설치 필요를 사실대로 명시
 
 ### Fixed
 
