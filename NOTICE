@@ -1,0 +1,15 @@
+"Cat Talk" 이름, 앱 아이콘, 로고는 본 라이선스(LICENSE)의
+대상이 아니며 모든 권리를 유보합니다. 허용된 비상업
+포크·재배포라도 이 이름·아이콘·로고는 쓸 수 없고
+리브랜딩해야 합니다.
+
+The "Cat Talk" name, app icon, and logo are not licensed
+under the license in LICENSE, and all rights in them are
+reserved. Even a permitted noncommercial fork or
+redistribution may not use this name, icon, or logo and
+must be rebranded.
+
+대상 파일 / Files: electron/app-icon.ico,
+renderer/src/assets/app-icon.png, renderer/src/assets/favicon.ico
+(src/bongo_chat/ui의 upstream 아이콘은 MIT — 대상 아님 /
+ upstream icons in src/bongo_chat/ui are MIT and not covered)

@@ -11,7 +11,7 @@ Bongo Cat 게임의 로비 채팅을 데스크톱 메신저처럼 읽고 쓰는 
 ## 원본과의 관계 · 라이선스
 
 - 원본: [misosiruda/bongo-cat-chat](https://github.com/misosiruda/bongo-cat-chat) — MIT License, © 2026 Bongo Cat Chat contributors.
-- 본 저장소는 **원저자의 허가를 받아 포크**했으며 MIT 라이선스를 유지합니다.
+- 본 저장소는 **원저자의 허가를 받아 포크**했습니다. Cat-Talk 자체 코드는 PolyForm Noncommercial License 1.0.0([LICENSE](LICENSE))을 따르고, upstream 봉고캣챗(bongo-cat-chat)에서 온 코드는 MIT를 유지합니다([THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES.md)). "Cat Talk" 이름·아이콘·로고는 라이선스 대상이 아닙니다([NOTICE](NOTICE)).
 - 원본과 마찬가지로 **게임 개발사의 공식 제품이 아니며 승인된 연동도 아닙니다.** 게임 이름·이미지·외부 의존성의 권리는 각 권리자에게 있습니다.
 
 ## 기술 선택 근거
@@ -71,7 +71,18 @@ Bongo Cat 게임의 로비 채팅을 데스크톱 메신저처럼 읽고 쓰는 
 
 ## 라이선스
 
-MIT. 원본 저작권 표기를 유지합니다. 의존성 고지는 포팅 진행에 따라 추가합니다.
+- **Cat-Talk 자체 코드:** [PolyForm Noncommercial License 1.0.0](LICENSE). 비상업 목적(개인 사용 등)의 사용·수정·재배포는 허용하고, 상업적 이용은 허용하지 않습니다. 조건은 LICENSE 원문을 따릅니다.
+- **이름·아이콘·로고:** 라이선스 대상이 아니며 모든 권리를 유보합니다. 아래 'Trademarks/브랜딩'과 [NOTICE](NOTICE) 참고.
+- **upstream 봉고캣챗(bongo-cat-chat) 유래 코드:** MIT를 유지하고 원본 저작권 표기도 그대로 둡니다. 대상 파일 목록은 [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES.md).
+- **그 밖의 서드파티 구성요소(번들 의존성·폰트 등):** 각자의 원래 라이선스를 따릅니다. 원문은 [LICENSES/](LICENSES/).
+
+## Trademarks/브랜딩
+
+"Cat Talk" 이름, 앱 아이콘, 로고는 본 라이선스(LICENSE)의 대상이 아니며 모든 권리를 유보합니다. 허용된 비상업 포크·재배포라도 이 이름·아이콘·로고는 쓸 수 없고 리브랜딩해야 합니다.
+
+- 대상 파일: `electron/app-icon.ico`, `renderer/src/assets/app-icon.png`, `renderer/src/assets/favicon.ico`
+- `src/bongo_chat/ui`의 upstream 아이콘은 MIT 자산이라 대상이 아닙니다.
+- 한·영 전문: [NOTICE](NOTICE)
 
 ## 🔗 참조
 
