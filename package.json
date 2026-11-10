@@ -4,6 +4,7 @@
   "private": true,
   "description": "Bongo Cat 로비 채팅 데스크톱 메신저 (bongo-cat-chat 포크)",
   "author": "postcat23",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
@@ -21,7 +22,11 @@
       { "from": "sidecar", "to": "sidecar", "filter": ["**/*", "!**/__pycache__", "!**/__pycache__/**"] },
       { "from": "src", "to": "src", "filter": ["**/*", "!**/__pycache__", "!**/__pycache__/**"] },
       { "from": "artifacts/compatibility", "to": "artifacts/compatibility" },
-      { "from": "artifacts/auto_chest", "to": "artifacts/auto_chest" }
+      { "from": "artifacts/auto_chest", "to": "artifacts/auto_chest" },
+      { "from": "LICENSE", "to": "LICENSE" },
+      { "from": "NOTICE", "to": "NOTICE" },
+      { "from": "THIRD-PARTY-NOTICES.md", "to": "THIRD-PARTY-NOTICES.md" },
+      { "from": "LICENSES", "to": "LICENSES" }
     ],
     "win": { "target": "nsis", "icon": "electron/app-icon.ico" },
     "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": false, "artifactName": "Cat-Talk-Setup-${version}.${ext}" },

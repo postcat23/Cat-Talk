@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 반응 카드의 고양이를 채팅의 상대 고양이처럼 좌우 반전해 오른쪽을 보도록 변경
 - 라이트 테마의 내 말풍선을 연라벤더 배경과 어두운 글자로 변경
 - 안내 카드의 문장별 강제 줄바꿈을 없애고 카드 폭에 맞춰 이어 표시
+- 라이선스를 MIT에서 PolyForm Noncommercial 1.0.0으로 변경 (Cat-Talk 자체 코드에만 적용: 비상업 사용·수정·재배포 허용, 상업적 이용 불가). "Cat Talk" 이름·앱 아이콘·로고는 라이선스 대상에서 빼고 권리 유보(NOTICE). upstream bongo-cat-chat 유래 코드와 번들 의존성·폰트는 원래 라이선스 유지 — 범위와 원문은 THIRD-PARTY-NOTICES.md·LICENSES/, 설치본에도 함께 포함
 
 ### Fixed
 
