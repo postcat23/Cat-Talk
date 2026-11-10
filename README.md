@@ -2,9 +2,11 @@
 
 # Cat-Talk
 
-![Electron](https://img.shields.io/badge/Electron-47848F?logo=electron&logoColor=white) ![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB) ![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-47848F?logo=electron&logoColor=white) ![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB) ![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white) [![Release](https://img.shields.io/github/v/release/postcat23/Cat-Talk?logo=github&logoColor=white)](https://github.com/postcat23/Cat-Talk/releases/latest)
 
 Bongo Cat 로비 채팅을 데스크톱 메신저처럼 읽고 쓰는 Windows 서드파티 앱.
+
+[⬇ 최신 버전 다운로드](https://github.com/postcat23/Cat-Talk/releases/latest)
 
 - 현재 Steam 계정이 참여한 Bongo Cat 로비의 채팅을 하나의 메신저 UI에서 읽고 보냅니다. 상대방은 이 앱을 설치할 필요가 없습니다.
 - 받은 대화는 스크롤·검색으로 다시 봅니다. 대화는 앱을 켜 둔 동안 메모리에만 두며, 종료하면 사라집니다.
