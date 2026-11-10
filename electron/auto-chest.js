@@ -2,6 +2,9 @@
 // 두 기능은 패치 하나를 함께 쓰고 플래그만 따로다. 설치는 한 번(재실행), 이후 켜기/끄기는 플래그만(게임이 0.5초~ 주기로 본다).
 // 시스템 조작(sys)과 worker 제어는 주입받아, 실게임 없이 사본으로 흐름을 검증할 수 있다(tools/auto_chest/test-flow.js).
 // 설치·재적용은 worker·게임을 건드리기 전에 사전 점검(별도 파일에 패치·verify)을 통과해야 시작한다(D-029).
+// 사전 점검은 패치 결과의 Cat Talk 연결 호환성 지문(업스트림 FeatureProbe)이 원본과 같은지도 본다(D-033 3단계 사고 재발 방지).
+// 차단 멤버 고양이 숨김(D-033 3단계): 같은 패치(세트 3)가 게임 폴더의 CatTalkHidden.ids를 0.5초마다 읽는다. 이 모듈은 사이드카가 알린
+// (앱 차단 ∪ Steam 차단) 목록을 그 파일에 통째로 쓴다(세트 3 설치 상태에서만). 앱을 꺼도 파일은 남는다(결정 B).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -10,6 +13,8 @@ const { execFile } = require('child_process');
 const FLAG_NAME = 'CatTalkAutoChest.on';
 const TRANSPARENT_FLAG_NAME = 'CatTalkTransparent.on';   // 패처가 FLAG_NAME 옆에 정하는 이름(AutoChestPatcher.cs)
 const FEATURE_FLAGS = { chest: FLAG_NAME, transparent: TRANSPARENT_FLAG_NAME };
+const HIDDEN_NAME = 'CatTalkHidden.ids';   // 숨김 목록(한 줄에 SteamID64 하나, LF). 패처가 FLAG_NAME 옆으로 정하는 이름(AutoChestPatcher.cs)
+const STEAM_ID64 = /^[1-9][0-9]{0,19}$/;   // 사이드카 목록 검증(bongo_chat.profiles와 같은 숫자 규칙). 게임 폴더 파일에 다른 내용이 들어가지 않게
 const GAME_EXE = 'BongoCat.exe';
 const COUNTDOWN_SECONDS = 5;
 const POLL_MS = 500;
@@ -18,8 +23,9 @@ const STEAM_RELEASE_MS = 15000;  // Steam이 앱을 '실행 중'에서 풀 때�
 const LAUNCH_MS = 60000;
 const STABLE_MS = 20000;         // 기동 후 이 시간 살아 있어야 성공
 // 앱이 기대하는 패처(AutoChestPatcher.cs의 CliVersion·PatchVersion). 다르거나 패처가 없으면 설치·재적용을 막는다(D-029).
+// 세트 3(D-033 3단계, 차단 멤버 고양이 숨김)은 인자 규약을 바꾸지 않아 CLI는 2 그대로다. 세트 2 설치본은 '재적용 필요'(outdated)가 된다.
 const PATCHER_CLI = 2;
-const PATCH_VERSION = 2;
+const PATCH_VERSION = 3;
 
 const run = (file, args) => new Promise((resolve) => {
   execFile(file, args, { windowsHide: true, maxBuffer: 1 << 20 }, (error, stdout) => resolve({ code: error ? (error.code ?? 1) : 0, stdout: String(stdout) }));
@@ -70,12 +76,14 @@ class Failure extends Error {}
 // Windows 경로는 대소문자를 구분하지 않는다. 표기만 다른 경로를 '게임이 옮겨졌다'로 오판하지 않게 한다.
 const samePath = (a, b) => typeof a === 'string' && path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
 
-function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, notify: notifyRaw }) {
+// probeExe·featureContract: Cat Talk(업스트림)의 연결 호환성 지문 도구(FeatureProbe)와 그 계약 파일. 사전 점검이 실행만 한다(수정 없음).
+function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, stopWorker, startWorker, notify: notifyRaw }) {
   const home = path.join(dataDir, 'auto_chest');
   const backupDir = path.join(home, 'backup');
   const staging = path.join(home, 'staging', 'Assembly-CSharp.dll');
   const original = path.join(backupDir, 'Assembly-CSharp.dll.orig');
   const preflightOut = path.join(home, 'staging', 'preflight', 'Assembly-CSharp.dll');
+  const probeHome = path.join(home, 'staging', 'probe');
   let busy = false, cancelled = false;
   let toolCheck = null;   // 맞다고 확인한 패처·Mono.Cecil 파일의 (수정 시각·크기). 바뀌면 다시 묻는다
 
@@ -138,8 +146,59 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     if (r.code !== 0) return { state: 'error', reason: r.json.reason };
     if (r.json.state === 'clean') return { state: wanted ? 'needs_reapply' : 'not_installed' };
     if (!samePath(r.json.flag, flag)) return { state: 'needs_reapply', reason: 'flag_path_changed' };   // 게임 경로가 바뀜
-    if (r.json.upToDate === false) return { state: 'needs_reapply', reason: 'outdated' };   // 이전 패치 세트(v1: 자동 오픈만) → 재적용으로 v2(D-028)
+    if (r.json.upToDate === false) return { state: 'needs_reapply', reason: 'outdated' };   // 이전 패치 세트(v1·v2) → 재적용으로 v3(D-028, D-033)
     return { state: 'installed', game };
+  }
+
+  // ── 차단 멤버 고양이 숨김 목록(D-033 3단계) ──
+  // hidden: 사이드카가 마지막으로 알린 목록(이번 실행에서 아직 없으면 null). 사이드카는 판정이 끝난 뒤 처음 한 번과 바뀔 때마다 알린다.
+  let hidden = null, hiddenRun = null, hiddenAgain = false, hiddenRetry = null;
+  const hiddenText = (ids) => ids.map((id) => `${id}\n`).join('');
+
+  // 임시 파일에 쓰고 바꿔 끼운다(게임이 반쯤 쓴 파일을 읽지 않게). 게임이 마침 읽는 중이면 교체가 실패할 수 있다(그때는 재시도).
+  function writeHiddenFile(game, text) {
+    const file = path.join(game.root, HIDDEN_NAME);
+    const tmp = `${file}.cattalk-new`;
+    try {
+      fs.writeFileSync(tmp, text, 'ascii');
+      fs.renameSync(tmp, file);
+      return true;
+    } catch {
+      try { fs.rmSync(tmp, { force: true }); } catch { /* 다음 쓰기가 덮는다 */ }
+      return false;
+    }
+  }
+
+  // 쓰기 실패는 같은 목록으로 POLL_MS 뒤 다시 쓴다(설치 판정은 다시 하지 않는다). 새 목록이 오거나 설치 중이면 그쪽이 맡는다.
+  function retryHidden(game, ids) {
+    clearTimeout(hiddenRetry);
+    hiddenRetry = setTimeout(() => {
+      hiddenRetry = null;
+      if (hidden !== ids || busy) return;
+      if (!writeHiddenFile(game, hiddenText(ids))) retryHidden(game, ids);
+    }, POLL_MS);
+    hiddenRetry.unref?.();
+  }
+
+  // 현재 목록을 파일에 쓴다. 세트 3 설치 상태가 아니면(미설치·이전 세트·호환 안 됨·패처 불일치·설치 중) 쓰지 않는다.
+  // 겹쳐 불리면 진행 중인 것이 끝난 뒤 최신 목록으로 한 번 더 쓴다.
+  async function syncHidden() {
+    if (hidden === null) return { ok: false, reason: 'not_ready' };
+    if (hiddenRun) { hiddenAgain = true; return hiddenRun; }
+    hiddenRun = (async () => {
+      let result;
+      do {
+        hiddenAgain = false;
+        const ids = hidden;
+        const s = await installState(false);
+        if (s.state !== 'installed') { result = { ok: false, reason: s.state }; continue; }
+        clearTimeout(hiddenRetry); hiddenRetry = null;
+        if (writeHiddenFile(s.game, hiddenText(ids))) result = { ok: true, count: ids.length };
+        else { retryHidden(s.game, ids); result = { ok: false, reason: 'write_failed' }; }
+      } while (hiddenAgain);
+      return result;
+    })();
+    try { return await hiddenRun; } finally { hiddenRun = null; }
   }
 
   async function waitFor(check, ms) {
@@ -178,9 +237,32 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     return (await patcher('restore', backupDir, paths(game).dll)).code === 0;
   }
 
+  // Cat Talk 연결 호환성 지문(D-033 3단계 사고 재발 방지). Cat Talk(업스트림)는 연결 전에 FeatureProbe로 게임 코드 지문을 계산해
+  // 지원 목록과 비교하고, 다르면 '지원하지 않는 게임 빌드'로 연결을 멈춘다(2026-11-10: 숨김 setter 훅이 privacy 지문을 바꿔 실제로 멈췄다).
+  // 계약의 어셈블리(Assembly-CSharp·Heathen.Steamworks)를 데이터 폴더에 모아 지문을 낸다. 읽지 못하면 null.
+  async function connectionFeatures(dll, managed, name) {
+    let assemblies;
+    try { assemblies = JSON.parse(fs.readFileSync(featureContract, 'utf-8')).assemblies; } catch { return null; }
+    if (!Array.isArray(assemblies) || !assemblies.includes('Assembly-CSharp.dll')
+      || !assemblies.every((a) => typeof a === 'string' && /^[A-Za-z0-9._-]+\.dll$/.test(a))) return null;
+    const dir = path.join(probeHome, name);
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    for (const a of assemblies) fs.copyFileSync(a === 'Assembly-CSharp.dll' ? dll : path.join(managed, a), path.join(dir, a));
+    const r = await run(probeExe, [dir, featureContract]);
+    if (r.code !== 0) return null;
+    try {
+      const features = JSON.parse(r.stdout);
+      const keys = Object.keys(features).sort();
+      if (keys.length === 0 || !keys.every((k) => typeof features[k] === 'string' && /^[0-9a-f]{64}$/.test(features[k]))) return null;
+      return JSON.stringify(keys.map((k) => [k, features[k]]));
+    } catch { return null; }
+  }
+
   // 사전 점검(D-029): worker·게임을 건드리기 전에, 실제 설치와 같은 입력으로 별도 파일에 패치·verify를 해 본다.
-  // 통과하지 못하면 여기서 끝낸다(게임 종료·재실행 없음). 쓰는 곳은 데이터 폴더의 preflightOut뿐이다.
+  // 통과하지 못하면 여기서 끝낸다(게임 종료·재실행 없음). 쓰는 곳은 데이터 폴더의 preflightOut·probeHome뿐이다.
   // 이미 패치된 DLL(재적용)은 원본 백업에서 다시 만들므로(patchInstalled의 restore) 백업도 여기서 확인한다.
+  // 패치 결과의 Cat Talk 연결 호환성 지문이 원본과 다르면 'incompatible', 지문을 내지 못하면 'preflight_failed'(D-033 3단계).
   async function preflight(game, features) {
     const notify = (p) => notifyRaw({ ...p, features });
     busy = true;
@@ -199,6 +281,10 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       r = await patcher('patch', source, preflightOut, flag, managed);
       if (r.code !== 0) throw new Failure(r.code === 2 ? 'incompatible' : 'preflight_failed');   // 참조 해석 실패(스트리핑)도 2
       if ((await patcher('verify', source, preflightOut, flag, managed)).code !== 0) throw new Failure('preflight_failed');
+      const before = await connectionFeatures(source, managed, 'original');
+      const after = await connectionFeatures(preflightOut, managed, 'patched');
+      if (before === null || after === null) throw new Failure('preflight_failed');
+      if (before !== after) throw new Failure('incompatible');   // 설치하면 Cat Talk가 이 게임에 연결하지 못한다
       return { ok: true };
     } catch (e) {
       const reason = e instanceof Failure ? e.message : 'preflight_failed';
@@ -206,6 +292,7 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       return { ok: false, reason, rolledBack: false };
     } finally {
       try { fs.rmSync(preflightOut, { force: true }); } catch { /* 다음 점검이 지운다 */ }
+      try { fs.rmSync(probeHome, { recursive: true, force: true }); } catch { /* 다음 점검이 지운다 */ }
       busy = false;
     }
   }
@@ -260,12 +347,27 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
     return true;
   }
 
+  // 설치·재적용이 끝나면(성공이면 이제 세트 3) 마지막 목록을 쓴다. 설치 중(busy)에 온 목록은 판정에서 건너뛰었으므로 여기서 맡는다.
+  // 실패(복원됨)면 판정이 설치 상태가 아니라 쓰지 않는다. 쓰기 결과는 설치 결과에 섞지 않는다.
+  async function installThenSync(game, features) {
+    const result = await install(game, features);
+    await syncHidden().catch(() => {});
+    return result;
+  }
+
   return {
     status,
     cancel() { cancelled = true; },
 
+    // 사이드카가 알린 (앱 차단 ∪ Steam 차단) SteamID64 목록(D-033 3단계). 형식이 틀린 항목은 빼고, 세트 3 설치 상태면 파일에 쓴다.
+    setHidden(ids) {
+      if (!Array.isArray(ids)) return Promise.resolve({ ok: false, reason: 'invalid' });
+      hidden = [...new Set(ids.filter((id) => typeof id === 'string' && STEAM_ID64.test(id)))].sort();
+      return syncHidden();
+    },
+
     // 켜기(feature = 'chest' | 'transparent'): 설치돼 있으면 그 기능 플래그만(즉시, 재실행 없음). 아니면 사전 점검 → 카운트다운 → 설치.
-    // 이전 패치 세트(v1)도 여기서 재적용 대상이라 설치 흐름으로 v2가 된다.
+    // 이전 패치 세트(v1·v2)도 여기서 재적용 대상이라 설치 흐름으로 v3가 된다.
     async enable(feature = 'chest') {
       if (!known(feature)) return { ok: false, reason: 'unknown_feature' };
       if (busy) return { ok: false, reason: 'busy' };
@@ -276,7 +378,7 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       const pre = await preflight(game, [feature]);   // 카운트다운 전에: 안 되는 설치로 게임을 끄지 않는다
       if (!pre.ok) return pre;
       if (!(await countdown([feature]))) return { ok: false, reason: 'cancelled' };
-      return install(game, [feature]);
+      return installThenSync(game, [feature]);
     },
 
     // 끄기: 그 기능 플래그만 삭제(즉시). 패치와 다른 기능은 그대로다.
@@ -298,9 +400,9 @@ function createAutoChest({ dataDir, patcherExe, sys, stopWorker, startWorker, no
       const wanted = [...new Set(features)];
       const pre = await preflight(game, wanted);
       if (!pre.ok) return pre;
-      return install(game, wanted);
+      return installThenSync(game, wanted);
     },
   };
 }
 
-module.exports = { createAutoChest, defaultSys, FLAG_NAME, TRANSPARENT_FLAG_NAME, POLL_MS };
+module.exports = { createAutoChest, defaultSys, FLAG_NAME, TRANSPARENT_FLAG_NAME, HIDDEN_NAME, POLL_MS };

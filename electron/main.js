@@ -80,6 +80,8 @@ function startSidecar() {
       const line = stdoutBuf.slice(0, nl); stdoutBuf = stdoutBuf.slice(nl + 1);
       if (!line.trim()) continue;
       let msg; try { msg = JSON.parse(line); } catch (e) { continue; }
+      // 사이드카 알림(요청 응답 아님, D-033 3단계): 게임 고양이 숨김 목록. 렌더러로 보내지 않고 main이 게임 폴더 파일에 쓴다.
+      if (msg.event === 'hidden_ids') { chest.setHidden(msg.ids).catch(() => {}); continue; }
       const p = settle(msg.id);
       if (p) p.resolve(JSON.stringify(msg.result));
     }
@@ -286,10 +288,13 @@ ipcMain.handle('bridge-request', async (_e, payloadString) => {
 });
 
 // 상자 자동 오픈(D-019)·모든 고양이 투명화(D-028). 설치는 Steam 재실행 전에 worker를 내려야 하므로 사이드카째 끄고 다시 켠다.
-// 기능 이름('chest' | 'transparent')은 auto-chest가 검증한다.
+// 기능 이름('chest' | 'transparent')은 auto-chest가 검증한다. 차단 멤버 고양이 숨김 목록(D-033 3단계)은 사이드카 알림을 받아 auto-chest가 쓴다.
 const chest = createAutoChest({
   dataDir: windowState.dataDir(),
   patcherExe: path.join(RES, 'artifacts', 'auto_chest', 'AutoChestPatcher.exe'),
+  // 설치 사전 점검이 패치 결과의 Cat Talk 연결 호환성 지문을 원본과 비교한다(D-033 3단계). 사이드카가 쓰는 것과 같은 도구·계약이다.
+  probeExe: path.join(RES, 'artifacts', 'compatibility', 'FeatureProbe.exe'),
+  featureContract: path.join(RES, 'src', 'bongo_chat', 'feature-contract.json'),
   sys: defaultSys((url) => shell.openExternal(url)),
   stopWorker: stopSidecar,
   startWorker: async () => { startSidecar(); },

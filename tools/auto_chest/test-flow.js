@@ -1,19 +1,23 @@
-// 상자 자동 오픈·투명화 흐름 검증(D-019·D-028): 실게임 없이 가짜 게임 폴더 + DLL 사본 + 실제 패처로 돌린다.
+// 상자 자동 오픈·투명화·차단 멤버 고양이 숨김 흐름 검증(D-019·D-028·D-033 3단계): 실게임 없이 가짜 게임 폴더 + DLL 사본 + 실제 패처로 돌린다.
 // 게임 실행·종료·Steam 상태는 가짜 함수다. 실게임 폴더·프로세스·Steam을 건드리지 않는다.
-// 사용: node tools/auto_chest/test-flow.js <Assembly-CSharp.dll 사본> <게임 Managed 폴더 사본> <빈 작업 폴더> [이전 패처 커밋]
+// 사용: node tools/auto_chest/test-flow.js <Assembly-CSharp.dll 사본> <게임 Managed 폴더 사본> <빈 작업 폴더> [v1 패처 커밋] [v2 패처 커밋]
 // Managed 사본은 패처의 참조 해석 검증용으로 가짜 게임 폴더의 Managed에 함께 넣는다.
-// 패치 세트 v1(자동 오픈만)은 이전 패처 커밋(기본 3b89d14)을 작업 폴더에 빌드해 만든다(test-copy.ps1과 같은 방식).
+// 이전 패치 세트는 그 시점 패처를 작업 폴더에 빌드해 만든다(test-copy.ps1과 같은 방식): v1(자동 오픈만) 3b89d14, v2(+ 투명화) 73f8de5.
+// 사전 점검의 연결 호환성 지문은 실제 업스트림 FeatureProbe·계약으로 본다(선행: tools/prepare-compatibility.ps1).
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
-const { createAutoChest, FLAG_NAME, TRANSPARENT_FLAG_NAME } = require('../../electron/auto-chest');
+const { createAutoChest, FLAG_NAME, TRANSPARENT_FLAG_NAME, HIDDEN_NAME } = require('../../electron/auto-chest');
 
-const [copy, managedRefs, work, legacyCommit = '3b89d14'] = process.argv.slice(2);
+const [copy, managedRefs, work, legacyCommit = '3b89d14', v2Commit = '73f8de5'] = process.argv.slice(2);
 if (!copy || !managedRefs || !work) { console.error('usage: test-flow.js <copy> <managed copy> <work>'); process.exit(2); }
 if (/\\BongoCat_Data\\Managed(\\|$)/i.test(path.resolve(copy)) || /\\BongoCat_Data\\Managed(\\|$)/i.test(path.resolve(managedRefs))) { console.error('use copies outside the game folder'); process.exit(2); }
 const refs = fs.readdirSync(managedRefs).filter((n) => /\.dll$/i.test(n) && n !== 'Assembly-CSharp.dll');
 const patcherExe = path.join(__dirname, '..', '..', 'artifacts', 'auto_chest', 'AutoChestPatcher.exe');
+// 사전 점검의 Cat Talk 연결 호환성 지문(D-033 3단계): 실제 업스트림 도구·계약을 쓴다(tools/prepare-compatibility.ps1이 만든다)
+const probeExe = path.join(__dirname, '..', '..', 'artifacts', 'compatibility', 'FeatureProbe.exe');
+const featureContract = path.join(__dirname, '..', '..', 'src', 'bongo_chat', 'feature-contract.json');
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const origSha = sha(copy);
 let failed = 0;
@@ -28,7 +32,8 @@ function world(name, opts = {}) {
   for (const n of refs) fs.copyFileSync(path.join(managedRefs, n), path.join(managed, n));
   const dll = path.join(managed, 'Assembly-CSharp.dll');
   fs.copyFileSync(copy, dll);
-  const w = { root, dll, flag: path.join(root, FLAG_NAME), tflag: path.join(root, TRANSPARENT_FLAG_NAME), log: [], notes: [], running: !!opts.running, steam: !!opts.running, data: path.join(base, 'data') };
+  const w = { root, dll, flag: path.join(root, FLAG_NAME), tflag: path.join(root, TRANSPARENT_FLAG_NAME), hidden: path.join(root, HIDDEN_NAME), managed,
+    log: [], notes: [], running: !!opts.running, steam: !!opts.running, data: path.join(base, 'data') };
   const sys = {
     findGame: async () => (opts.noGame ? null : { root: w.lowerRoot ? root.toLowerCase() : root, appId: '1' }),
     gameRunning: async () => w.running,
@@ -44,7 +49,7 @@ function world(name, opts = {}) {
   };
   w.steamHeld = () => !!opts.steamStuck;
   w.chest = createAutoChest({
-    dataDir: w.data, patcherExe: opts.patcherExe ?? patcherExe, sys,
+    dataDir: w.data, patcherExe: opts.patcherExe ?? patcherExe, probeExe: opts.probeExe ?? probeExe, featureContract: opts.featureContract ?? featureContract, sys,
     stopWorker: async () => { w.log.push('stopWorker'); w.workerStopped = true; },
     startWorker: async () => { w.log.push('startWorker'); w.workerStopped = false; },
     notify: (p) => w.notes.push(p),
@@ -53,22 +58,28 @@ function world(name, opts = {}) {
 }
 const before = (log, a, b) => log.includes(a) && log.includes(b) && log.indexOf(a) < log.indexOf(b);
 
-// 이전 패처(v1: 3인자 CLI, 자동 오픈만)를 빌드해 그 세계의 플래그 리터럴로 v1을 만든다
-function buildLegacy() {
-  const dir = path.join(work, 'legacy');
+// 이전 패처를 그 커밋 소스로 빌드한다. v1 = 3인자 CLI(자동 오픈만), v2 = Managed 인자 4개(+ 투명화)
+function buildAt(commit, name) {
+  const dir = path.join(work, name);
   fs.mkdirSync(dir, { recursive: true });
   const src = path.join(dir, 'AutoChestPatcher.cs');
-  fs.writeFileSync(src, execFileSync('git', ['-C', path.join(__dirname, '..', '..'), 'show', `${legacyCommit}:tools/auto_chest/AutoChestPatcher.cs`]));
+  fs.writeFileSync(src, execFileSync('git', ['-C', path.join(__dirname, '..', '..'), 'show', `${commit}:tools/auto_chest/AutoChestPatcher.cs`]));
   const cecil = path.join(path.dirname(patcherExe), 'Mono.Cecil.dll');
   fs.copyFileSync(cecil, path.join(dir, 'Mono.Cecil.dll'));
-  const exe = path.join(dir, 'Legacy.exe');
+  const exe = path.join(dir, `${name}.exe`);
   execFileSync(path.join(process.env.SystemRoot, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'),
     ['/nologo', '/optimize+', '/target:exe', `/out:${exe}`, `/reference:${cecil}`, '/reference:System.Web.Extensions.dll', src]);
   return exe;
 }
+const buildLegacy = () => buildAt(legacyCommit, 'legacy');
 function makeV1(legacy, w) {
   const out = path.join(path.dirname(w.data), 'v1.dll');
   execFileSync(legacy, ['patch', w.dll, out, w.flag]);
+  fs.copyFileSync(out, w.dll);
+}
+function makeV2(legacy2, w) {
+  const out = path.join(path.dirname(w.data), 'v2.dll');
+  execFileSync(legacy2, ['patch', w.dll, out, w.flag, w.managed]);
   fs.copyFileSync(out, w.dll);
 }
 
@@ -217,7 +228,7 @@ function makeV1(legacy, w) {
   st = await w.chest.status(true);
   check('16c 재적용(둘 다) -> 두 플래그', r.ok && st.state === 'on' && st.transparent === 'on', JSON.stringify(st));
 
-  // 이전 패치 세트(v1, 자동 오픈만) → v2
+  // 이전 패치 세트(v1, 자동 오픈만) → v3
   const legacy = buildLegacy();
   w = world('v1t', { running: true });
   execFileSync(patcherExe, ['backup', w.dll, path.join(w.data, 'auto_chest', 'backup')]);   // v1 설치 때 만들어진 원본 백업
@@ -226,18 +237,92 @@ function makeV1(legacy, w) {
   check('17 v1 + 설정 ON -> 재적용 필요(outdated)', (await w.chest.status(true)).state === 'needs_reapply');
   r = await w.chest.enable('transparent');
   st = await w.chest.status(true);
-  check('17b v1에서 투명화 켜기 -> 설치 흐름으로 v2, 투명화 켜짐, 자동 오픈 플래그 유지', r.ok && w.log.includes('launch') && st.state === 'on' && st.transparent === 'on', JSON.stringify(r) + ' ' + JSON.stringify(st));
+  check('17b v1에서 투명화 켜기 -> 설치 흐름으로 v3, 투명화 켜짐, 자동 오픈 플래그 유지', r.ok && w.log.includes('launch') && st.state === 'on' && st.transparent === 'on', JSON.stringify(r) + ' ' + JSON.stringify(st));
   check('17c 백업은 원본(v1 아님)', sha(path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig')) === origSha);
 
   w = world('v1r');
-  await w.chest.enable();   // 직접 설치한 v2 바이트를 기준으로 삼는다(백업도 여기서 생긴다)
-  const v2sha = sha(w.dll);
+  await w.chest.enable();   // 직접 설치한 v3 바이트를 기준으로 삼는다(백업도 여기서 생긴다)
+  const v3sha = sha(w.dll);
   fs.copyFileSync(copy, w.dll);
   makeV1(legacy, w);
   w.log.length = 0;
   r = await w.chest.reapply(['chest']);
-  check('17d v1 + 자동 오픈만 켜짐 -> 토스트 재적용으로 v2(직접 설치와 같은 바이트), 투명화 플래그 없음',
-    r.ok && sha(w.dll) === v2sha && fs.existsSync(w.flag) && !fs.existsSync(w.tflag), JSON.stringify(r));
+  check('17d v1 + 자동 오픈만 켜짐 -> 토스트 재적용으로 v3(직접 설치와 같은 바이트), 투명화 플래그 없음',
+    r.ok && sha(w.dll) === v3sha && fs.existsSync(w.flag) && !fs.existsSync(w.tflag), JSON.stringify(r));
+
+  // ---- 이전 패치 세트(v2, 자동 오픈 + 투명화) → v3(D-033 3단계): v1→v2 때처럼 '재적용 필요' → 게임 한 번 재시작 ----
+  const legacy2 = buildAt(v2Commit, 'legacy2');
+  w = world('v2t', { running: true });
+  await w.chest.enable('transparent');   // 같은 세계(같은 플래그 리터럴)에서 직접 설치한 v3 바이트를 기준으로 삼는다(원본 백업도 여기서)
+  const directV3 = sha(w.dll);
+  fs.copyFileSync(copy, w.dll);
+  makeV2(legacy2, w);   // 투명화를 켜 둔 v2 설치본(플래그는 위에서 켜짐)
+  const v2bytes = sha(w.dll);
+  st = await w.chest.status(true);
+  check('22 v2 + 설정 ON -> 재적용 필요(outdated)', st.state === 'needs_reapply' && st.transparent === 'needs_reapply', JSON.stringify(st));
+  w.log.length = 0; w.notes.length = 0;
+  r = await w.chest.reapply(['transparent']);
+  st = await w.chest.status(true);
+  check('22b [재시작] -> 카운트다운 없이 게임 한 번 재시작해 v3, 투명화 그대로 켜짐',
+    r.ok && !w.notes.some((n) => n.phase === 'countdown') && w.log.filter((x) => x === 'launch').length === 1 && st.transparent === 'on' && st.state === 'off',
+    JSON.stringify(r) + ' ' + w.log.join(',') + ' ' + JSON.stringify(st));
+  check('22c 결과는 원본에서 직접 설치한 v3와 같은 바이트', sha(w.dll) === directV3 && directV3 !== v2bytes);
+  check('22d 백업은 원본(v2 아님)', sha(path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig')) === origSha);
+
+  // ---- 차단 멤버 고양이 숨김 목록 파일(D-033 3단계): 세트 3 설치 상태에서만 통째로 쓴다 ----
+  const ID1 = '76561198000000011', ID2 = '76561198000000012';
+  const hiddenOf = (x) => (fs.existsSync(x.hidden) ? fs.readFileSync(x.hidden, 'ascii') : null);
+  w = world('hid', { running: true });
+  r = await w.chest.setHidden([ID2, ID1]);
+  check('23 미설치(clean) -> 목록 파일 안 씀', r.ok === false && r.reason === 'not_installed' && hiddenOf(w) === null, JSON.stringify(r));
+  r = await w.chest.enable('transparent');
+  check('23b 설치가 끝나면 마지막 목록을 쓴다(정렬, 줄마다 LF)', r.ok && hiddenOf(w) === `${ID1}\n${ID2}\n`, JSON.stringify(hiddenOf(w)));
+  w.log.length = 0;
+  r = await w.chest.setHidden([ID1]);
+  check('23c 목록 변경 -> 통째로 다시 씀, 게임·worker 조작 없음', r.ok && hiddenOf(w) === `${ID1}\n` && w.log.length === 0, JSON.stringify(r));
+  r = await w.chest.setHidden([]);
+  check('23d 빈 목록 -> 빈 파일(아무도 안 숨김)', r.ok && hiddenOf(w) === '', JSON.stringify(r));
+  r = await w.chest.setHidden(['abc', ID2, ID2, '0123', 5, `${ID1}\n${ID2}`, '9'.repeat(21)]);
+  check('23e 형식이 틀린 항목·중복은 뺀다', r.ok && hiddenOf(w) === `${ID2}\n`, JSON.stringify(hiddenOf(w)));
+  check('23f 임시 파일을 남기지 않는다', !fs.existsSync(`${w.hidden}.cattalk-new`));
+  check('23g 목록 아닌 값 거부', (await w.chest.setHidden('x')).reason === 'invalid' && hiddenOf(w) === `${ID2}\n`);
+  await w.chest.disable('transparent');
+  r = await w.chest.setHidden([ID1, ID2]);
+  check('23h 기능 플래그를 꺼도(패치는 그대로) 목록은 쓴다', r.ok && hiddenOf(w) === `${ID1}\n${ID2}\n`, JSON.stringify(r));
+  fs.copyFileSync(copy, w.dll);   // 게임 업데이트로 패치 소실
+  r = await w.chest.setHidden([ID1]);
+  check('23i 패치 소실(clean) -> 쓰지 않음(파일은 이전 그대로)', r.ok === false && hiddenOf(w) === `${ID1}\n${ID2}\n`, JSON.stringify(r));
+  r = await w.chest.reapply(['transparent']);
+  check('23j 재적용으로 v3가 되면 마지막 목록을 쓴다', r.ok && hiddenOf(w) === `${ID1}\n`, JSON.stringify(r) + ' ' + JSON.stringify(hiddenOf(w)));
+
+  // 교체 실패(게임이 마침 읽는 중 등): 같은 목록으로 POLL_MS 뒤 다시 쓴다
+  fs.rmSync(w.hidden, { force: true });
+  fs.mkdirSync(w.hidden);   // 교체가 실패하도록 같은 이름의 폴더를 둔다
+  r = await w.chest.setHidden([ID2]);
+  check('23k 교체 실패 -> write_failed, 임시 파일 정리', r.ok === false && r.reason === 'write_failed' && !fs.existsSync(`${w.hidden}.cattalk-new`), JSON.stringify(r));
+  fs.rmdirSync(w.hidden);
+  await new Promise((res) => setTimeout(res, 1300));
+  check('23l 재시도로 기록', hiddenOf(w) === `${ID2}\n`, JSON.stringify(hiddenOf(w)));
+
+  w = world('hidv2', { running: true });
+  execFileSync(patcherExe, ['backup', w.dll, path.join(w.data, 'auto_chest', 'backup')]);
+  makeV2(legacy2, w);
+  r = await w.chest.setHidden([ID1]);
+  check('24 v2 설치본(재적용 전) -> 쓰지 않음', r.ok === false && r.reason === 'needs_reapply' && hiddenOf(w) === null, JSON.stringify(r));
+  w = world('hidinc');
+  fs.copyFileSync(path.join(path.dirname(patcherExe), 'Mono.Cecil.dll'), w.dll);
+  r = await w.chest.setHidden([ID1]);
+  check('24b 호환 안 됨 -> 쓰지 않음', r.ok === false && r.reason === 'incompatible' && hiddenOf(w) === null, JSON.stringify(r));
+  w = world('hidold', { patcherExe: legacy2 });
+  r = await w.chest.setHidden([ID1]);
+  check('24c 패처가 세트 2(앱 재설치 필요) -> 쓰지 않음', r.ok === false && r.reason === 'patcher_mismatch' && hiddenOf(w) === null, JSON.stringify(r));
+  w = world('hidnone', { noGame: true });
+  r = await w.chest.setHidden([ID1]);
+  check('24d 게임 없음 -> 쓰지 않음', r.ok === false && r.reason === 'no_game', JSON.stringify(r));
+  w = world('hidfail', { running: true, launchFails: true });
+  r = await w.chest.setHidden([ID1]);
+  r = await w.chest.enable();
+  check('24e 설치 실패(자동 복원) -> 쓰지 않음', !r.ok && r.rolledBack && hiddenOf(w) === null, JSON.stringify(r));
 
   // ---- 설치 도구 버전·사전 점검(D-029): 안 되는 설치는 worker·게임을 건드리기 전에 끝낸다 ----
   const phases = (x) => x.notes.map((n) => n.phase).join(',');
@@ -301,6 +386,37 @@ function makeV1(legacy, w) {
   check('20 v1 + 설정 ON -> 재적용 필요', (await w.chest.status(true)).state === 'needs_reapply');
   r = await w.chest.reapply(['chest']);
   check('20b 백업 손상 -> 사전 점검에서 중단, worker·게임·DLL 그대로', r.reason === 'preflight_failed' && w.log.length === 0 && w.running && sha(w.dll) === v1sha && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
+
+  // ---- Cat Talk 연결 호환성 지문 사전 점검(D-033 3단계 사고 재발 방지): 지문이 바뀌는 패치는 게임을 건드리기 전에 막는다 ----
+  // 가짜 지문 도구: DLL 바이트 해시를 지문으로 낸다(패치하면 반드시 달라진다 = '패치가 지문을 바꾸는' 상황)
+  const fakeDir = path.join(work, 'fakeprobe');
+  fs.mkdirSync(fakeDir, { recursive: true });
+  const fakeSrc = path.join(fakeDir, 'FakeProbe.cs');
+  fs.writeFileSync(fakeSrc, [
+    'using System; using System.IO; using System.Security.Cryptography;',
+    'static class FakeProbe { static int Main(string[] a) {',
+    '  var h = BitConverter.ToString(SHA256.Create().ComputeHash(File.ReadAllBytes(Path.Combine(a[0], "Assembly-CSharp.dll")))).Replace("-", "").ToLowerInvariant();',
+    '  Console.WriteLine("{\\"privacy\\":\\"" + h + "\\",\\"chat\\":\\"" + h + "\\"}"); return 0; } }',
+  ].join('\n'));
+  const fakeProbe = path.join(fakeDir, 'FakeProbe.exe');
+  execFileSync(path.join(process.env.SystemRoot, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'), ['/nologo', '/target:exe', `/out:${fakeProbe}`, fakeSrc]);
+
+  w = world('probe-diff', { running: true, probeExe: fakeProbe });
+  r = await w.chest.enable('transparent');
+  check('25 지문이 바뀌는 패치 -> 사전 점검에서 호환 안 됨, 카운트다운·worker·게임·DLL 그대로', r.reason === 'incompatible' && untouched(w) && w.running && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
+  check('25b 지문 작업 파일을 남기지 않음', !fs.existsSync(path.join(w.data, 'auto_chest', 'staging', 'probe')));
+  fs.writeFileSync(w.flag, '');
+  w.notes.length = 0;
+  r = await w.chest.reapply();
+  check('25c 재적용도 같은 점검에서 중단', r.reason === 'incompatible' && w.log.length === 0 && w.running && sha(w.dll) === origSha && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
+
+  w = world('probe-missing', { running: true, probeExe: path.join(work, 'none', 'FeatureProbe.exe') });
+  r = await w.chest.enable();
+  check('25d 지문 도구 없음 -> 사전 점검 실패, 게임 그대로', r.reason === 'preflight_failed' && untouched(w) && w.running && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
+
+  w = world('probe-contract', { running: true, featureContract: path.join(work, 'none', 'feature-contract.json') });
+  r = await w.chest.enable();
+  check('25e 지문 계약 파일 없음 -> 사전 점검 실패, 게임 그대로', r.reason === 'preflight_failed' && untouched(w) && w.running && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
 
   console.log(failed ? `FAILED: ${failed}` : 'ALL PASS');
   process.exit(failed ? 1 : 0);
