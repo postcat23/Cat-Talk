@@ -21,7 +21,7 @@ Cat-Talk은 upstream [misosiruda/bongo-cat-chat](https://github.com/misosiruda/b
 - Electron 셸 + 파이썬 사이드카 스켈레톤(IPC 계약을 stdio로 구현).
 - `ui/app.js` → React 포팅.
 - 패키징(PyInstaller 사이드카 + electron-builder, DLL 로드 경로·권한).
-- 다른 PC 인수, 코드 서명, 공개 배포 여부 결정(현재 보류).
+- 다른 PC 인수, 공개 배포 여부 결정(현재 보류). 코드 서명은 하지 않기로 결정(D-037).
 
 ## 다음 단계
 
@@ -29,4 +29,4 @@ Cat-Talk은 upstream [misosiruda/bongo-cat-chat](https://github.com/misosiruda/b
 1. **셸 교체** — Electron 셸 + 파이썬 사이드카 기동. 사이드카가 IPC 계약의 `view`/명령을 stdio로 받아 응답하고, 기존 기능이 그대로 동작하는지 확인한다.
 2. **UI 포팅** — `ui/app.js`를 React로 옮긴다. 600ms `view` 폴링 모델은 1차에서 그대로 유지(동작 보존).
 3. **패키징** — PyInstaller로 사이드카를 묶고 electron-builder로 설치본을 만든다. 메모리 읽기에 필요한 `steam_api64.dll`·Mono 런타임 접근 경로와 권한을 보장한다.
-4. **인수·배포** — 다른 PC에서의 동작 인수. 코드 서명·공개 배포는 개인 테스트 결과를 보고 결정(현재 보류).
+4. **인수·배포** — 다른 PC에서의 동작 인수. 공개 배포는 개인 테스트 결과를 보고 결정(현재 보류). 코드 서명은 하지 않기로 결정(D-037).
