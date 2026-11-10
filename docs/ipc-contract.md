@@ -198,16 +198,19 @@ Cat-Talk main 추가 코드: `steam_trade_failed`(교환 요청 URI 형식 재�
 
 | 채널 | 방향 | 내용 |
 |---|---|---|
-| `chest:status(wanted)` | invoke | `{state, reason?}`. 판정만 한다(쓰기 없음). `wanted`는 설정 `auto_open_chest` 값 |
+| `chest:status(wanted)` | invoke | `{state, reason?, transparent?, restorable?}`. 판정만 한다(쓰기 없음). `wanted`는 설정이 켜진 기능이 있는지. `restorable`은 원본 복원 제안 대상(D-038) |
 | `chest:enable()` | invoke | 설치돼 있으면 플래그만 생성. 아니면 사전 점검 → 카운트다운 → 설치. `{ok, reason?, rolledBack?}` |
 | `chest:disable()` | invoke | 플래그 삭제 |
 | `chest:reapply()` | invoke | 재적용 토스트의 [재시작]. 사전 점검을 통과하면 카운트다운 없이 바로 설치 흐름. 재적용이 필요한 상태가 아니면 아무것도 하지 않는다. 토스트 [X]는 `chest:disable` + 설정 끄기 |
-| `chest:cancel` | send | 카운트다운 취소 |
-| `chest:progress` | main → 렌더러 | `{phase, seconds?, reason?, rolledBack?}` |
+| `chest:restore()` | invoke | 원본 복원 토스트의 [원본 복원](D-038). 패치본이고 패치를 쓰는 기능이 없을 때만. 버전 확인(백업 SHA + verify) → 게임이 켜져 있으면 카운트다운 → 종료 → 복원 → 재실행, 꺼져 있으면 복원만. `{ok, reason?, restored?}` |
+| `chest:cancel` | send | 카운트다운 취소(설치·복원 공통) |
+| `chest:progress` | main → 렌더러 | `{phase, seconds?, reason?, rolledBack?, restored?, action?}`. `action`이 `'restore'`면 원본 복원 진행 |
+| `chest:changed` | main → 렌더러 | 숨김 목록이 바뀌었음(원본 복원 제안 판정이 바뀔 수 있음). 렌더러는 `chest:status`를 다시 부른다 |
 
-- `state`: `not_installed`·`on`·`off`·`incompatible`·`needs_reapply`·`installing`·`no_game`·`error`·`patcher_mismatch`.
+- `state`: `not_installed`·`on`·`off`·`incompatible`·`needs_reapply`·`installing`·`restoring`·`no_game`·`error`·`patcher_mismatch`.
+  - 원본 복원 제안(D-038): `restorable` = 패치본(이전 세트·경로가 바뀐 것 포함) + 설정 OFF + 기능 플래그 없음 + 게임 고양이 숨김 목록(사이드카 알림)이 빔. 목록을 이번 실행에서 아직 모르면 `false`. 복원 때 백업이 지금 DLL의 원본이 아니면(게임 업데이트 등) 덮어쓰지 않고 `failed`(`version_mismatch`) — 렌더러가 Steam 무결성 확인을 안내한다. 성공하면 기능 플래그와 `CatTalkHidden.ids`를 지운다.
   - `patcher_mismatch`(D-029): 패처가 없거나(`reason: missing`) 앱이 기대하는 규약과 다름(`reason: mismatch`, `version` 명령 없음·값 다름·의존 DLL 누락 포함). 재적용으로는 못 고쳐 켜기·재적용을 막는다(끄기는 허용). prod는 앱 재설치, dev는 `tools/auto_chest/build.ps1`. 렌더러는 설정이 켜져 있으면 '앱 재설치가 필요합니다' 토스트를 띄운다([X] = 이번 실행 동안 숨김).
-- `phase`: `checking`·`countdown`·`cancelled`·`stopping_worker`·`closing_game`·`patching`·`launching`·`verifying`·`done`·`failed`.
+- `phase`: `checking`·`countdown`·`cancelled`·`stopping_worker`·`closing_game`·`patching`·`restoring`·`launching`·`verifying`·`done`·`failed`.
 - 설치 순서: 구조 판정(패처 규약 포함) → 사전 점검(별도 파일에 패치·verify, 재적용이면 원본 백업 SHA도, Cat Talk 연결 호환성 지문이 원본과 같은지) → 카운트다운(켜기만) → 사이드카(worker) 종료 → 게임 종료 → Steam 해제 대기 → 백업(clean일 때만) → 패치·verify → 교체·재검증 → Steam 재실행 → 기동 확인 → 플래그 생성 → 사이드카 재시작. 사전 점검에 실패하면 worker·게임을 건드리지 않고 `failed`(`incompatible`·`preflight_failed`)로 끝난다. 교체 후 실패하면 백업으로 복원한다.
 - 설정 저장은 기존 `setting` 액션(`auto_open_chest`)을 그대로 쓴다. 렌더러가 결과가 `ok`일 때만 저장한다.
 - 패치 세트 버전(패처 `inspect`의 `patchVersion`, 앱 기대값 `PATCH_VERSION`): 1 = 상자 자동 오픈, 2 = + 투명화(D-028), 3 = + 차단 멤버 고양이 숨김(D-033 3단계). 세트는 누적이고, 앱 기대값보다 낮은 설치본은 `needs_reapply`(`reason: outdated`)다 — 재적용 한 번(게임 재시작)으로 올라간다. 인자 규약(`cli`)은 2 그대로다.

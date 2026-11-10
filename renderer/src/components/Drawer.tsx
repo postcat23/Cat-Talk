@@ -51,7 +51,7 @@ export default function Drawer() {
   const chest = useChest();
   // Electron: 실제 상태(패치+플래그)가 버튼을 정한다. 브라우저 dev: 설정값만.
   const chestOn = chest ? chest.state === 'on' : settings.autoOpenChest;
-  const chestBusy = !!chest && (chest.busy || chest.state === 'installing');
+  const chestBusy = !!chest && (chest.busy || chest.state === 'installing' || chest.state === 'restoring');
   // 끄기(플래그 삭제)는 호환 안 됨·게임 없음·설치 도구 불일치에서도 안전하므로 진행 중일 때만 막는다
   const enableBlocked = chestBusy || chest?.state === 'incompatible' || chest?.state === 'no_game' || chest?.state === 'patcher_mismatch';
   const turnChest = async (on: boolean) => {

@@ -303,11 +303,14 @@ const chest = createAutoChest({
   stopWorker: stopSidecar,
   startWorker: async () => { startSidecar(); },
   notify: (progress) => { if (win && !win.isDestroyed()) win.webContents.send('chest:progress', progress); },
+  // 숨김 목록이 바뀌면 렌더러가 원본 복원 제안을 다시 판정한다(D-038)
+  changed: () => { if (win && !win.isDestroyed()) win.webContents.send('chest:changed'); },
 });
 ipcMain.handle('chest:status', (_e, wanted) => chest.status(wanted === true));
 ipcMain.handle('chest:enable', (_e, feature) => chest.enable(feature));
 ipcMain.handle('chest:disable', (_e, feature) => chest.disable(feature));
 ipcMain.handle('chest:reapply', (_e, features) => chest.reapply(features));
+ipcMain.handle('chest:restore', () => chest.restore());
 ipcMain.on('chest:cancel', () => chest.cancel());
 
 // 앱 자동 업데이트(D-030). 설치본에서만 확인·내려받기를 한다(dev는 electron-updater를 읽지도 않는다).
