@@ -65,7 +65,7 @@ const RESTORE_FAILURE: Record<string, string> = {
   game_start_failed: '게임 파일은 원본으로 되돌렸지만 게임이 다시 시작되지 않았습니다.',
   steam_still_running: 'Steam에 게임이 아직 실행 중으로 표시되어 복원을 멈췄습니다. 잠시 뒤 다시 시도해 주세요.',
   game_running: '게임이 켜져 있어 되돌리지 않았습니다. 게임을 닫고 다시 시도해 주세요.',
-  still_needed: '게임 패치를 쓰는 기능이 켜져 있어 되돌리지 않았습니다.',
+  still_needed: '게임 패치를 쓰는 기능이 켜져 있어 되돌리지 않았습니다. 기능을 끄고 다시 시도해 주세요.',
 };
 
 function restoreText(p: ChestProgress) {
@@ -77,7 +77,7 @@ function restoreText(p: ChestProgress) {
     case 'launching': return '게임을 다시 실행하는 중입니다.';
     case 'done': return '게임 파일을 원본으로 되돌렸습니다.';
     case 'cancelled': return '복원을 취소했습니다.';
-    case 'failed': return RESTORE_FAILURE[p.reason ?? ''] ?? '게임 파일을 되돌리지 못했습니다.';
+    case 'failed': return RESTORE_FAILURE[p.reason ?? ''] ?? "게임 파일을 되돌리지 못했습니다. Steam '게임 파일 무결성 확인'으로 원본을 복구할 수 있습니다.";
     default: return '';
   }
 }
