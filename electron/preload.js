@@ -34,17 +34,24 @@ contextBridge.exposeInMainWorld('catTalk', {
   // 안 읽은 수({count, toast, taskbar}). 수와 토글은 렌더러가 정하고, 표시는 main이 맡는다.
   setUnread: (alert) => ipcRenderer.send('alert:unread', alert),
   // 상자 자동 오픈(D-019)·모든 고양이 투명화(D-028). status는 판정만(쓰기 없음), wanted = 어느 기능이든 설정 ON 여부.
-  // feature = 'chest' | 'transparent', reapply는 설정이 켜진 기능 목록.
+  // feature = 'chest' | 'transparent', reapply는 설정이 켜진 기능 목록. restore는 원본 복원 토스트(D-038).
   chest: {
     status: (wanted) => ipcRenderer.invoke('chest:status', wanted),
     enable: (feature) => ipcRenderer.invoke('chest:enable', feature),
     disable: (feature) => ipcRenderer.invoke('chest:disable', feature),
     reapply: (features) => ipcRenderer.invoke('chest:reapply', features),
+    restore: () => ipcRenderer.invoke('chest:restore'),
     cancel: () => ipcRenderer.send('chest:cancel'),
     onProgress: (cb) => {
       const listener = (_e, progress) => cb(progress);
       ipcRenderer.on('chest:progress', listener);
       return () => ipcRenderer.removeListener('chest:progress', listener);
+    },
+    // 원본 복원 제안 판정이 바뀌었을 수 있음(숨김 목록 변경). 렌더러는 상태를 다시 묻는다
+    onChanged: (cb) => {
+      const listener = () => cb();
+      ipcRenderer.on('chest:changed', listener);
+      return () => ipcRenderer.removeListener('chest:changed', listener);
     },
   },
 });

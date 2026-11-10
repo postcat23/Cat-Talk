@@ -24,8 +24,10 @@ interface Window {
       enable(feature: import('./chat/autoChest').Feature): Promise<import('./chat/autoChest').ChestResult>;
       disable(feature: import('./chat/autoChest').Feature): Promise<import('./chat/autoChest').ChestResult>;
       reapply(features: import('./chat/autoChest').Feature[]): Promise<import('./chat/autoChest').ChestResult>;
+      restore(): Promise<import('./chat/autoChest').ChestResult>;
       cancel(): void;
       onProgress(cb: (progress: import('./chat/autoChest').ChestProgress) => void): () => void;
+      onChanged(cb: () => void): () => void;
     };
   };
 }

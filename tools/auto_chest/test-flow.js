@@ -33,7 +33,7 @@ function world(name, opts = {}) {
   const dll = path.join(managed, 'Assembly-CSharp.dll');
   fs.copyFileSync(copy, dll);
   const w = { root, dll, flag: path.join(root, FLAG_NAME), tflag: path.join(root, TRANSPARENT_FLAG_NAME), hidden: path.join(root, HIDDEN_NAME), managed,
-    log: [], notes: [], running: !!opts.running, steam: !!opts.running, data: path.join(base, 'data') };
+    log: [], notes: [], changes: 0, running: !!opts.running, steam: !!opts.running, data: path.join(base, 'data') };
   const sys = {
     findGame: async () => (opts.noGame ? null : { root: w.lowerRoot ? root.toLowerCase() : root, appId: '1' }),
     gameRunning: async () => w.running,
@@ -53,8 +53,45 @@ function world(name, opts = {}) {
     stopWorker: async () => { w.log.push('stopWorker'); w.workerStopped = true; },
     startWorker: async () => { w.log.push('startWorker'); w.workerStopped = false; },
     notify: (p) => w.notes.push(p),
+    changed: () => { w.changes++; },
   });
   return w;
+}
+
+// '다른 빌드의 원본'(원본 복원 버전 확인 시험, D-038): 사용자 문자열 힙(#US)에서 영문 4자 이상 문자열 하나의 첫 글자 대소문자만 바꾼다.
+// 길이·구조가 같아 패처가 clean으로 읽지만, verify는 ldstr 값을 비교하므로(Op) '현재 DLL = 이 백업 + 훅'이 아니게 된다.
+function otherBuild(buf) {
+  const b = Buffer.from(buf);
+  const pe = b.readUInt32LE(0x3c), opt = pe + 24, sections = opt + b.readUInt16LE(pe + 20);
+  const dirs = opt + (b.readUInt16LE(opt) === 0x20b ? 112 : 96);
+  const off = (rva) => {
+    for (let s = 0; s < b.readUInt16LE(pe + 6); s++) {
+      const h = sections + s * 40, va = b.readUInt32LE(h + 12), size = Math.max(b.readUInt32LE(h + 8), b.readUInt32LE(h + 16));
+      if (rva >= va && rva < va + size) return rva - va + b.readUInt32LE(h + 20);
+    }
+    throw new Error('rva');
+  };
+  const md = off(b.readUInt32LE(off(b.readUInt32LE(dirs + 14 * 8)) + 8));
+  if (b.readUInt32LE(md) !== 0x424a5342) throw new Error('metadata');
+  let h = md + 16 + b.readUInt32LE(md + 12) + 4;
+  for (let n = b.readUInt16LE(md + 16 + b.readUInt32LE(md + 12) + 2); n > 0; n--) {
+    const start = md + b.readUInt32LE(h), size = b.readUInt32LE(h + 4);
+    let e = h + 8; while (b[e]) e++;
+    const name = b.toString('ascii', h + 8, e);
+    h = (e + 4) & ~3;
+    if (name !== '#US') continue;
+    for (let p = start + 1; p < start + size;) {
+      let len = b[p], hdr = 1;
+      if ((len & 0xc0) === 0x80) { len = ((len & 0x3f) << 8) | b[p + 1]; hdr = 2; } else if ((len & 0xe0) === 0xc0) { len = ((len & 0x1f) << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]; hdr = 4; }
+      const chars = (len - 1) / 2, text = p + hdr;
+      if (chars >= 4 && [...Array(chars).keys()].every((i) => /[A-Za-z]/.test(String.fromCharCode(b.readUInt16LE(text + i * 2))))) {
+        b[text] ^= 0x20;   // 첫 글자 대소문자 반전
+        return b;
+      }
+      p += hdr + len;
+    }
+  }
+  throw new Error('no user string');
 }
 const before = (log, a, b) => log.includes(a) && log.includes(b) && log.indexOf(a) < log.indexOf(b);
 
@@ -417,6 +454,68 @@ function makeV2(legacy2, w) {
   w = world('probe-contract', { running: true, featureContract: path.join(work, 'none', 'feature-contract.json') });
   r = await w.chest.enable();
   check('25e 지문 계약 파일 없음 -> 사전 점검 실패, 게임 그대로', r.reason === 'preflight_failed' && untouched(w) && w.running && phases(w) === 'checking,failed', JSON.stringify(r) + ' ' + phases(w));
+
+  // ── 원본 복원(D-038) ──
+  // 제안: 패치본 + 설정 OFF + 기능 플래그 없음 + 숨김 목록(사이드카 알림)이 빔. 목록을 아직 모르면 판정하지 않는다.
+  // 복원: 백업 SHA + verify(현재 DLL = 백업 + 훅)로 버전을 확인한 뒤, 게임이 켜져 있으면 카운트다운 → worker → 종료 → 복원 → 재실행.
+  w = world('restore', { running: true });
+  check('26 clean -> 복원 제안 없음', (await w.chest.status(false)).restorable === false);
+  r = await w.chest.enable('transparent');
+  check('26a 준비: 투명화 설치', r.ok === true, JSON.stringify(r));
+  const restoreBase = sha(w.dll);
+  check('26b 기능 켜짐 -> 제안 없음', (await w.chest.status(true)).restorable === false);
+  await w.chest.disable('transparent');
+  check('26c 기능 꺼짐 + 숨김 목록 모름 -> 제안 없음(판정 보류)', (await w.chest.status(false)).restorable === false);
+  await w.chest.setHidden(['76561198000000001']);
+  check('26d 숨길 사람 있음 -> 제안 없음, 변경 알림 1회', (await w.chest.status(false)).restorable === false && w.changes === 1, String(w.changes));
+  await w.chest.setHidden([]);
+  check('26e 숨김 목록 빔 + 기능 꺼짐 -> 제안, 변경 알림 2회', (await w.chest.status(false)).restorable === true && w.changes === 2, String(w.changes));
+  check('26f 설정이 켜져 있으면 제안 없음', (await w.chest.status(true)).restorable === false);
+  fs.writeFileSync(w.flag, '');
+  check('26g 기능 플래그가 남아 있으면 제안 없음', (await w.chest.status(false)).restorable === false);
+  w.log.length = 0; w.notes.length = 0;
+  r = await w.chest.restore();
+  check('26h 플래그가 있으면 복원 거부(still_needed), 게임·DLL 그대로', r.reason === 'still_needed' && w.log.length === 0 && sha(w.dll) === restoreBase, JSON.stringify(r));
+  fs.rmSync(w.flag);
+  check('26i 숨김 목록 파일은 설치 상태라 써져 있음(빈 목록)', fs.existsSync(w.hidden) && fs.readFileSync(w.hidden, 'utf-8') === '');
+  w.notes.length = 0;
+  r = await w.chest.restore();
+  check('26j 게임 켜짐 복원: 카운트다운 5회, worker → 게임 종료 → 재실행 → worker', r.ok === true && w.notes.filter((n) => n.phase === 'countdown').length === 5
+    && before(w.log, 'stopWorker', 'closeGame') && before(w.log, 'closeGame', 'launch') && before(w.log, 'launch', 'startWorker'), JSON.stringify(r) + ' ' + w.log.join(','));
+  check('26k DLL이 원본과 바이트 동일, 숨김 목록·기능 플래그 파일 없음', sha(w.dll) === origSha && !fs.existsSync(w.hidden) && !fs.existsSync(w.flag) && !fs.existsSync(w.tflag));
+  check('26l 진행 알림은 모두 action=restore, 복원 → 재실행 → 완료', w.notes.every((n) => n.action === 'restore') && /restoring,launching,done$/.test(phases(w)), phases(w));
+  r = await w.chest.status(false);
+  check('26m 복원 후 미설치, 제안 없음', r.state === 'not_installed' && r.restorable === false, JSON.stringify(r));
+
+  w = world('restore-off', { running: true });
+  await w.chest.enable('chest'); await w.chest.disable('chest'); await w.chest.setHidden([]);
+  w.running = false; w.steam = false; w.log.length = 0; w.notes.length = 0;
+  r = await w.chest.restore();
+  check('26n 게임 꺼짐: 카운트다운·게임·worker 조작 없이 바로 복원', r.ok === true && w.log.length === 0 && phases(w) === 'restoring,done' && sha(w.dll) === origSha, JSON.stringify(r) + ' ' + phases(w));
+
+  w = world('restore-cancel', { running: true });
+  await w.chest.enable('chest'); await w.chest.disable('chest'); await w.chest.setHidden([]);
+  const cancelBase = sha(w.dll);
+  w.log.length = 0; w.notes.length = 0;
+  w.onSleep = () => { if (w.notes.some((n) => n.phase === 'countdown' && n.seconds === 3)) w.chest.cancel(); };
+  r = await w.chest.restore();
+  w.onSleep = null;
+  check('26o 카운트다운 취소 -> 게임·worker·DLL 그대로, 취소 알림', r.reason === 'cancelled' && w.log.length === 0 && w.running && sha(w.dll) === cancelBase && w.notes.slice(-1)[0].phase === 'cancelled', JSON.stringify(r));
+
+  w = world('restore-mismatch', { running: true });
+  await w.chest.enable('chest'); await w.chest.disable('chest'); await w.chest.setHidden([]);
+  const mismatchBase = sha(w.dll);
+  const otherBak = path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig');
+  fs.writeFileSync(otherBak, otherBuild(fs.readFileSync(copy)));
+  fs.writeFileSync(`${otherBak}.sha256`, `${sha(otherBak)}\n`);
+  check('26p 시험 준비: 바꾼 백업도 패처가 clean으로 읽음', JSON.parse(execFileSync(patcherExe, ['inspect', otherBak]).toString()).state === 'clean');
+  w.log.length = 0; w.notes.length = 0;
+  r = await w.chest.restore();
+  check('26q 백업이 지금 DLL의 원본이 아님 -> version_mismatch, 덮어쓰지 않음·게임 조작 없음', r.reason === 'version_mismatch' && sha(w.dll) === mismatchBase && w.log.length === 0
+    && phases(w) === 'failed' && w.notes[0].action === 'restore', JSON.stringify(r) + ' ' + phases(w));
+  fs.rmSync(`${otherBak}.sha256`);
+  r = await w.chest.restore();
+  check('26r 백업 기록이 없어도 같은 안내(덮어쓰지 않음)', r.reason === 'version_mismatch' && sha(w.dll) === mismatchBase, JSON.stringify(r));
 
   console.log(failed ? `FAILED: ${failed}` : 'ALL PASS');
   process.exit(failed ? 1 : 0);

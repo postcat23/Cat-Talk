@@ -1,7 +1,7 @@
 import type { ReactionStack as Stack } from '../hooks/useReactionStack';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
-import { progressText, reapplyNotice, REINSTALL_NOTICE } from '../chat/autoChest';
+import { progressText, reapplyNotice, REINSTALL_NOTICE, RESTORE_NOTICE } from '../chat/autoChest';
 import { useUpdate, UPDATE_DRAFT_NOTICE } from '../hooks/useAppUpdate';
 import { displayName } from '../chat/model';
 import Cat from './Cat';
@@ -31,6 +31,10 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
         action={{ label: '재적용', onClick: () => void chest.reapply() }} onClose={() => void chest.dismissReapply()} />}
       {/* 설치 도구 불일치 + 설정 ON: 재적용으로는 못 고쳐 재설치 안내만. [X]는 이번 실행 동안 숨김(D-029) */}
       {chest?.needsReinstall && !install && <NoticeCard key="reinstall" text={REINSTALL_NOTICE} onClose={chest.dismissReinstall} />}
+      {/* 재적용과 대칭(D-038): 패치는 남았는데 패치를 쓰는 기능이 없음. [원본 복원]은 게임이 켜져 있으면 카운트다운(취소 가능) 뒤
+          종료·복원·재실행, [X]는 이 상태가 이어지는 동안 이번 실행에서 숨김 */}
+      {chest?.needsRestore && !install && <NoticeCard key="restore" text={RESTORE_NOTICE}
+        action={{ label: '원본 복원', onClick: () => void chest.restore() }} onClose={chest.dismissRestore} />}
       {/* 앱 업데이트 재시작 전 확인(D-030): 쓰던 글은 앱을 끄면 사라진다. 보내는 중이면 끝날 때까지 적용하지 않는다 */}
       {update?.confirming && <NoticeCard key="update-confirm" text={UPDATE_DRAFT_NOTICE}
         action={{ label: '업데이트', onClick: () => { if (!sending) update.confirm(); } }} onClose={update.cancel} />}

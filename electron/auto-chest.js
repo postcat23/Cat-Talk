@@ -5,6 +5,8 @@
 // 사전 점검은 패치 결과의 Cat Talk 연결 호환성 지문(업스트림 FeatureProbe)이 원본과 같은지도 본다(D-033 3단계 사고 재발 방지).
 // 차단 멤버 고양이 숨김(D-033 3단계): 같은 패치(세트 3)가 게임 폴더의 CatTalkHidden.ids를 0.5초마다 읽는다. 이 모듈은 사이드카가 알린
 // (앱 차단 ∪ Steam 차단) 목록을 그 파일에 통째로 쓴다(세트 3 설치 상태에서만). 앱을 꺼도 파일은 남는다(결정 B).
+// 원본 복원(D-038): 패치는 남았는데 패치를 쓰는 기능이 하나도 없으면(설정·플래그 꺼짐 + 숨김 목록 빔) 렌더러가 토스트로 제안하고,
+// [원본 복원]이 백업이 지금 DLL의 원본인지 확인한 뒤 되돌린다(재적용과 대칭: 게임이 켜져 있으면 카운트다운 → 종료 → 복원 → 재실행).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -77,7 +79,8 @@ class Failure extends Error {}
 const samePath = (a, b) => typeof a === 'string' && path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
 
 // probeExe·featureContract: Cat Talk(업스트림)의 연결 호환성 지문 도구(FeatureProbe)와 그 계약 파일. 사전 점검이 실행만 한다(수정 없음).
-function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, stopWorker, startWorker, notify: notifyRaw }) {
+// changed: 원본 복원 제안 판정에 쓰는 숨김 목록이 바뀌었음을 알린다(렌더러가 상태를 다시 묻는다). 없어도 된다.
+function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, stopWorker, startWorker, notify: notifyRaw, changed = () => {} }) {
   const home = path.join(dataDir, 'auto_chest');
   const backupDir = path.join(home, 'backup');
   const staging = path.join(home, 'staging', 'Assembly-CSharp.dll');
@@ -85,6 +88,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
   const preflightOut = path.join(home, 'staging', 'preflight', 'Assembly-CSharp.dll');
   const probeHome = path.join(home, 'staging', 'probe');
   let busy = false, cancelled = false;
+  let busyKind = 'install';   // 진행 중인 일: 'install'(사전 점검·설치·재적용) | 'restore'(원본 복원). 판정이 상태 이름을 고른다
   let toolCheck = null;   // 맞다고 확인한 패처·Mono.Cecil 파일의 (수정 시각·크기). 바뀌면 다시 묻는다
 
   // managed: 패처가 결과의 모든 참조를 게임 런타임 어셈블리로 해석해 보는 폴더(스트리핑된 API 차단, D-028)
@@ -126,16 +130,24 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     } catch { return false; }
   }
 
+  // 패치를 쓰는 기능이 하나도 없음(D-038): 기능 플래그가 없고, 게임 고양이 숨김 목록(사이드카가 알린 앱 차단 ∪ 이번 실행에서 만난
+  // Steam 차단)이 비었다. 목록을 아직 모르면(이번 실행에서 알림 전, null) 판정하지 않는다(false).
+  const unneeded = (game) => hidden !== null && hidden.length === 0
+    && !Object.keys(FEATURE_FLAGS).some((f) => fs.existsSync(featureFlag(game, f)));
+
   // 판정만 한다(쓰기 없음). wanted = 어느 기능이든 설정 ON 여부: 켜 뒀는데 clean이면 업데이트로 패치가 사라진 것.
   // state = 설치 상태(설치돼 있으면 상자 자동 오픈 플래그로 on/off), transparent = 같은 판정에서 투명화 플래그로 on/off.
+  // restorable = 원본 복원 제안 대상(패치는 됐는데 설정 OFF + unneeded). 이전 세트·경로가 바뀐 패치본도 포함한다(복원 때 버전 확인).
   async function status(wanted) {
     const s = await installState(wanted);
-    if (s.state !== 'installed') return { ...s, transparent: s.state };
-    return { state: fs.existsSync(featureFlag(s.game, 'chest')) ? 'on' : 'off', transparent: fs.existsSync(featureFlag(s.game, 'transparent')) ? 'on' : 'off' };
+    const restorable = !wanted && s.patched === true && unneeded(s.game);
+    if (s.state !== 'installed') return { state: s.state, reason: s.reason, transparent: s.state, restorable };
+    return { state: fs.existsSync(featureFlag(s.game, 'chest')) ? 'on' : 'off', transparent: fs.existsSync(featureFlag(s.game, 'transparent')) ? 'on' : 'off', restorable };
   }
 
+  // patched·game은 패치본일 때만 싣는다(원본 복원 판정용). 렌더러로는 status가 고른 값만 나간다.
   async function installState(wanted) {
-    if (busy) return { state: 'installing' };
+    if (busy) return { state: busyKind === 'restore' ? 'restoring' : 'installing' };
     const game = await sys.findGame();
     if (!game) return { state: 'no_game' };
     const tool = await patcherState();
@@ -145,9 +157,9 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     if (r.code === 2) return { state: 'incompatible', reason: r.json.reason };
     if (r.code !== 0) return { state: 'error', reason: r.json.reason };
     if (r.json.state === 'clean') return { state: wanted ? 'needs_reapply' : 'not_installed' };
-    if (!samePath(r.json.flag, flag)) return { state: 'needs_reapply', reason: 'flag_path_changed' };   // 게임 경로가 바뀜
-    if (r.json.upToDate === false) return { state: 'needs_reapply', reason: 'outdated' };   // 이전 패치 세트(v1·v2) → 재적용으로 v3(D-028, D-033)
-    return { state: 'installed', game };
+    if (!samePath(r.json.flag, flag)) return { state: 'needs_reapply', reason: 'flag_path_changed', game, patched: true };   // 게임 경로가 바뀜
+    if (r.json.upToDate === false) return { state: 'needs_reapply', reason: 'outdated', game, patched: true };   // 이전 패치 세트(v1·v2) → 재적용으로 v3(D-028, D-033)
+    return { state: 'installed', game, patched: true };
   }
 
   // ── 차단 멤버 고양이 숨김 목록(D-033 3단계) ──
@@ -337,14 +349,59 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     }
   }
 
-  async function countdown(features) {
+  // action: 진행 알림의 일 종류('install' | 'restore'). 렌더러가 문구를 고른다.
+  async function countdown(features, action = 'install') {
     cancelled = false;
     for (let s = COUNTDOWN_SECONDS; s > 0; s--) {
-      notifyRaw({ phase: 'countdown', seconds: s, features });
+      notifyRaw({ phase: 'countdown', seconds: s, features, action });
       await sys.sleep(1000);
-      if (cancelled) { notifyRaw({ phase: 'cancelled', features }); return false; }
+      if (cancelled) { notifyRaw({ phase: 'cancelled', features, action }); return false; }
     }
     return true;
+  }
+
+  // 원본 복원 실행(D-038). restore()가 버전 확인·카운트다운을 마친 뒤 부른다.
+  // 게임이 켜져 있었으면 worker → 게임 종료(강제 아님) → Steam 해제 대기 → 복원 → 재실행(설치와 같은 순서·이유, D-019).
+  // 꺼져 있었으면 복원만 한다(재실행·worker 조작 없음). 성공하면 기능 플래그와 숨김 목록 파일을 지운다(배포 체크리스트 '패치를 되돌릴 때').
+  async function restoreNow(game, wasRunning) {
+    const notify = (p) => notifyRaw({ ...p, action: 'restore' });
+    let restored = false, restarted = false;
+    busy = true; busyKind = 'restore';
+    try {
+      if (!unneeded(game)) throw new Failure('still_needed');   // 카운트다운 사이 기능을 켰거나 숨길 사람이 생김
+      if (wasRunning) {
+        notify({ phase: 'stopping_worker' });
+        await stopWorker();
+        notify({ phase: 'closing_game' });
+        await sys.closeGame();
+        if (!(await waitFor(async () => !(await sys.gameRunning()), GAME_CLOSE_MS))) throw new Failure('game_close_failed');
+        if (!(await waitFor(async () => !(await sys.steamRunning(game.appId)), STEAM_RELEASE_MS))) throw new Failure('steam_still_running');
+      }
+      if (await sys.gameRunning()) throw new Failure('game_running');   // 켜진 게임의 DLL은 건드리지 않는다
+      notify({ phase: 'restoring' });
+      if ((await patcher('restore', backupDir, paths(game).dll)).code !== 0) throw new Failure('restore_failed');
+      restored = true;
+      for (const name of [...Object.values(FEATURE_FLAGS), HIDDEN_NAME]) {
+        try { fs.rmSync(path.join(game.root, name), { force: true }); } catch { /* 패치가 없으면 게임이 읽지 않는다 */ }
+      }
+      if (wasRunning) {
+        notify({ phase: 'launching' });
+        await sys.launch(game.appId);
+        restarted = true;
+        if (!(await waitFor(() => sys.gameRunning(), LAUNCH_MS))) throw new Failure('game_start_failed');
+      }
+      notify({ phase: 'done' });
+      return { ok: true };
+    } catch (e) {
+      const reason = e instanceof Failure ? e.message : 'unexpected';
+      // 켜져 있던 게임은 되살린다(재실행까지 갔거나 아직 켜져 있으면 그대로 둔다)
+      if (wasRunning && !restarted && !(await sys.gameRunning())) await sys.launch(game.appId);
+      notify({ phase: 'failed', reason, restored });
+      return { ok: false, reason, restored };
+    } finally {
+      busy = false; busyKind = 'install';
+      if (wasRunning) await startWorker();
+    }
   }
 
   // 설치·재적용이 끝나면(성공이면 이제 세트 3) 마지막 목록을 쓴다. 설치 중(busy)에 온 목록은 판정에서 건너뛰었으므로 여기서 맡는다.
@@ -363,7 +420,30 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     setHidden(ids) {
       if (!Array.isArray(ids)) return Promise.resolve({ ok: false, reason: 'invalid' });
       hidden = [...new Set(ids.filter((id) => typeof id === 'string' && STEAM_ID64.test(id)))].sort();
+      changed();   // 원본 복원 제안 판정이 바뀔 수 있다(첫 확인·마지막 차단 해제, D-038)
       return syncHidden();
+    },
+
+    // 원본 복원(D-038): 토스트 [원본 복원]. 패치본이고 패치를 쓰는 기능이 없을 때만 한다.
+    // 백업이 지금 DLL의 원본인지 먼저 본다(백업 SHA + verify: 현재 DLL = 백업 + 우리 훅). 아니면(게임 업데이트·이전 세트·경로 변경 등)
+    // 덮어쓰지 않고 'version_mismatch'로 끝낸다(렌더러가 Steam 무결성 확인을 안내). 게임이 켜져 있으면 카운트다운(취소 가능) 뒤 진행한다.
+    async restore() {
+      if (busy) return { ok: false, reason: 'busy' };
+      const s = await installState(false);
+      if (!s.patched) return { ok: false, reason: s.state };
+      if (!unneeded(s.game)) return { ok: false, reason: 'still_needed' };
+      const { managed, dll, flag } = paths(s.game);
+      let matches = false;
+      busy = true; busyKind = 'restore';
+      try { matches = backupIntact() && (await patcher('verify', original, dll, flag, managed)).code === 0; }
+      finally { busy = false; busyKind = 'install'; }
+      if (!matches) {
+        notifyRaw({ phase: 'failed', reason: 'version_mismatch', restored: false, action: 'restore' });
+        return { ok: false, reason: 'version_mismatch', restored: false };
+      }
+      const wasRunning = await sys.gameRunning();
+      if (wasRunning && !(await countdown([], 'restore'))) return { ok: false, reason: 'cancelled' };
+      return restoreNow(s.game, wasRunning);
     },
 
     // 켜기(feature = 'chest' | 'transparent'): 설치돼 있으면 그 기능 플래그만(즉시, 재실행 없음). 아니면 사전 점검 → 카운트다운 → 설치.
