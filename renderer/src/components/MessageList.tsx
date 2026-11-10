@@ -78,7 +78,7 @@ export default function MessageList() {
       </div>
       {!query && !live && (newest ? (
         <button className={`${styles.toBottom} ${styles.preview}`} aria-label={`맨 아래로: ${newest.author.name} ${newest.text}`} onClick={() => setLive(true)}>
-          {!settings.clearCats && <span className={newest.author.avatar ? `${styles.pcat} ${styles.stand}` : styles.pcat}><Cat src={newest.author.avatar} framing="sprite" /></span>}
+          <span className={newest.author.avatar ? `${styles.pcat} ${styles.stand}` : styles.pcat}><Cat src={newest.author.avatar} framing="sprite" /></span>
           <span className={styles.pname}>{newest.author.name}</span>
           <span className={styles.pbody}>{newest.text}</span>
         </button>

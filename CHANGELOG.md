@@ -90,3 +90,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 여러 줄 메시지가 말풍선에서 한 줄로 이어 보이던 문제 수정
 - 게임 등 다른 프로그램에 다녀오면 입력 언어가 영어로 바뀌던 문제 수정 (Cat Talk에서 쓰던 한/영 상태를 기억해 복귀 시 맞춤)
 - `sidecar` — Steam 차단 감지는 관계값 5(Ignored, 비친구 '모든 대화 차단')만 사용. 1(Blocked)을 더했다가 되돌림 — deprecated이고 친구 요청 무시 직후의 일시 값일 수 있어 차단이 아닌데 잠깐 숨길 수 있음. 6(IgnoredFriend, 친구 차단)은 Steam 감지로 숨기지 않음(친구는 앱 내 차단으로 처리)
+- `renderer` — '모든 고양이 투명화'를 켜면 앱 채팅 말풍선 위 고양이와 HISTORY 새 메시지 미리보기 카드의 고양이까지 사라지던 문제 수정(투명화는 게임 고양이에만 적용)
