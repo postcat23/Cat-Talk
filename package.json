@@ -10,8 +10,9 @@
     "start": "electron .",
     "dev": "vite",
     "build": "tsc -p renderer && vite build",
-    "dist": "npm run build && electron-builder --win --publish never",
-    "release": "npm run build && electron-builder --win --publish always"
+    "build:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
+    "dist": "npm run build && npm run build:sidecar && electron-builder --win --publish never",
+    "release": "npm run build && npm run build:sidecar && electron-builder --win --publish always"
   },
   "build": {
     "appId": "CatTalk.Desktop",
@@ -19,8 +20,8 @@
     "directories": { "output": "dist" },
     "files": ["electron/**", "renderer/dist/**", "package.json"],
     "extraResources": [
-      { "from": "sidecar", "to": "sidecar", "filter": ["**/*", "!**/__pycache__", "!**/__pycache__/**"] },
-      { "from": "src", "to": "src", "filter": ["**/*", "!**/__pycache__", "!**/__pycache__/**"] },
+      { "from": "artifacts/sidecar/cattalk-sidecar", "to": "sidecar-bin" },
+      { "from": "src/bongo_chat/feature-contract.json", "to": "src/bongo_chat/feature-contract.json" },
       { "from": "artifacts/compatibility", "to": "artifacts/compatibility" },
       { "from": "artifacts/auto_chest", "to": "artifacts/auto_chest" },
       { "from": "LICENSE", "to": "LICENSE" },
