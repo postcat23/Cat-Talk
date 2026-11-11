@@ -9,7 +9,7 @@
 
 - 확인: 앱을 켤 때와 6시간마다. 새 버전은 백그라운드로 내려받는다.
 - 레포가 비공개인 동안은 토큰이 없어 확인이 실패한다(의도한 동작). 실패는 알리지 않고, 드로어는 '최신'이라고 단정하지 않고 버전만 보여 준다. 레포를 공개하면 설정을 바꾸지 않아도 동작한다.
-- 게시: `npm run release`(`electron-builder --publish always`, 빌드 PC에 `GH_TOKEN` 필요)는 GitHub에 초안(draft) 릴리스를 올린다. 초안을 게시해야 설치본이 내려받는다. 로컬 빌드만 할 때는 `npm run dist`(게시 안 함).
+- 게시: 버전 태그 `v<버전>`(`package.json` 버전과 같아야 한다)을 push하면 GitHub Actions(`.github/workflows/release.yml`, Windows 러너)가 처음부터 빌드해 GitHub에 초안(draft) 릴리스로 올린다. 사전 산출물(호환성 도구·패처)·사이드카 번들·설치본까지 만들고, 자산(설치본·`.blockmap`·`latest.yml`)을 확인한다. 토큰은 워크플로의 자동 `GITHUB_TOKEN`만 쓴다(별도 시크릿 없음). 릴리스 본문 작성과 게시(Publish release)는 GitHub 웹에서 한다 — 게시해야 설치본이 내려받는다. 로컬 빌드만 할 때는 `npm run dist`(게시 안 함).
 
 ## 적용·롤백
 
