@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-11
+
 ### Added
 
 - `README` — 프로젝트 개요와 Electron + React + Python 사이드카 포팅 계획 문서 추가
