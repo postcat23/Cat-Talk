@@ -31,7 +31,10 @@ const state = windowState.load();
 // 설치본 = productName('Cat Talk') 폴더라 그대로 두면 둘이 함께 켜져 게임에 사이드카가 둘 붙는다(D-030).
 // 이름은 productName에 맞춘 %APPDATA%\Cat Talk(D-041. 전에는 cat-talk — 옮기지 않는다). 데이터 폴더(%LOCALAPPDATA%\CatTalk)도 공유한다.
 app.setPath('userData', path.join(app.getPath('appData'), 'Cat Talk'));
-if (!app.requestSingleInstanceLock()) { app.quit(); }
+// 잠금을 못 얻은 두 번째 실행은 첫 실행에 알리고(second-instance → 펼치기) 아무것도 시작하지 않고 끝난다(whenReady 참고).
+// quit()만 부르면 whenReady의 시작 작업이 그대로 돌아, 꺼지기 전에 사이드카(와 worker)가 잠깐 뜬다(D-041 실측).
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 app.setAppUserModelId(APP_ID);
 app.on('second-instance', () => openAndExpand());
 process.stderr.on('error', () => {});   // 콘솔 없이 실행되면 쓰기가 실패할 수 있다. 사이드카는 계속 돈다.
@@ -363,6 +366,7 @@ ipcMain.on('window:set-interactive', (_e, interactive) => {
 });
 
 app.whenReady().then(() => {
+  if (!primary) return;   // 두 번째 실행: 사이드카·창·업데이트 확인·토스트 등록을 하지 않는다
   registerToastIdentity();
   startSidecar(); createWindow();
   updater.start();
