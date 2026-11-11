@@ -1,0 +1,98 @@
+# 릴리스: v*.*.* 태그 push(또는 수동 실행)로 Windows 설치본을 빌드해 GitHub Releases에 draft로 올린다.
+# 로컬 `npm run release`와 같은 빌드를 CI(Windows)에서 처음부터 재현한다. artifacts/는 gitignore라 사전 산출물부터 만든다.
+# 시크릿은 자동 GITHUB_TOKEN뿐이다(서명 없음). 릴리스 본문 작성과 공개(Publish release)는 GitHub 웹에서 수동으로 한다.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '빌드할 태그(예: v1.0.0). 비우면 실행한 브랜치의 현재 커밋을 빌드한다'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # NSIS 설치본과 PyInstaller 사이드카(exe)를 만들어야 해서 Windows에서만 빌드한다
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # 번들에 들어가는 Python이 THIRD-PARTY-NOTICES의 'Python 3.11.5'와 같도록 로컬 빌드와 같은 버전으로 고정한다
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11.5'
+
+      # electron-builder는 릴리스 태그를 package.json 버전(v<version>)으로 정하고 push된 태그와 비교하지 않는다
+      - name: Check tag matches package.json version
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $tag = if ($env:TAG_INPUT) { $env:TAG_INPUT } elseif ($env:REF_TYPE -eq 'tag') { $env:REF_NAME } else { '' }
+          if ($tag -and $tag -ne "v$version") { throw "Tag '$tag' does not match package.json version 'v$version'" }
+          Write-Output "Release v$version (tag: '$tag')"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # 사이드카 번들·설치본에 들어가는 FeatureProbe·MemoryScan·Mono.Cecil(nuget, 해시 검증)
+      - name: Prepare compatibility tools
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools/prepare-compatibility.ps1 -Python python
+
+      - name: Build auto-chest patcher
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools/auto_chest/build.ps1
+
+      # build-sidecar.ps1은 venv가 없을 때만 'py -3.11' 런처로 만든다. setup-python의 Python으로 미리 만들어 런처에 기대지 않는다
+      - name: Create sidecar build venv
+        run: python -m venv artifacts/sidecar-build/venv
+
+      - name: Build sidecar bundle
+        run: npm run build:sidecar
+
+      # 게임·Steam 없이 자식 프로세스·호환성 계약·도우미 도구·FMOD 제외를 확인한다. 실패하면 발행하지 않는다
+      - name: Sidecar self-test
+        run: '& ./artifacts/sidecar/cattalk-sidecar/cattalk-sidecar.exe --selftest'
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Build installer and publish draft release
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check draft release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 목록 API는 쓰기 권한 토큰에 draft도 돌려준다(태그 조회 API는 공개된 릴리스만)
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          $release = $releases | Where-Object { $_.tag_name -eq "v$version" } | Select-Object -First 1
+          if (-not $release) { throw "Release v$version not found" }
+          $assets = @($release.assets | ForEach-Object { $_.name })
+          $expected = "Cat-Talk-Setup-$version.exe", "Cat-Talk-Setup-$version.exe.blockmap", 'latest.yml'
+          $missing = @($expected | Where-Object { $assets -notcontains $_ })
+          if ($missing.Count) { throw "Missing assets: $($missing -join ', ')" }
+          if (@($assets | Where-Object { $_ -like '*.zip' }).Count) { throw "Unexpected zip asset: $($assets -join ', ')" }
+          Write-Output "v$version draft=$($release.draft) assets: $($assets -join ', ')"
