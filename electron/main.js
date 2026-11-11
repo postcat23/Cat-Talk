@@ -27,10 +27,14 @@ const MOVE_SETTLE_MS = 200;
 // side·heightPct·hideTaskbar·display({id,bounds}). 시작 시 디스크에서 읽고 바뀔 때마다 저장한다.
 const state = windowState.load();
 
-// dev(electron .)와 설치본이 같은 사용자 폴더를 쓰게 해 단일 실행 잠금을 공유한다. 설치본 기본값은 productName('Cat Talk') 폴더라
-// 그대로 두면 둘이 함께 켜져 게임에 사이드카가 둘 붙는다(D-030). 데이터 폴더(CatTalk-dev)도 공유한다.
-app.setPath('userData', path.join(app.getPath('appData'), 'cat-talk'));
-if (!app.requestSingleInstanceLock()) { app.quit(); }
+// dev(electron .)와 설치본이 같은 사용자 폴더를 쓰게 해 단일 실행 잠금을 공유한다. 기본값은 dev = package name('cat-talk'),
+// 설치본 = productName('Cat Talk') 폴더라 그대로 두면 둘이 함께 켜져 게임에 사이드카가 둘 붙는다(D-030).
+// 이름은 productName에 맞춘 %APPDATA%\Cat Talk(D-041. 전에는 cat-talk — 옮기지 않는다). 데이터 폴더(%LOCALAPPDATA%\CatTalk)도 공유한다.
+app.setPath('userData', path.join(app.getPath('appData'), 'Cat Talk'));
+// 잠금을 못 얻은 두 번째 실행은 첫 실행에 알리고(second-instance → 펼치기) 아무것도 시작하지 않고 끝난다(whenReady 참고).
+// quit()만 부르면 whenReady의 시작 작업이 그대로 돌아, 꺼지기 전에 사이드카(와 worker)가 잠깐 뜬다(D-041 실측).
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 app.setAppUserModelId(APP_ID);
 app.on('second-instance', () => openAndExpand());
 process.stderr.on('error', () => {});   // 콘솔 없이 실행되면 쓰기가 실패할 수 있다. 사이드카는 계속 돈다.
@@ -64,6 +68,8 @@ function startSidecar() {
   const child = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', DEV ? 'inherit' : 'pipe'],
     windowsHide: !DEV,
+    // 설정 DB(settings.sqlite3)가 창 상태·패처 백업과 같은 데이터 폴더에 생기도록 main이 정한 폴더를 넘긴다(D-041)
+    env: { ...process.env, CATTALK_DATA: windowState.dataDir() },
   });
   if (child.stderr) child.stderr.on('data', (chunk) => { try { process.stderr.write(chunk); } catch (e) { /* 콘솔 없음 */ } });
   sidecar = child;
@@ -360,6 +366,7 @@ ipcMain.on('window:set-interactive', (_e, interactive) => {
 });
 
 app.whenReady().then(() => {
+  if (!primary) return;   // 두 번째 실행: 사이드카·창·업데이트 확인·토스트 등록을 하지 않는다
   registerToastIdentity();
   startSidecar(); createWindow();
   updater.start();

@@ -7,8 +7,10 @@ const DEFAULTS = { side: 'right', heightPct: 100, hideTaskbar: false, display: n
 const HEIGHT_PCTS = [100, 70, 50];
 const SAVE_DELAY_MS = 300;
 
+// 데이터 폴더 %LOCALAPPDATA%\CatTalk(D-041. 전에는 CatTalk-dev — 옮기지 않는다). dev(electron .)와 설치본이 함께 쓴다.
+// 창 상태·패처 백업(auto_chest)·토스트 아이콘, 그리고 main이 CATTALK_DATA로 넘겨 사이드카가 쓰는 설정 DB(settings.sqlite3)가 여기 있다.
 function dataDir() {
-  return process.env.CATTALK_DATA || path.join(process.env.LOCALAPPDATA || require('os').homedir(), 'CatTalk-dev');
+  return process.env.CATTALK_DATA || path.join(process.env.LOCALAPPDATA || require('os').homedir(), 'CatTalk');
 }
 
 const file = () => path.join(dataDir(), 'window-state.json');

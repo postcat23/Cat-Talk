@@ -82,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - THIRD-PARTY-NOTICES에 사이드카 번들 구성요소(Python 3.11.5·OpenSSL·SQLite·VC++ 런타임·PyInstaller 등)를 추가하고 FMOD 설명 정정 — 개발 실행은 아바타를 읽을 때 FMOD를 불러오지만 설치본 번들에는 없음
 - 원본 복원 실패 문구에 다음 행동 안내 추가 — 패치 기능이 켜져 있을 때 '기능을 끄고 다시 시도', 알 수 없는 오류일 때 Steam '게임 파일 무결성 확인'으로 복구 가능
 - 코드 서명은 하지 않기로 결정(토이·소규모 배포) — README에 다운로드 링크 옆 보안 경고 안내와 '설치 안내'(SmartScreen [추가 정보] → [실행], '알 수 없는 게시자' 표시, 백신 오탐·스마트 앱 컨트롤 차단 가능성) 추가
+- `electron` — 데이터 폴더를 공개용 이름으로 정리: `%LOCALAPPDATA%\CatTalk-dev` → `%LOCALAPPDATA%\CatTalk`(설정 DB·창 상태·패처 백업·토스트 아이콘), Electron 사용자 폴더 `%APPDATA%\cat-talk` → `%APPDATA%\Cat Talk`(productName). dev와 설치본은 계속 같은 폴더·실행 잠금을 쓰고, 사이드카에는 main이 데이터 폴더를 넘김. 옛 폴더는 옮기지 않음(그 폴더의 설정·차단·닉네임은 새 폴더에 없음)
 
 ### Fixed
 
@@ -102,3 +103,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - `sidecar` — Steam 차단 감지는 관계값 5(Ignored, 비친구 '모든 대화 차단')만 사용. 1(Blocked)을 더했다가 되돌림 — deprecated이고 친구 요청 무시 직후의 일시 값일 수 있어 차단이 아닌데 잠깐 숨길 수 있음. 6(IgnoredFriend, 친구 차단)은 Steam 감지로 숨기지 않음(친구는 앱 내 차단으로 처리)
 - `renderer` — '모든 고양이 투명화'를 켜면 앱 채팅 말풍선 위 고양이와 HISTORY 새 메시지 미리보기 카드의 고양이까지 사라지던 문제 수정(투명화는 게임 고양이에만 적용)
 - `sidecar` — Steam에서 이미 '모든 대화 차단'한 사람이 로비에 들어오면 게임 고양이가 잠깐(판정 약 1초 + 게임 확인 0.5초) 보이던 문제 수정: 앱이 Steam 차단 목록 전체(관계값 5)를 1초마다 읽어 숨김 목록 파일에 미리 넣어 입장 순간부터 숨김. 원본 복원 제안은 앱 차단·Steam 차단이 하나도 없을 때만 뜸
+- `electron` — 앱이 이미 켜져 있을 때 한 번 더 실행하면, 꺼지기 전에 두 번째 사이드카가 잠깐 뜨던 문제 수정(잠금을 못 얻은 실행은 첫 실행에 알리기만 하고 아무것도 시작하지 않음)
