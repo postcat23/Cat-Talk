@@ -107,6 +107,9 @@ class Sidecar:
         self.incoming_count = 0   # 수락된 타인 메시지 누적 수. 렌더러가 증가를 보고 알림을 판단한다
         self.steam_hidden = set()   # Steam '모든 대화 차단'한 사람(D-033 2단계). 앱 차단 목록(service.blocked)과 별개
         self.steam_hidden_account = ""
+        # Steam '모든 대화 차단'한 사람 전체(worker 열거, D-040). 게임 고양이 숨김 목록에만 쓴다. None = 열거 실패(또는 아직 모름)
+        self.steam_ignored = None
+        self.steam_ignored_account = ""   # 전체 목록 응답(성공·실패)을 받은 계정
         self.hidden_pushed = None   # main에 마지막으로 알린 게임 고양이 숨김 목록(D-033 3단계). 이번 실행에서 아직 없으면 None
         self.worker = None
         self.closed = False
@@ -146,6 +149,8 @@ class Sidecar:
                     uri = event.get("avatar")
                     if png(uri):
                         self.default_avatar = (hashlib.sha1(uri.encode("ascii")).hexdigest()[:16], uri)
+                elif event.get("type") == "steam_ignored":
+                    self.update_steam_ignored(event)
                 elif event.get("type") == "result":
                     self.service.result(event["id"], event["status"])
             if self.worker and not self.worker.is_alive() and self.service.state.get("notice") != "worker_stopped":
@@ -244,26 +249,43 @@ class Sidecar:
             result[group] = {uid: {k: v for k, v in profile.items() if k != "steam_blocked"}
                              for uid, profile in result[group].items() if uid not in hidden}
 
-    def hidden_ids(self):
-        """게임 고양이 숨김 목록(D-033 3단계): (앱 차단 ∪ Steam 차단) SteamID64, 정렬. 판정이 덜 끝났으면 None.
+    def update_steam_ignored(self, event):
+        """worker가 열거한 Steam '모든 대화 차단' 전체 목록(D-040). ids가 None이면 열거 실패 — 멤버별 판정만 쓴다."""
+        account, ids = event.get("account"), event.get("ids")
+        if not isinstance(account, str):
+            return
+        self.steam_ignored_account = account
+        self.steam_ignored = (frozenset(i for i in ids if isinstance(i, str) and STEAM_ID64_TEXT.fullmatch(i))
+                              if isinstance(ids, list) else None)
 
-        현재 계정의 앱 차단 목록을 읽었고, 지금 로비 멤버(나 제외) 모두의 Steam 차단 판정(worker가 프로필에 싣는 steam_blocked)이
-        도착했을 때만 낸다. 판정 전에 내면 이미 숨긴 Steam 차단 멤버가 목록에서 잠깐 빠져 게임에서 다시 보인다.
-        계정이 없거나(게임 꺼짐·연결 대기) 차단 목록을 못 읽었으면 None — 파일을 비우지 않고 그대로 둔다.
+    def hidden_ids(self):
+        """게임 고양이 숨김 목록(D-033 3단계·D-040): (앱 차단 ∪ Steam 차단) SteamID64, 정렬. 판정이 덜 끝났으면 None.
+
+        Steam 차단 = worker가 열거한 전체 목록(steam_ignored) ∪ 지금 로비 멤버의 멤버별 판정(steam_hidden ∩ 멤버). 전체 목록 덕분에
+        아직 만나지 않은 차단자도 입장 전부터 파일에 있어 게임이 처음부터 숨긴다. 나간 멤버의 지난 판정은 보지 않는다 — 계속
+        차단이면 전체 목록에 있고, 방 밖에서 풀었으면 빠져야 한다(그래야 '목록이 빔' = 차단이 하나도 없음, 원본 복원 제안 D-038).
+        열거에 실패했으면(None) 종전대로 이번 실행의 멤버별 판정 전체(steam_hidden, 나간 멤버 유지)를 쓴다.
+
+        현재 계정의 앱 차단 목록을 읽었고, 이 계정의 전체 목록 응답(성공·실패)이 왔고, 지금 로비 멤버(나 제외) 모두의 멤버별 판정
+        (worker가 프로필에 싣는 steam_blocked)이 도착했을 때만 낸다. 그 전에 내면 이미 숨긴 차단자가 목록에서 잠깐 빠져 게임에서
+        다시 보인다. 계정이 없거나(게임 꺼짐·연결 대기) 차단 목록을 못 읽었으면 None — 파일을 비우지 않고 그대로 둔다.
         """
         if self.closed:
             return None
         state = self.service.state
         account = state.get("account", "")
         blocked = self.service.blocked
-        if not account or blocked is None or self.service.block_account != account or self.steam_hidden_account != account:
+        if (not account or blocked is None or self.service.block_account != account or self.steam_hidden_account != account
+                or self.steam_ignored_account != account):
             return None
         profiles = state.get("profiles") or {}
-        for uid in state.get("members") or []:
+        members = state.get("members") or []
+        for uid in members:
             profile = profiles.get(uid)
             if uid != account and not (isinstance(profile, dict) and "steam_blocked" in profile):
                 return None
-        return sorted(uid for uid in set(blocked) | self.steam_hidden if isinstance(uid, str) and STEAM_ID64_TEXT.fullmatch(uid))
+        steam = self.steam_hidden if self.steam_ignored is None else self.steam_ignored | (self.steam_hidden & set(members))
+        return sorted(uid for uid in set(blocked) | steam if isinstance(uid, str) and STEAM_ID64_TEXT.fullmatch(uid))
 
     def hidden_update(self):
         """main에 알릴 새 목록. 판정이 끝난 뒤 이번 실행의 첫 목록(앱 실행 때 1회)과, 그 뒤 바뀐 목록만 낸다. 아니면 None."""

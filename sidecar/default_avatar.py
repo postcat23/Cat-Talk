@@ -4,7 +4,7 @@
 upstream worker는 run_worker 안에서 `from .avatars import Avatars`를 호출 시점에 import하므로
 모듈 속성을 이 서브클래스로 바꿔 끼운다(upstream 파일은 수정하지 않는다).
 기본 스킨은 upstream worker와 같다: 장착 해제(-1) 슬롯은 CatLeft/CatRight, 모자 없음.
-run_worker_with_default는 Steam '모든 대화 차단' 표시 글루(steam_relationship, D-033)도 함께 끼운다.
+run_worker_with_default는 Steam '모든 대화 차단' 글루(steam_relationship — 멤버별 판정 D-033, 전체 목록 알림 D-040)도 함께 끼운다.
 """
 import queue
 import threading
@@ -46,5 +46,5 @@ def _with_default(base, events):
 
 def run_worker_with_default(commands, events, stop, read_only=False, render_avatars=True):
     avatars_module.Avatars = _with_default(avatars_module.Avatars, events)
-    install_steam_block()   # D-033 2단계: 멤버 프로필에 Steam '모든 대화 차단' 여부(steam_blocked)를 붙인다
+    install_steam_block(events)   # 멤버 프로필에 Steam '모든 대화 차단' 여부(D-033 2단계) + 차단한 사람 전체 목록 알림(D-040)
     run_worker(commands, events, stop, read_only, render_avatars)
