@@ -83,6 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 - 원본 복원 실패 문구에 다음 행동 안내 추가 — 패치 기능이 켜져 있을 때 '기능을 끄고 다시 시도', 알 수 없는 오류일 때 Steam '게임 파일 무결성 확인'으로 복구 가능
 - 코드 서명은 하지 않기로 결정(토이·소규모 배포) — README에 다운로드 링크 옆 보안 경고 안내와 '설치 안내'(SmartScreen [추가 정보] → [실행], '알 수 없는 게시자' 표시, 백신 오탐·스마트 앱 컨트롤 차단 가능성) 추가
 - `electron` — 데이터 폴더를 공개용 이름으로 정리: `%LOCALAPPDATA%\CatTalk-dev` → `%LOCALAPPDATA%\CatTalk`(설정 DB·창 상태·패처 백업·토스트 아이콘), Electron 사용자 폴더 `%APPDATA%\cat-talk` → `%APPDATA%\Cat Talk`(productName). dev와 설치본은 계속 같은 폴더·실행 잠금을 쓰고, 사이드카에는 main이 데이터 폴더를 넘김. 옛 폴더는 옮기지 않음(그 폴더의 설정·차단·닉네임은 새 폴더에 없음)
+- README를 처음 설치하는 사용자 중심으로 정리 — 기술 선택 근거·구조·기술 한계는 `docs/architecture.md`로, 설치·첫 사용·업데이트 안내는 `docs/installation.md`로 분리(공개 문서). 개인정보 문서의 '업데이트 확인을 끌 수 있다'를 실제대로(끄는 설정 없음) 정정
 
 ### Fixed
 

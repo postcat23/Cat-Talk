@@ -5,7 +5,7 @@
 ## 서명 방식
 
 <!-- sw:section id=signing-method source=- owner=user gate=no_placeholder -->
-**코드 서명을 하지 않는다(미서명 빌드).** 토이·소규모 배포에 서명 인증서의 정기 지출은 과하다고 판단했다(D-037). electron-builder에 서명 설정을 넣지 않는다(현상 유지). 대신 README '설치 안내'에서 다음을 사실대로 안내한다.
+**코드 서명을 하지 않는다(미서명 빌드).** 토이·소규모 배포에 서명 인증서의 정기 지출은 과하다고 판단했다(D-037). electron-builder에 서명 설정을 넣지 않는다(현상 유지). 대신 README '설치'(요약)와 [installation.md](installation.md)(상세)에서 다음을 사실대로 안내한다.
 
 - SmartScreen 경고([추가 정보] → [실행])와 '알 수 없는 게시자' 표시
 - 백신 오탐 가능성
