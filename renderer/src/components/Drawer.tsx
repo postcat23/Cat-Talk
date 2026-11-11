@@ -68,11 +68,13 @@ export default function Drawer() {
   };
   // 앱 업데이트(D-030): 내려받아 둔 업데이트를 [업데이트]로 적용(재시작)한다. 보내는 중이면 끝날 때까지 막고,
   // 쓰던 글이 있으면 대화 영역에 확인 카드를 띄우므로 드로어를 닫아 가리지 않게 한다.
+  // 상자 설치·원본 복원 진행 카드가 떠 있는 동안(결과 문구 포함)에도 막는다 — 재시작이 게임 패치 흐름을 끊지 않게(D-039)
   const update = useUpdate();
   const updateReady = update?.state === 'ready';
   const updateBadge = update ? UPDATE_BADGE[update.state] : undefined;
+  const updateBlocked = sending || !!chest?.progress;
   const startUpdate = () => {
-    if (!update || sending) return;
+    if (!update || updateBlocked) return;
     const draft = hasDraft();
     if (draft) dispatch({ type: 'closeOverlays' });
     update.request(draft);
@@ -139,7 +141,7 @@ export default function Drawer() {
         <div className={styles.urow}>
           {updateBadge && <span className={updateReady ? `${styles.ubadge} ${styles.avail}` : styles.ubadge}>{updateBadge}</span>}
           {APP_VERSION && <span className={styles.uver}>{APP_VERSION}</span>}
-          {updateReady && <button className={styles.upbtn} disabled={sending} onClick={startUpdate}>업데이트</button>}
+          {updateReady && <button className={styles.upbtn} disabled={updateBlocked} onClick={startUpdate}>업데이트</button>}
         </div>
       </div>
     </aside>

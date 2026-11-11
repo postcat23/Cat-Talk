@@ -2,7 +2,7 @@ import type { ReactionStack as Stack } from '../hooks/useReactionStack';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
 import { progressText, reapplyNotice, REINSTALL_NOTICE, RESTORE_NOTICE } from '../chat/autoChest';
-import { useUpdate, UPDATE_DRAFT_NOTICE } from '../hooks/useAppUpdate';
+import { updateReadyNotice, useUpdate, UPDATE_DRAFT_NOTICE } from '../hooks/useAppUpdate';
 import { displayName } from '../chat/model';
 import Cat from './Cat';
 import NoticeCard from './NoticeCard';
@@ -17,7 +17,7 @@ const TOAST_MS = 4000;         // upstream 토스트와 같은 시간
 // 대화 영역 위에 뜨는 카드 스택: 안내 카드(항상 맨 위) + 반응 카드(최신이 위).
 // key로 문구·회차가 바뀌면 카드를 새로 만들어, 닫았던 안내도 새 상태면 다시 보이게 한다.
 export default function ReactionStack({ stack }: { stack: Stack }) {
-  const { byId, notice, toast, sending, nicknames } = useChat();
+  const { byId, notice, toast, sending, hasDraft, nicknames } = useChat();
   const chest = useChest();
   const update = useUpdate();
   const install = chest?.progress;
@@ -35,8 +35,13 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
           종료·복원·재실행, [X]는 이 상태가 이어지는 동안 이번 실행에서 숨김 */}
       {chest?.needsRestore && !install && <NoticeCard key="restore" text={RESTORE_NOTICE}
         action={{ label: '원본 복원', onClick: () => void chest.restore() }} onClose={chest.dismissRestore} />}
+      {/* 앱 업데이트 준비됨(D-039): 드로어를 열지 않아도 알린다. [업데이트]는 드로어와 같은 흐름 — 보내는 중이면 끝날 때까지 막고,
+          쓰던 글이 있으면 아래 확인 카드로 바뀐다(취소하면 돌아온다). [X]는 이번 실행 동안 숨김(드로어 '앱 업데이트'는 그대로).
+          상자 설치·원본 복원 진행 카드가 떠 있는 동안(결과 문구 포함)에는 재시작이 그 흐름을 끊지 않게 확인 카드까지 숨긴다 */}
+      {update?.readyNotice && !install && <NoticeCard key="update-ready" text={updateReadyNotice(update.version)}
+        action={{ label: '업데이트', onClick: () => { if (!sending) update.request(hasDraft()); } }} onClose={update.dismissReady} />}
       {/* 앱 업데이트 재시작 전 확인(D-030): 쓰던 글은 앱을 끄면 사라진다. 보내는 중이면 끝날 때까지 적용하지 않는다 */}
-      {update?.confirming && <NoticeCard key="update-confirm" text={UPDATE_DRAFT_NOTICE}
+      {update?.confirming && !install && <NoticeCard key="update-confirm" text={UPDATE_DRAFT_NOTICE}
         action={{ label: '업데이트', onClick: () => { if (!sending) update.confirm(); } }} onClose={update.cancel} />}
       {toast && <NoticeCard key={toast.id} text={toast.text} showMs={TOAST_MS} />}
       {notice && <NoticeCard key={notice} text={notice} />}
