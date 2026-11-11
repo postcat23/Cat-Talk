@@ -136,7 +136,7 @@
 | `settings` | theme/collapsed/language/reactions_enabled/알림 + Cat-Talk 드로어 설정(`chat_opacity`·`presence_notices`·`clear_cats`·`auto_open_chest`) | **영속(디스크, `settings.sqlite3`)** |
 | `blocked_users` | 계정별 채팅 차단 목록 | **테이블은 안 씀** — `blocked_users()`·`set_blocked()`를 `settings`의 `blocked:<account>` 키(`{steam_id: name}`)로 돌려 **영속**(D-033). 같은 settings에 닉네임 `nicknames:<account>`(D-032)도 있다 |
 
-**설정 저장 역할 분리:** 앱 설정은 `settings.sqlite3`(사이드카), 창 배치(도크·높이·작업표시줄 숨김·모니터)는 `window-state.json`(Electron main)에 둔다. 창 배치는 창 생성 전에 필요해 사이드카를 기다릴 수 없고, 두 저장소가 같은 키를 갖지 않는다. 렌더러는 시작 시 첫 `view`로 앱 설정을 1회 받고, 이후 변경은 `setting`으로 저장만 한다.
+**설정 저장 역할 분리:** 앱 설정은 `settings.sqlite3`(사이드카), 창 배치(도크·높이·작업표시줄 숨김·모니터)는 `window-state.json`(Electron main)에 둔다. 창 배치는 창 생성 전에 필요해 사이드카를 기다릴 수 없고, 두 저장소가 같은 키를 갖지 않는다. **폴더(D-041):** 둘 다 데이터 폴더 `%LOCALAPPDATA%\CatTalk`에 있다(패처 백업 `auto_chest\`·토스트 아이콘도 같은 곳). main이 폴더를 정해 사이드카 실행 환경 `CATTALK_DATA`로 넘기고, 사이드카는 그 값이 없을 때(단독 실행)만 같은 기본값을 쓴다. Electron 사용자 폴더는 `%APPDATA%\Cat Talk`(productName)로 고정해 dev와 설치본이 단일 실행 잠금을 공유한다. 옛 폴더(`CatTalk-dev`·`cat-talk`)는 옮기지 않는다. 렌더러는 시작 시 첫 `view`로 앱 설정을 1회 받고, 이후 변경은 `setting`으로 저장만 한다.
 
 **구현: `sidecar/volatile_store.py`의 `VolatileStore(Store)` 글루.** upstream `Store`를 상속해 부모 연결을 `:memory:`로 연다 — 7개 테이블과 `timeline` 뷰가 전부 메모리 DB에 생기고(빈 `blocked_users` 포함), FK(messages→sessions, receipts→messages, presence_events→sessions)도 그 안에서 성립한다. `setting()`만 별도 디스크 연결(`settings.sqlite3`)로 돌리고, 차단 목록 두 메서드도 그 settings를 쓴다(D-033). `message_page()`는 사이드카가 채우는 `hidden_senders`(Steam 차단, D-033 2단계)를 앱 차단(`blocked`)에 합쳐 조회한다(`blocked`가 None이면 그대로). `store.py`는 수정하지 않는다(D-009) — upstream 스키마·메서드가 바뀌면 이 글루를 함께 점검한다.
 

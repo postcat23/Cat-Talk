@@ -90,10 +90,12 @@ STEAM_ID64_TEXT = re.compile(r"[1-9][0-9]{0,19}")
 
 
 def data_dir():
+    """데이터 폴더. Electron main이 CATTALK_DATA로 넘긴다(창 상태·패처 백업과 같은 폴더, D-041).
+    없으면(사이드카 단독 실행) main과 같은 기본값 %LOCALAPPDATA%\\CatTalk — 전에는 CatTalk-dev였고 옮기지 않는다."""
     configured = os.environ.get("CATTALK_DATA")
     if configured:
         return Path(configured)
-    return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "CatTalk-dev"
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "CatTalk"
 
 
 class Sidecar:

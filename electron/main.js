@@ -27,9 +27,10 @@ const MOVE_SETTLE_MS = 200;
 // side·heightPct·hideTaskbar·display({id,bounds}). 시작 시 디스크에서 읽고 바뀔 때마다 저장한다.
 const state = windowState.load();
 
-// dev(electron .)와 설치본이 같은 사용자 폴더를 쓰게 해 단일 실행 잠금을 공유한다. 설치본 기본값은 productName('Cat Talk') 폴더라
-// 그대로 두면 둘이 함께 켜져 게임에 사이드카가 둘 붙는다(D-030). 데이터 폴더(CatTalk-dev)도 공유한다.
-app.setPath('userData', path.join(app.getPath('appData'), 'cat-talk'));
+// dev(electron .)와 설치본이 같은 사용자 폴더를 쓰게 해 단일 실행 잠금을 공유한다. 기본값은 dev = package name('cat-talk'),
+// 설치본 = productName('Cat Talk') 폴더라 그대로 두면 둘이 함께 켜져 게임에 사이드카가 둘 붙는다(D-030).
+// 이름은 productName에 맞춘 %APPDATA%\Cat Talk(D-041. 전에는 cat-talk — 옮기지 않는다). 데이터 폴더(%LOCALAPPDATA%\CatTalk)도 공유한다.
+app.setPath('userData', path.join(app.getPath('appData'), 'Cat Talk'));
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
 app.on('second-instance', () => openAndExpand());
@@ -64,6 +65,8 @@ function startSidecar() {
   const child = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', DEV ? 'inherit' : 'pipe'],
     windowsHide: !DEV,
+    // 설정 DB(settings.sqlite3)가 창 상태·패처 백업과 같은 데이터 폴더에 생기도록 main이 정한 폴더를 넘긴다(D-041)
+    env: { ...process.env, CATTALK_DATA: windowState.dataDir() },
   });
   if (child.stderr) child.stderr.on('data', (chunk) => { try { process.stderr.write(chunk); } catch (e) { /* 콘솔 없음 */ } });
   sidecar = child;
