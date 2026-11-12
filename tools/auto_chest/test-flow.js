@@ -1,8 +1,9 @@
-// 상자 자동 오픈·투명화·차단 멤버 고양이 숨김 흐름 검증(D-019·D-028·D-033 3단계): 실게임 없이 가짜 게임 폴더 + DLL 사본 + 실제 패처로 돌린다.
+// 상자 자동 오픈·투명화·차단 멤버 고양이 숨김 흐름 검증(D-019·D-028·D-033 3단계·D-046·D-047): 실게임 없이 가짜 게임 폴더 + DLL 사본 + 실제 패처로 돌린다.
 // 게임 실행·종료·Steam 상태는 가짜 함수다. 실게임 폴더·프로세스·Steam을 건드리지 않는다.
-// 사용: node tools/auto_chest/test-flow.js <Assembly-CSharp.dll 사본> <게임 Managed 폴더 사본> <빈 작업 폴더> [v1 패처 커밋] [v2 패처 커밋]
+// 사용: node tools/auto_chest/test-flow.js <Assembly-CSharp.dll 사본> <게임 Managed 폴더 사본> <빈 작업 폴더> [v1 패처 커밋] [v2 패처 커밋] [v3 패처 커밋]
 // Managed 사본은 패처의 참조 해석 검증용으로 가짜 게임 폴더의 Managed에 함께 넣는다.
-// 이전 패치 세트는 그 시점 패처를 작업 폴더에 빌드해 만든다(test-copy.ps1과 같은 방식): v1(자동 오픈만) 3b89d14, v2(+ 투명화) 73f8de5.
+// 이전 패치 세트는 그 시점 패처를 작업 폴더에 빌드해 만든다(test-copy.ps1과 같은 방식): v1(자동 오픈만) 3b89d14, v2(+ 투명화) 73f8de5,
+// v3(+ 차단 멤버 고양이 숨김) 69e21e9. 현재 세트는 v5(+ 투명화 중 획득 팝업 숨김 D-046, 투명화 루트 후크 D-047)다.
 // 사전 점검의 연결 호환성 지문은 실제 업스트림 FeatureProbe·계약으로 본다(선행: tools/prepare-compatibility.ps1).
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +11,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { createAutoChest, FLAG_NAME, TRANSPARENT_FLAG_NAME, HIDDEN_NAME } = require('../../electron/auto-chest');
 
-const [copy, managedRefs, work, legacyCommit = '3b89d14', v2Commit = '73f8de5'] = process.argv.slice(2);
+const [copy, managedRefs, work, legacyCommit = '3b89d14', v2Commit = '73f8de5', v3Commit = '69e21e9'] = process.argv.slice(2);
 if (!copy || !managedRefs || !work) { console.error('usage: test-flow.js <copy> <managed copy> <work>'); process.exit(2); }
 if (/\\BongoCat_Data\\Managed(\\|$)/i.test(path.resolve(copy)) || /\\BongoCat_Data\\Managed(\\|$)/i.test(path.resolve(managedRefs))) { console.error('use copies outside the game folder'); process.exit(2); }
 const refs = fs.readdirSync(managedRefs).filter((n) => /\.dll$/i.test(n) && n !== 'Assembly-CSharp.dll');
@@ -117,6 +118,11 @@ function makeV1(legacy, w) {
 function makeV2(legacy2, w) {
   const out = path.join(path.dirname(w.data), 'v2.dll');
   execFileSync(legacy2, ['patch', w.dll, out, w.flag, w.managed]);
+  fs.copyFileSync(out, w.dll);
+}
+function makeV3(legacy3, w) {   // 1.0.0 앱이 설치한 세트(상자 + 투명화 + 차단 멤버 숨김)
+  const out = path.join(path.dirname(w.data), 'v3.dll');
+  execFileSync(legacy3, ['patch', w.dll, out, w.flag, w.managed]);
   fs.copyFileSync(out, w.dll);
 }
 
@@ -265,7 +271,7 @@ function makeV2(legacy2, w) {
   st = await w.chest.status(true);
   check('16c 재적용(둘 다) -> 두 플래그', r.ok && st.state === 'on' && st.transparent === 'on', JSON.stringify(st));
 
-  // 이전 패치 세트(v1, 자동 오픈만) → v3
+  // 이전 패치 세트(v1, 자동 오픈만) → v5
   const legacy = buildLegacy();
   w = world('v1t', { running: true });
   execFileSync(patcherExe, ['backup', w.dll, path.join(w.data, 'auto_chest', 'backup')]);   // v1 설치 때 만들어진 원본 백업
@@ -274,24 +280,24 @@ function makeV2(legacy2, w) {
   check('17 v1 + 설정 ON -> 재적용 필요(outdated)', (await w.chest.status(true)).state === 'needs_reapply');
   r = await w.chest.enable('transparent');
   st = await w.chest.status(true);
-  check('17b v1에서 투명화 켜기 -> 설치 흐름으로 v3, 투명화 켜짐, 자동 오픈 플래그 유지', r.ok && w.log.includes('launch') && st.state === 'on' && st.transparent === 'on', JSON.stringify(r) + ' ' + JSON.stringify(st));
+  check('17b v1에서 투명화 켜기 -> 설치 흐름으로 v5, 투명화 켜짐, 자동 오픈 플래그 유지', r.ok && w.log.includes('launch') && st.state === 'on' && st.transparent === 'on', JSON.stringify(r) + ' ' + JSON.stringify(st));
   check('17c 백업은 원본(v1 아님)', sha(path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig')) === origSha);
 
   w = world('v1r');
-  await w.chest.enable();   // 직접 설치한 v3 바이트를 기준으로 삼는다(백업도 여기서 생긴다)
-  const v3sha = sha(w.dll);
+  await w.chest.enable();   // 직접 설치한 v5 바이트를 기준으로 삼는다(백업도 여기서 생긴다)
+  const v4sha = sha(w.dll);
   fs.copyFileSync(copy, w.dll);
   makeV1(legacy, w);
   w.log.length = 0;
   r = await w.chest.reapply(['chest']);
-  check('17d v1 + 자동 오픈만 켜짐 -> 토스트 재적용으로 v3(직접 설치와 같은 바이트), 투명화 플래그 없음',
-    r.ok && sha(w.dll) === v3sha && fs.existsSync(w.flag) && !fs.existsSync(w.tflag), JSON.stringify(r));
+  check('17d v1 + 자동 오픈만 켜짐 -> 토스트 재적용으로 v5(직접 설치와 같은 바이트), 투명화 플래그 없음',
+    r.ok && sha(w.dll) === v4sha && fs.existsSync(w.flag) && !fs.existsSync(w.tflag), JSON.stringify(r));
 
-  // ---- 이전 패치 세트(v2, 자동 오픈 + 투명화) → v3(D-033 3단계): v1→v2 때처럼 '재적용 필요' → 게임 한 번 재시작 ----
+  // ---- 이전 패치 세트(v2, 자동 오픈 + 투명화) → v5: v1→v2 때처럼 '재적용 필요' → 게임 한 번 재시작 ----
   const legacy2 = buildAt(v2Commit, 'legacy2');
   w = world('v2t', { running: true });
-  await w.chest.enable('transparent');   // 같은 세계(같은 플래그 리터럴)에서 직접 설치한 v3 바이트를 기준으로 삼는다(원본 백업도 여기서)
-  const directV3 = sha(w.dll);
+  await w.chest.enable('transparent');   // 같은 세계(같은 플래그 리터럴)에서 직접 설치한 v5 바이트를 기준으로 삼는다(원본 백업도 여기서)
+  const directV4 = sha(w.dll);
   fs.copyFileSync(copy, w.dll);
   makeV2(legacy2, w);   // 투명화를 켜 둔 v2 설치본(플래그는 위에서 켜짐)
   const v2bytes = sha(w.dll);
@@ -300,13 +306,35 @@ function makeV2(legacy2, w) {
   w.log.length = 0; w.notes.length = 0;
   r = await w.chest.reapply(['transparent']);
   st = await w.chest.status(true);
-  check('22b [재시작] -> 카운트다운 없이 게임 한 번 재시작해 v3, 투명화 그대로 켜짐',
+  check('22b [재시작] -> 카운트다운 없이 게임 한 번 재시작해 v5, 투명화 그대로 켜짐',
     r.ok && !w.notes.some((n) => n.phase === 'countdown') && w.log.filter((x) => x === 'launch').length === 1 && st.transparent === 'on' && st.state === 'off',
     JSON.stringify(r) + ' ' + w.log.join(',') + ' ' + JSON.stringify(st));
-  check('22c 결과는 원본에서 직접 설치한 v3와 같은 바이트', sha(w.dll) === directV3 && directV3 !== v2bytes);
+  check('22c 결과는 원본에서 직접 설치한 v5와 같은 바이트', sha(w.dll) === directV4 && directV4 !== v2bytes);
   check('22d 백업은 원본(v2 아님)', sha(path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig')) === origSha);
 
-  // ---- 차단 멤버 고양이 숨김 목록 파일(D-033 3단계): 세트 3 설치 상태에서만 통째로 쓴다 ----
+  // ---- 이전 패치 세트(v3 = 1.0.0 앱이 설치한 세트) → v5(D-046·D-047): 같은 '재적용 필요' → 게임 한 번 재시작. 숨김 목록은 재적용 뒤 다시 쓴다 ----
+  const legacy3 = buildAt(v3Commit, 'legacy3');
+  w = world('v3t', { running: true });
+  await w.chest.enable('transparent');   // 같은 세계에서 직접 설치한 v5 바이트(원본 백업도 여기서)
+  const directV4b = sha(w.dll);
+  fs.copyFileSync(copy, w.dll);
+  makeV3(legacy3, w);   // 투명화를 켜 둔 v3 설치본
+  const v3bytes = sha(w.dll);
+  st = await w.chest.status(true);
+  check('22e v3 + 설정 ON -> 재적용 필요(outdated)', st.state === 'needs_reapply' && st.transparent === 'needs_reapply', JSON.stringify(st));
+  r = await w.chest.setHidden(['76561198000000021']);
+  check('22f v3 설치본(재적용 전) -> 숨김 목록 파일 안 씀(이전 세트)', r.ok === false && r.reason === 'needs_reapply' && !fs.existsSync(w.hidden), JSON.stringify(r));
+  w.log.length = 0; w.notes.length = 0;
+  r = await w.chest.reapply(['transparent']);
+  st = await w.chest.status(true);
+  check('22g [재시작] -> 카운트다운 없이 게임 한 번 재시작해 v5, 투명화 그대로 켜짐',
+    r.ok && !w.notes.some((n) => n.phase === 'countdown') && w.log.filter((x) => x === 'launch').length === 1 && st.transparent === 'on' && st.state === 'off',
+    JSON.stringify(r) + ' ' + w.log.join(',') + ' ' + JSON.stringify(st));
+  check('22h 결과는 원본에서 직접 설치한 v5와 같은 바이트', sha(w.dll) === directV4b && directV4b !== v3bytes);
+  check('22i 백업은 원본(v3 아님)', sha(path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig')) === origSha);
+  check('22j 재적용으로 v5가 되면 마지막 숨김 목록을 쓴다', fs.existsSync(w.hidden) && fs.readFileSync(w.hidden, 'ascii') === '76561198000000021\n');
+
+  // ---- 차단 멤버 고양이 숨김 목록 파일(D-033 3단계): 현재 세트 설치 상태에서만 통째로 쓴다 ----
   const ID1 = '76561198000000011', ID2 = '76561198000000012';
   const hiddenOf = (x) => (fs.existsSync(x.hidden) ? fs.readFileSync(x.hidden, 'ascii') : null);
   w = world('hid', { running: true });
@@ -330,7 +358,7 @@ function makeV2(legacy2, w) {
   r = await w.chest.setHidden([ID1]);
   check('23i 패치 소실(clean) -> 쓰지 않음(파일은 이전 그대로)', r.ok === false && hiddenOf(w) === `${ID1}\n${ID2}\n`, JSON.stringify(r));
   r = await w.chest.reapply(['transparent']);
-  check('23j 재적용으로 v3가 되면 마지막 목록을 쓴다', r.ok && hiddenOf(w) === `${ID1}\n`, JSON.stringify(r) + ' ' + JSON.stringify(hiddenOf(w)));
+  check('23j 재적용으로 v5가 되면 마지막 목록을 쓴다', r.ok && hiddenOf(w) === `${ID1}\n`, JSON.stringify(r) + ' ' + JSON.stringify(hiddenOf(w)));
 
   // 교체 실패(게임이 마침 읽는 중 등): 같은 목록으로 POLL_MS 뒤 다시 쓴다
   fs.rmSync(w.hidden, { force: true });

@@ -1,4 +1,4 @@
-// 패처 구조 검증용 변형 사본 생성기(D-028, D-033 3단계). test-copy.ps1이 작업 폴더에서만 빌드·실행한다. 게임 어셈블리를 로드·실행하지 않는다.
+// 패처 구조 검증용 변형 사본 생성기(D-028, D-033 3단계, D-046, D-047). test-copy.ps1이 작업 폴더에서만 빌드·실행한다. 게임 어셈블리를 로드·실행하지 않는다.
 // 사용: TestMutate <in> <out> <변형>. 변형은 아래 switch 참고. 산출물은 패처가 거부해야 하는 어셈블리다.
 // strip-set-alpha는 게임 참조 어셈블리(UnityEngine.UIModule.dll) 사본을, strip-readalltext는 mscorlib.dll 사본을 받는다.
 using System;
@@ -127,6 +127,58 @@ static class TestMutate {
                 body.Last(i => i.OpCode == OpCodes.Ldc_I4_0).OpCode = OpCodes.Ldc_I4_1;
                 break;
             }
+            // ---- 획득 팝업 게이트(D-046, 세트 4) ----
+            case "no-popup": Method(m, "NewItemPopup", "ShowPopup").Name = "Renamed"; break;   // 원본: 대상 메서드 없음 → 거부
+            case "popup-shape": {   // 원본: 합류점의 "if (!gameObject) return;"이 없음(게임 업데이트 가정) → 거부
+                var body = Method(m, "NewItemPopup", "ShowPopup").Body.Instructions;
+                var send = body.Single(i => i.Operand is MethodReference && ((MethodReference)i.Operand).Name == "SendReceivedItem");
+                send.Next.Next.Next.Next.Next.OpCode = OpCodes.Nop;   // 합류점 + 4의 ret
+                break;
+            }
+            case "partial-popup": StateToOther(m, setting, Method(m, "NewItemPopup", "ShowPopup")); break;   // v4: 게이트만 없음 → 모두 거부
+            case "wrong-popup-target": {   // v4: 게이트가 ret이 아니라 바로 다음 명령으로 간다(마커는 그대로) → verify만 거부
+                var body = Method(m, "NewItemPopup", "ShowPopup").Body.Instructions;
+                var marker = body.Single(i => i.OpCode == OpCodes.Ldsfld && ((FieldReference)i.Operand).Name == "CatTalkTransparent");
+                marker.Next.Operand = marker.Next.Next;
+                break;
+            }
+            case "popup-skip-gate": {   // v4: 전송 분기가 게이트를 건너뛰고 원래 합류점으로 바로 간다 → verify만 거부
+                var body = Method(m, "NewItemPopup", "ShowPopup").Body.Instructions;
+                var marker = body.Single(i => i.OpCode == OpCodes.Ldsfld && ((FieldReference)i.Operand).Name == "CatTalkTransparent");
+                body.Single(i => i.Operand == marker).Operand = marker.Next.Next;
+                break;
+            }
+            // ---- 투명화 루트 후크(D-047, 세트 5) ----
+            case "root-smooth-targets": {   // 원본: 게임 목표 알파(켬)가 0 — '목표 0 = 투명화' 판정이 깨지므로 거부
+                var body = Method(m, "TranslucentOnHover", "SetTranslucentSmooth").Body.Instructions;
+                body.Single(i => i.OpCode == OpCodes.Ldc_R4 && Math.Abs((float)i.Operand - 0.1f) < 0.001f).Operand = 0f;
+                break;
+            }
+            case "no-toggle-setactive": Method(m, "ToggleGameObject", "SetActive").Name = "Renamed"; break;   // 원본: 메뉴 닫기 경로 없음 → 거부
+            case "partial-root-field": hover.Fields.Single(f => f.Name == "CatTalkRoot").Name = "Renamed"; break;   // v5: 루트 필드만 없음 → 모두 거부
+            case "partial-root-close": Method(m, "EmoteDonut", "CatTalkCloseMenu").Name = "Renamed"; break;        // v5: 메뉴 닫기만 없음 → 모두 거부
+            case "wrong-root-alpha": {   // v5: 루트 알파가 반대(투명화 중 1, 평소 0) → verify만 거부
+                var body = Method(m, "TranslucentOnHover", "SetTranslucentSmooth").Body.Instructions;
+                body.Single(i => i.OpCode == OpCodes.Ldc_I4_0 && i.Previous.OpCode == OpCodes.Ceq && i.Next.OpCode == OpCodes.Ceq).OpCode = OpCodes.Ldc_I4_1;
+                break;
+            }
+            case "wrong-root-target": {   // v5: 루트 그룹을 내 고양이가 아니라 로비 고양이(_alpha가 루트 자신)에 붙임 → verify만 거부
+                var body = Method(m, "TranslucentOnHover", "Start").Body.Instructions;
+                body.Single(i => i.OpCode == OpCodes.Call && ((MethodReference)i.Operand).Name == "op_Equality").Next.OpCode = OpCodes.Brfalse_S;
+                break;
+            }
+            case "wrong-close-menu": {   // v5: 메뉴를 닫지 않고 연다 → verify만 거부
+                var body = Method(m, "EmoteDonut", "CatTalkCloseMenu").Body.Instructions;
+                body.Single(i => i.OpCode == OpCodes.Callvirt && ((MethodReference)i.Operand).DeclaringType.Name == "ToggleGameObject").Previous.OpCode = OpCodes.Ldc_I4_1;
+                break;
+            }
+            case "root-skip": {   // v5: 투명화 블록의 '플래그 없음' 분기가 루트 블록을 건너뜀(끌 때 루트 알파가 1로 안 돌아옴) → verify만 거부
+                var body = Method(m, "TranslucentOnHover", "SetTranslucentSmooth").Body.Instructions;
+                var exists = body.Single(i => i.Operand is MethodReference && ((MethodReference)i.Operand).Name == "Exists");
+                var close = body.Single(i => i.Operand is MethodReference && ((MethodReference)i.Operand).Name == "CatTalkCloseMenu");
+                exists.Next.Operand = close.Next;
+                break;
+            }
             case "no-hover-type": hover.Name = "Renamed"; break;
             case "no-smooth": Method(m, "TranslucentOnHover", "SetTranslucentSmooth").Name = "Renamed"; break;
             case "no-update": Method(m, "TranslucentOnHoverSetting", "Update").Name = "Renamed"; break;
@@ -184,7 +236,7 @@ static class TestMutate {
             }
             case "wrong-alpha": {   // 투명값만 틀어진 블록(마커는 그대로)
                 var body = Method(m, "TranslucentOnHover", "SetTranslucentSmooth").Body.Instructions;
-                body.Single(i => i.OpCode == OpCodes.Ldc_R4 && (float)i.Operand == 0f).Operand = 0.5f;
+                body.Single(i => i.OpCode == OpCodes.Ldc_R4 && (float)i.Operand == 0f && i.Next.OpCode == OpCodes.Stloc_0).Operand = 0.5f;
                 break;
             }
             case "wrong-poll": {    // 폴링 주기만 틀어진 블록
