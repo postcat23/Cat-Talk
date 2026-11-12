@@ -214,19 +214,36 @@ Cat-Talk main 추가 코드: `steam_trade_failed`(교환 요청 URI 형식 재�
 - `phase`: `checking`·`countdown`·`cancelled`·`stopping_worker`·`closing_game`·`patching`·`restoring`·`launching`·`verifying`·`done`·`failed`.
 - 설치 순서: 구조 판정(패처 규약 포함) → 사전 점검(별도 파일에 패치·verify, 재적용이면 원본 백업 SHA도, Cat Talk 연결 호환성 지문이 원본과 같은지) → 카운트다운(켜기만) → 사이드카(worker) 종료 → 게임 종료 → Steam 해제 대기 → 백업(clean일 때만) → 패치·verify → 교체·재검증 → Steam 재실행 → 기동 확인 → 플래그 생성 → 사이드카 재시작. 사전 점검에 실패하면 worker·게임을 건드리지 않고 `failed`(`incompatible`·`preflight_failed`)로 끝난다. 교체 후 실패하면 백업으로 복원한다.
 - 설정 저장은 기존 `setting` 액션(`auto_open_chest`)을 그대로 쓴다. 렌더러가 결과가 `ok`일 때만 저장한다.
-- 패치 세트 버전(패처 `inspect`의 `patchVersion`, 앱 기대값 `PATCH_VERSION`): 1 = 상자 자동 오픈, 2 = + 투명화(D-028), 3 = + 차단 멤버 고양이 숨김(D-033 3단계). 세트는 누적이고, 앱 기대값보다 낮은 설치본은 `needs_reapply`(`reason: outdated`)다 — 재적용 한 번(게임 재시작)으로 올라간다. 인자 규약(`cli`)은 2 그대로다.
+- 패치 세트 버전(패처 `inspect`의 `patchVersion`, 앱 기대값 `PATCH_VERSION`): 1 = 상자 자동 오픈, 2 = + 투명화(D-028), 3 = + 차단 멤버 고양이 숨김(D-033 3단계), 4 = + 투명화 중 내 고양이 획득 팝업 숨김(D-046), 5 = + 투명화 루트 후크(D-047). 세트는 누적이고, 앱 기대값보다 낮은 설치본은 `needs_reapply`(`reason: outdated`)다 — 재적용 한 번(게임 재시작)으로 올라간다. 인자 규약(`cli`)은 2 그대로다.
+
+### 투명화 중 획득 팝업 숨김 (D-046, 패치 세트 4)
+
+- **배경**: 투명화는 고양이마다 하나인 `TranslucentOnHover`의 CanvasGroup 알파를 0으로 만든다. 내 고양이의 획득 팝업(`MainCat/NewItemPopup`)은 그 CanvasGroup(`MainCat/DraggableFrame`) 밖의 형제라 투명화 중에도 보였다(씬 실측). 다른 참여자 고양이의 팝업(`Cat_Multiplayer/NewItemPopup`)은 그 고양이 CanvasGroup 아래라 이미 함께 숨는다(정적 분석 — 실게임 확인 전).
+- **게임 훅**: `NewItemPopup.ShowPopup`에서 멀티플레이 전송(`SteamMultiplayer.SendReceivedItem`, 로비 채널 5) 다음, 표시(큐에 넣기·켜기) 앞에 `if (CatTalkTransparent) return;`(2명령, 투명화 세트의 켜짐 상태 필드를 읽는다). 전송 분기도 게이트를 지난다.
+- **동작**: 투명화 플래그(`CatTalkTransparent.on`)를 그대로 쓴다 — 별도 파일·설정 없음. 내 고양이의 획득 팝업 전부(상자·교환·프로모·PawPass 등)가 숨고, 다른 참여자 화면의 내 획득 팝업은 그대로다(전송은 게이트 앞). 투명화 중 받은 아이템은 큐에 넣지 않아 끈 뒤 몰아 뜨지 않는다. 켜는 순간 이미 떠 있던 팝업은 끝까지(약 3초) 보인다.
+- **연결 호환성 지문**: `ShowPopup`·`SendReceivedItem`은 지문 범위 밖이다(업스트림 `FeatureProbe` 대상 메서드 실측). 전송·수신 경로(`SteamMultiplayer.SendMessageToLobby`, 로비 메시지 버스)는 chat·reactions 지문 범위라 건드리지 않는다.
+
+### 투명화 루트 후크 (D-047, 패치 세트 5)
+
+- **배경**: 내 고양이 투명화 알파는 게임 호버 반투명의 그룹(`MainCat/DraggableFrame`)에만 걸려, 그 형제(잠수 Zzz·하트·선물 이모트 파티클, 오류 창, 키 후킹 경고, `CatPopUps`, 튜토리얼, 이미 뜬 말풍선, 열린 게임 메뉴)가 보였다(씬 전수 실측). 로비 고양이는 그룹이 루트(`Cat_Multiplayer`)라 전부 숨는다.
+- **게임 훅**:
+  - `TranslucentOnHover.Start`(투명화 블록 앞): `_alpha`가 자기 오브젝트가 아니면(= 내 고양이) 루트(`MainCat`)에 CanvasGroup을 하나 붙인다(`CatTalkRoot`, 직렬화하지 않는 private 필드).
+  - `SetTranslucentSmooth`(투명화 블록 다음): 루트 알파 = 목표 알파가 0이면 0, 아니면 1. 게임 목표는 상수(0.1·1)라 0은 투명화 블록만 만든다 — 게임 호버 반투명은 루트에 영향이 없다. 0이면 `EmoteDonut.CatTalkCloseMenu()`로 열린 게임 메뉴(`MenuNew`)를 게임 닫기 버튼과 같은 `ToggleGameObject.SetActive(false)` 경로로 닫는다(메뉴는 클릭 예외라 루트 알파만 내리면 안 보이는데 클릭되는 영역이 된다).
+- **그대로 두는 것**: 도넛·말풍선 게이트와 호버 두 곳(커서 거리·Enter 입력으로 보이지 않는 UI가 열리는 것을 막는다), 획득 팝업 게이트(투명화 중 받은 아이템의 큐 적체 방지). 클릭 통과는 종전 레이어 경로다(런타임에 `CanvasGroup.blocksRaycasts`·`interactable` setter가 스트리핑돼 없다).
+- **범위 밖**: `MainCat` 밖의 창(이벤트 달력 등 메뉴에서 직접 여는 창).
+- **연결 호환성 지문**: `TranslucentOnHover`·`EmoteDonut`·`ToggleGameObject`는 지문 범위 밖이다(업스트림 `FeatureProbe` 대상 메서드 실측). 더하는 것은 `TranslucentOnHover` 인스턴스 필드 하나, `EmoteDonut` 정적 메서드 하나다.
 
 ### 차단 멤버 고양이 숨김 목록 (D-033 3단계·D-040)
 
 - **파일**: 게임 폴더(플래그 옆) `CatTalkHidden.ids`. 한 줄에 SteamID64 하나(십진, 줄마다 LF), 정렬·중복 없음. 없거나 비면 아무도 숨기지 않는다. 앱을 꺼도 남는다(결정 B).
-- **게임(패치 세트 3)**: 게임 숨김(`LobbyMemberInstance.IsHidden`: 고양이 오브젝트를 끄고 자리를 비운다)을 쓴다. 숨김 setter·getter·`PlayerDataCache`·`LobbyMemberVisibility.SetVisibility`와 그 호출 대상은 Cat Talk 연결 호환성 지문(업스트림 `feature-contract.json`의 `privacy`) 범위라 고치지 않고, 그 밖의 세 곳에만 훅을 건다.
+- **게임(패치 세트 3 이상)**: 게임 숨김(`LobbyMemberInstance.IsHidden`: 고양이 오브젝트를 끄고 자리를 비운다)을 쓴다. 숨김 setter·getter·`PlayerDataCache`·`LobbyMemberVisibility.SetVisibility`와 그 호출 대상은 Cat Talk 연결 호환성 지문(업스트림 `feature-contract.json`의 `privacy`) 범위라 고치지 않고, 그 밖의 세 곳에만 훅을 건다.
   - 입장·재입장(`LobbyMemberInstance.Start`의 숨김 호출 직전): 목록에 있으면 처음부터 숨김.
   - 자동 숨김 토글·참여자 목록 행 생성(`HandleAutoHideUpdated`의 `SetVisibility` 호출 직전): 목록에 있으면 '숨김'으로(게임 버튼 상태도 맞음).
   - `CatSpawnManager.Update`가 0.5초마다 파일을 읽어(`File.Exists`·`ReadAllText`) 전 멤버에 적용: 목록에 있는데 보이는 멤버는 숨기고, 목록에서 빠진 멤버는 게임 '자동 숨김' 설정값으로 되돌린다(결정 A. 차단 전 수동 숨김은 기억하지 않는다). 그 밖의 멤버는 건드리지 않는다. 게임 참여자 목록의 '보이기'를 직접 누르면(지문 범위라 훅 불가) 최대 0.5초 보였다가 다시 숨는다.
   - 투명화(알파 0)와 독립이다.
 - **연결 호환성 지문 보증**: 패치 결과의 업스트림 `FeatureProbe` 지문이 원본과 같아야 한다 — 설치 사전 점검이 원본·패치 결과를 비교해 다르면 게임을 건드리기 전에 `failed`(`incompatible`)로, 지문을 내지 못하면 `preflight_failed`로 끝낸다. 패처 사본 검증(`test-copy.ps1`)도 같은 비교를 한다. (2026-11-10: 숨김 setter 입구 훅 시험본이 `privacy` 지문을 바꿔 Cat Talk가 '지원하지 않는 게임 빌드'로 연결을 멈췄다 — 패처는 그 모양을 `hidden_setter_hook`으로 거부한다.)
 - **사이드카 → main 알림 줄**: `{"event":"hidden_ids","ids":["<SteamID64>", …]}`(요청 응답이 아니라 `id`가 없다). main만 받고 렌더러로 보내지 않는다(Steam 차단 여부를 렌더러에 보내지 않는 2단계 원칙 유지). 목록 = 현재 계정의 앱 차단(`service.blocked`) ∪ Steam 차단. Steam 차단 = worker가 열거한 '모든 대화 차단' 전체(`steam_ignored`, D-040) ∪ 지금 로비 멤버의 멤버별 판정(`steam_hidden` ∩ 멤버) — 아직 만나지 않은 차단자도 입장 전부터 목록에 있다. 나간 멤버의 지난 판정은 쓰지 않는다(계속 차단이면 전체 목록에 있고, 방 밖에서 풀었으면 빠져야 한다). 전체 목록 열거에 실패하면(`ids: null`) 종전대로 이번 실행의 멤버별 판정 전체(`steam_hidden`, 나간 멤버 유지). 계정이 있고, 그 계정의 앱 차단 목록을 읽었고, 그 계정의 전체 목록 응답(성공·실패)이 왔고, 지금 로비 멤버(나 제외) 모두의 `steam_blocked` 판정이 도착했을 때만 낸다 — 그 전에 내면 이미 숨긴 차단자가 목록에서 잠깐 빠져 다시 보이기 때문이다. 이번 실행에서 판정이 끝난 첫 목록 1회(앱 실행 때) + 그 뒤 바뀔 때마다 낸다. 계정이 없으면(게임 꺼짐·연결 대기) 내지 않아 파일은 그대로다.
-- **main 쓰기**(`electron/auto-chest.js` `setHidden`): 알림을 받을 때마다, 그리고 설치·재적용이 끝날 때 마지막 목록을, 설치 판정 후 **세트 3 설치 상태에서만** 통째로 쓴다(임시 파일 `CatTalkHidden.ids.cattalk-new`에 쓰고 교체). 미설치·이전 세트(`needs_reapply`)·호환 안 됨·패처 불일치·설치 중·게임 없음이면 쓰지 않는다. 교체가 실패하면(게임이 마침 읽는 중 등) 같은 목록으로 `POLL_MS`(0.5초) 뒤 다시 쓴다. 형식이 틀린 항목(SteamID64 숫자 모양 아님)은 사이드카와 main 양쪽에서 뺀다.
+- **main 쓰기**(`electron/auto-chest.js` `setHidden`): 알림을 받을 때마다, 그리고 설치·재적용이 끝날 때 마지막 목록을, 설치 판정 후 **현재 세트(`PATCH_VERSION`) 설치 상태에서만** 통째로 쓴다(임시 파일 `CatTalkHidden.ids.cattalk-new`에 쓰고 교체). 미설치·이전 세트(`needs_reapply`)·호환 안 됨·패처 불일치·설치 중·게임 없음이면 쓰지 않는다. 교체가 실패하면(게임이 마침 읽는 중 등) 같은 목록으로 `POLL_MS`(0.5초) 뒤 다시 쓴다. 형식이 틀린 항목(SteamID64 숫자 모양 아님)은 사이드카와 main 양쪽에서 뺀다.
 - **알려진 한계**: 이미 Steam에서 차단해 둔 사람은 입장 전부터 목록에 있어 처음부터 숨는다(D-040 — 종전엔 이번 실행에서 처음 만난 Steam 차단 멤버가 판정·쓰기·게임 확인까지 잠깐 보였다). 남는 경우는 Steam에서 막 차단한 사람이 다음 열거(1초) 전에 들어오거나 방 안에서 차단했을 때다 — 판정(약 1초)·쓰기·게임 확인(0.5초)까지 고양이가 잠깐 보일 수 있다. 전체 목록 열거에 실패한 실행은 종전 한계로 돌아간다. 앱 차단은 설정에 영속돼 목록에서 빠지지 않는다. 미패치 기기는 1·2단계(앱 화면 숨김)까지만 된다.
 
 ---

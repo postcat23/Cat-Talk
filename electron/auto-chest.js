@@ -3,8 +3,9 @@
 // 시스템 조작(sys)과 worker 제어는 주입받아, 실게임 없이 사본으로 흐름을 검증할 수 있다(tools/auto_chest/test-flow.js).
 // 설치·재적용은 worker·게임을 건드리기 전에 사전 점검(별도 파일에 패치·verify)을 통과해야 시작한다(D-029).
 // 사전 점검은 패치 결과의 Cat Talk 연결 호환성 지문(업스트림 FeatureProbe)이 원본과 같은지도 본다(D-033 3단계 사고 재발 방지).
-// 차단 멤버 고양이 숨김(D-033 3단계): 같은 패치(세트 3)가 게임 폴더의 CatTalkHidden.ids를 0.5초마다 읽는다. 이 모듈은 사이드카가 알린
-// (앱 차단 ∪ Steam 차단) 목록을 그 파일에 통째로 쓴다(세트 3 설치 상태에서만). 앱을 꺼도 파일은 남는다(결정 B).
+// 차단 멤버 고양이 숨김(D-033 3단계): 같은 패치(세트 3 이상)가 게임 폴더의 CatTalkHidden.ids를 0.5초마다 읽는다. 이 모듈은 사이드카가 알린
+// (앱 차단 ∪ Steam 차단) 목록을 그 파일에 통째로 쓴다(현재 세트 설치 상태에서만). 앱을 꺼도 파일은 남는다(결정 B).
+// 투명화 중 획득 팝업 숨김(D-046, 세트 4)·투명화 루트 후크(D-047, 세트 5): 투명화 플래그를 그대로 쓴다(이 모듈 변경은 기대 세트 값뿐).
 // 원본 복원(D-038): 패치는 남았는데 패치를 쓰는 기능이 하나도 없으면(설정·플래그 꺼짐 + 숨김 목록 빔) 렌더러가 토스트로 제안하고,
 // [원본 복원]이 백업이 지금 DLL의 원본인지 확인한 뒤 되돌린다(재적용과 대칭: 게임이 켜져 있으면 카운트다운 → 종료 → 복원 → 재실행).
 const crypto = require('crypto');
@@ -25,9 +26,10 @@ const STEAM_RELEASE_MS = 15000;  // Steam이 앱을 '실행 중'에서 풀 때�
 const LAUNCH_MS = 60000;
 const STABLE_MS = 20000;         // 기동 후 이 시간 살아 있어야 성공
 // 앱이 기대하는 패처(AutoChestPatcher.cs의 CliVersion·PatchVersion). 다르거나 패처가 없으면 설치·재적용을 막는다(D-029).
-// 세트 3(D-033 3단계, 차단 멤버 고양이 숨김)은 인자 규약을 바꾸지 않아 CLI는 2 그대로다. 세트 2 설치본은 '재적용 필요'(outdated)가 된다.
+// 세트 3(D-033 3단계, 차단 멤버 고양이 숨김)·세트 4(D-046, 투명화 중 획득 팝업 숨김)·세트 5(D-047, 투명화 루트 후크)는 인자 규약을 바꾸지 않아 CLI는 2 그대로다.
+// 이전 세트(1~4) 설치본은 '재적용 필요'(outdated)가 된다.
 const PATCHER_CLI = 2;
-const PATCH_VERSION = 3;
+const PATCH_VERSION = 5;
 
 const run = (file, args) => new Promise((resolve) => {
   execFile(file, args, { windowsHide: true, maxBuffer: 1 << 20 }, (error, stdout) => resolve({ code: error ? (error.code ?? 1) : 0, stdout: String(stdout) }));
@@ -158,7 +160,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     if (r.code !== 0) return { state: 'error', reason: r.json.reason };
     if (r.json.state === 'clean') return { state: wanted ? 'needs_reapply' : 'not_installed' };
     if (!samePath(r.json.flag, flag)) return { state: 'needs_reapply', reason: 'flag_path_changed', game, patched: true };   // 게임 경로가 바뀜
-    if (r.json.upToDate === false) return { state: 'needs_reapply', reason: 'outdated', game, patched: true };   // 이전 패치 세트(v1·v2) → 재적용으로 v3(D-028, D-033)
+    if (r.json.upToDate === false) return { state: 'needs_reapply', reason: 'outdated', game, patched: true };   // 이전 패치 세트(v1~v4) → 재적용으로 v5(D-028, D-033, D-046, D-047)
     return { state: 'installed', game, patched: true };
   }
 
@@ -192,7 +194,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     hiddenRetry.unref?.();
   }
 
-  // 현재 목록을 파일에 쓴다. 세트 3 설치 상태가 아니면(미설치·이전 세트·호환 안 됨·패처 불일치·설치 중) 쓰지 않는다.
+  // 현재 목록을 파일에 쓴다. 현재 세트 설치 상태가 아니면(미설치·이전 세트·호환 안 됨·패처 불일치·설치 중) 쓰지 않는다.
   // 겹쳐 불리면 진행 중인 것이 끝난 뒤 최신 목록으로 한 번 더 쓴다.
   async function syncHidden() {
     if (hidden === null) return { ok: false, reason: 'not_ready' };
@@ -404,7 +406,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     }
   }
 
-  // 설치·재적용이 끝나면(성공이면 이제 세트 3) 마지막 목록을 쓴다. 설치 중(busy)에 온 목록은 판정에서 건너뛰었으므로 여기서 맡는다.
+  // 설치·재적용이 끝나면(성공이면 이제 현재 세트) 마지막 목록을 쓴다. 설치 중(busy)에 온 목록은 판정에서 건너뛰었으므로 여기서 맡는다.
   // 실패(복원됨)면 판정이 설치 상태가 아니라 쓰지 않는다. 쓰기 결과는 설치 결과에 섞지 않는다.
   async function installThenSync(game, features) {
     const result = await install(game, features);
@@ -416,7 +418,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     status,
     cancel() { cancelled = true; },
 
-    // 사이드카가 알린 (앱 차단 ∪ Steam 차단) SteamID64 목록(D-033 3단계). 형식이 틀린 항목은 빼고, 세트 3 설치 상태면 파일에 쓴다.
+    // 사이드카가 알린 (앱 차단 ∪ Steam 차단) SteamID64 목록(D-033 3단계). 형식이 틀린 항목은 빼고, 현재 세트 설치 상태면 파일에 쓴다.
     setHidden(ids) {
       if (!Array.isArray(ids)) return Promise.resolve({ ok: false, reason: 'invalid' });
       hidden = [...new Set(ids.filter((id) => typeof id === 'string' && STEAM_ID64.test(id)))].sort();
@@ -447,7 +449,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     },
 
     // 켜기(feature = 'chest' | 'transparent'): 설치돼 있으면 그 기능 플래그만(즉시, 재실행 없음). 아니면 사전 점검 → 카운트다운 → 설치.
-    // 이전 패치 세트(v1·v2)도 여기서 재적용 대상이라 설치 흐름으로 v3가 된다.
+    // 이전 패치 세트(v1~v4)도 여기서 재적용 대상이라 설치 흐름으로 v5가 된다.
     async enable(feature = 'chest') {
       if (!known(feature)) return { ok: false, reason: 'unknown_feature' };
       if (busy) return { ok: false, reason: 'busy' };

@@ -1,6 +1,7 @@
-// Cat-Talk 게임 패처. 게임 어셈블리(Assembly-CSharp.dll)를 Mono.Cecil로 읽어 훅 세 묶음을 함께 넣는다.
+// Cat-Talk 게임 패처. 게임 어셈블리(Assembly-CSharp.dll)를 Mono.Cecil로 읽어 훅 다섯 묶음을 함께 넣는다.
 // 게임 어셈블리를 로드·실행하지 않는다. 패치 세트 버전: 1 = 상자 자동 오픈만, 2 = 상자 자동 오픈 + 투명화,
-//   3 = 상자 자동 오픈 + 투명화 + 차단 멤버 고양이 숨김. 세트는 누적이다(높은 버전은 낮은 버전의 훅을 모두 포함).
+//   3 = 상자 자동 오픈 + 투명화 + 차단 멤버 고양이 숨김, 4 = 3 + 투명화 중 내 고양이 획득 팝업 숨김,
+//   5 = 4 + 투명화 루트 후크(내 고양이 주변 UI 전체 숨김·열린 게임 메뉴 닫기). 세트는 누적이다(높은 버전은 낮은 버전의 훅을 모두 포함).
 // 상자 자동 오픈(D-019): Shop.TimerUpdate 상태머신 MoveNext의 "ChestIsReady = true; OnChestReady();" 직후에
 //   "if (File.Exists(<플래그>)) this._shopItem.Buy();"를 삽입한다.
 // 투명화(D-028): 고양이마다 하나인 TranslucentOnHover의 알파 경로에 플래그를 건다. 삽입은 여덟 곳이다.
@@ -27,6 +28,21 @@
 //     목록에서 빠진 멤버는 게임 '자동 숨김' 설정값으로 되돌린다(D-033 결정 A). 그 밖의 멤버는 건드리지 않는다.
 //     파일 읽기·적용은 try/catch 안이다. 실패하면 이번 확인만 건너뛰고(게임 Update는 그대로 진행) 0.5초 뒤 다시 본다.
 //   투명화(알파 0)와 독립이다: 숨긴 고양이는 오브젝트가 꺼지고, 나머지 고양이에는 투명화가 그대로다.
+// 투명화 중 획득 팝업 숨김(D-046, 세트 4): 내 고양이의 획득 팝업(MainCat/NewItemPopup)은 투명화가 알파를 내리는 CanvasGroup
+//   (MainCat/DraggableFrame) 밖의 형제라 투명화 중에도 보였다(씬 실측). 다른 참여자 고양이의 팝업은 그 고양이 CanvasGroup 아래라 이미 숨는다.
+//   NewItemPopup.ShowPopup에서 멀티플레이 전송(SteamMultiplayer.SendReceivedItem) 다음, 표시(큐에 넣기·켜기) 앞에
+//   "if (CatTalkTransparent) return;"을 넣는다. 전송은 게이트 앞이라 다른 참여자 화면의 내 획득 팝업은 그대로다.
+//   상자·교환·프로모·PawPass 등 내 고양이 획득 팝업 전부가 이 메서드를 지난다. 투명화 중 받은 아이템은 큐에 넣지 않는다(끈 뒤 몰아 뜨지 않음).
+//   켜는 순간 이미 떠 있던 팝업은 끝까지(약 3초) 둔다. ShowPopup·SendReceivedItem은 Cat Talk 연결 지문 범위 밖이다(업스트림 FeatureProbe 실측).
+// 투명화 루트 후크(D-047, 세트 5): 내 고양이 투명화 알파는 게임 호버 반투명의 그룹(MainCat/DraggableFrame)에만 걸려, 그 형제
+//   (잠수 Zzz·하트·선물 이모트 파티클, 오류 창, 키 후킹 경고, CatPopUps, 튜토리얼, 이미 뜬 말풍선 등)가 보였다(씬 실측). 로비 고양이는 그룹이 루트라 전부 숨는다.
+//   Start 끝(투명화 블록 앞): _alpha가 자기 오브젝트가 아니면(= 내 고양이) 루트(MainCat)에 CanvasGroup을 하나 붙여 CatTalkRoot에 둔다.
+//   SetTranslucentSmooth(투명화 블록 다음): 루트 알파 = 목표 알파가 0이면 0, 아니면 1. 게임 목표는 상수 0.1·1이라 0은 투명화 블록만 만든다
+//     (게임 호버 반투명은 루트에 영향 없음). 0이면 EmoteDonut.CatTalkCloseMenu()로 열린 게임 메뉴(MenuNew)를 닫는다 — 게임 닫기 버튼과 같은
+//     ToggleGameObject.SetActive(false) 경로(OnToggle 포함). 메뉴는 클릭 예외라 레이어가 UI로 남아, 루트 알파만 내리면 안 보이는데 클릭되는 영역이 된다.
+//   EmoteDonut에 정적 메서드 하나(CatTalkCloseMenu: _menu가 private이라 그 타입 안에 둔다), TranslucentOnHover에 인스턴스 필드 하나(CatTalkRoot)를 더한다.
+//   입력 차단(도넛·말풍선 게이트, 호버 두 곳)과 획득 팝업 게이트는 그대로 둔다 — 알파와 달리 커서 거리·Enter 입력과 큐 적체를 막는다.
+//   대상 메서드(TranslucentOnHover·EmoteDonut·ToggleGameObject)는 Cat Talk 연결 지문 범위 밖이다(업스트림 FeatureProbe 대상 목록 실측).
 // 게임 런타임 어셈블리는 스트리핑돼 공개 Unity API도 없을 수 있다(실측: CanvasGroup.set_blocksRaycasts 없음).
 // 그래서 patch·verify는 결과의 모든 참조를 게임 Managed 폴더에서 해석해 보고, 하나라도 안 되면 거부한다.
 // 명령: inspect <dll> | patch <in> <out> <flag> <managedDir> | verify <orig> <patched> <flag> <managedDir>
@@ -79,6 +95,19 @@ sealed class Target {
     internal int StartCall, ToggleCall;   // Start의 set_IsHidden 호출, HandleAutoHideUpdated의 SetVisibility 호출 위치(삽입은 그 바로 앞)
     internal List<int> MemberStartMarkers, ToggleMarkers, SpawnMarkers;   // CatTalkHide·CatTalkVisible·CatTalkPoll 호출 위치
 
+    // 투명화 중 획득 팝업 숨김(D-046, 세트 4)
+    internal TypeDefinition ItemPopup;
+    internal MethodDefinition ShowPopup;
+    internal int PopupAt;                     // SendReceivedItem 호출 바로 다음 = 전송 분기가 합쳐지는 곳(게이트 위치)
+    internal List<int> ItemPopupMarkers;      // ShowPopup의 ldsfld CatTalkTransparent 위치
+
+    // 투명화 루트 후크(D-047, 세트 5)
+    internal TypeDefinition Donut, Toggle;
+    internal FieldDefinition DonutMenu, DonutInstance, RootField;
+    internal MethodDefinition ToggleSetActive, CloseMenuMethod;
+    internal MethodReference OpEquality, OpImplicit, GetGameObject, GoGetComponent, GoSetActive, GoActiveSelf;
+    internal List<int> RootStartMarkers, RootSmoothMarkers, CloseMenuCalls;   // stfld CatTalkRoot(Start), ldfld CatTalkRoot(Smooth), CatTalkCloseMenu 호출
+
     internal const string FlagName = "CatTalkAutoChest.on";
     internal const string TransparentFlagName = "CatTalkTransparent.on";
     internal const string StateFieldName = "CatTalkTransparent";
@@ -97,6 +126,9 @@ sealed class Target {
     internal const string SteamUserDataTypeName = "Heathen.SteamworksIntegration.SteamUserData";
     internal const string InstancesTypeName = "System.Collections.Generic.Dictionary`2<Heathen.SteamworksIntegration.UserData," + MemberTypeName + ">";
     internal const int MemberStartInsert = 2, ToggleInsert = 3, SpawnInsert = 1;   // 호출 직전 삽입(①②), Update 처음(③)
+    internal const int ItemPopupInsert = 2;   // ldsfld CatTalkTransparent; brtrue <게임의 '오브젝트 없음' ret>
+    internal const string RootFieldName = "CatTalkRoot", CloseMenuName = "CatTalkCloseMenu";
+    internal const int RootStartInsert = 12, RootSmoothInsert = 17;   // Start(투명화 블록 앞), SetTranslucentSmooth(투명화 블록 다음)
 
     static T One<T>(IEnumerable<T> items, string code) where T : class {
         var list = items.ToList();
@@ -140,6 +172,8 @@ sealed class Target {
         t.AnchorIndex = anchors[0];
         t.FindHover(module);
         t.FindHidden(module);
+        t.FindItemPopup(module);
+        t.FindRoot(module);
         return t;
     }
 
@@ -414,6 +448,106 @@ sealed class Target {
     // 우리가 더한 메서드(본문 전체가 패치 산출물)
     internal MethodDefinition[] HiddenAdded { get { return new[] { ListedMethod, HideMethod, VisibleMethod, PollMethod }.Where(m => m != null).ToArray(); } }
 
+    // 획득 팝업 게이트 대상(D-046, 세트 4). 분석 때 구조(원본 IL)와 같을 때만 받는다:
+    //   if (!SteamItemIdReference.Inst.TryGetItem(id, out _)) return;
+    //   if (_sendMultiplayerMessage) SteamMultiplayer.SendReceivedItem(id);   ← 전송(다른 참여자 화면의 내 팝업). 게이트는 이 다음이다
+    //   if (!gameObject) return;                                             ← 게이트가 가는 ret
+    //   _queue.Enqueue(id); if (_showPopupRoutine == null) { gameObject.SetActive(true); StartCoroutine(DoShowPopup()); }
+    void FindItemPopup(ModuleDefinition module) {
+        ItemPopup = One(module.GetTypes().Where(x => x.FullName == "NewItemPopup"), "itempopup_type");
+        ShowPopup = One(ItemPopup.Methods.Where(m => m.Name == "ShowPopup" && !m.IsStatic && m.HasBody && m.Parameters.Count == 1
+            && m.Parameters[0].ParameterType.MetadataType == MetadataType.Int32 && m.ReturnType.MetadataType == MetadataType.Void), "itempopup_show");
+        var send = One(ItemPopup.Fields.Where(f => f.Name == "_sendMultiplayerMessage" && !f.IsStatic && f.FieldType.MetadataType == MetadataType.Boolean), "itempopup_send_field");
+        var ins = ShowPopup.Body.Instructions;
+        var calls = Enumerable.Range(0, ins.Count).Where(i => ins[i].OpCode == OpCodes.Call && CallsNamed(ins[i], "SteamMultiplayer", "SendReceivedItem")).ToList();
+        if (calls.Count != 1) throw new Incompatible("itempopup_send_call_" + calls.Count);
+        PopupAt = calls[0] + 1;
+        ItemPopupMarkers = StateReads(ShowPopup);
+        // 전송 분기: ldarg.0; ldfld _sendMultiplayerMessage; brfalse <합류점>; ldarg.1; call SendReceivedItem
+        int gate = calls[0] - 2;
+        bool sendShape = gate >= 2 && ins[gate - 2].OpCode == OpCodes.Ldarg_0 && ins[gate - 1].OpCode == OpCodes.Ldfld && Same(ins[gate - 1].Operand as FieldReference, send)
+            && (ins[gate].OpCode == OpCodes.Brfalse_S || ins[gate].OpCode == OpCodes.Brfalse) && ins[gate + 1].OpCode == OpCodes.Ldarg_1;
+        // 원본의 전송 분기는 곧바로 합류점으로 간다(패치본은 게이트 처음으로 옮겨져 있다 — verify가 본다)
+        if (!sendShape || (ItemPopupMarkers.Count == 0 && ins[gate].Operand != ins[PopupAt])) throw new Incompatible("itempopup_shape");
+        // 합류점(게이트가 있으면 그 다음): "if (!gameObject) return;"
+        int join = PopupAt + (ItemPopupMarkers.Count == 0 ? 0 : ItemPopupInsert);
+        bool joinShape = join + 4 < ins.Count && ins[join].OpCode == OpCodes.Ldarg_0 && CallsNamed(ins[join + 1], "Component", "get_gameObject")
+            && CallsNamed(ins[join + 2], "Object", "op_Implicit") && (ins[join + 3].OpCode == OpCodes.Brtrue_S || ins[join + 3].OpCode == OpCodes.Brtrue)
+            && ins[join + 4].OpCode == OpCodes.Ret;
+        if (!joinShape) throw new Incompatible("itempopup_shape");
+    }
+
+    // 획득 팝업 게이트가 제자리에 있는지. 없으면 false, 있는데 자리가 다르면 호환 안 됨.
+    internal bool ItemPopupHooked {
+        get {
+            if (ItemPopupMarkers.Count == 0) return false;
+            if (ItemPopupMarkers.Count != 1 || ItemPopupMarkers[0] != PopupAt) throw new Incompatible("itempopup_partial");
+            return true;
+        }
+    }
+
+    // 투명화 루트 후크 대상(D-047, 세트 5). FindHover·FindPopups 뒤에 부른다(Smooth·Start·DonutUpdate와 그 앵커를 쓴다).
+    void FindRoot(ModuleDefinition module) {
+        Donut = DonutUpdate.DeclaringType;
+        DonutMenu = One(Donut.Fields.Where(f => f.Name == "_menu" && !f.IsStatic && f.FieldType.FullName == "UnityEngine.GameObject"), "root_donut_menu");
+        DonutInstance = One(Donut.Fields.Where(f => f.Name == "Instance" && f.IsStatic && f.IsPublic && f.FieldType.FullName == Donut.FullName), "root_donut_instance");
+        // 게임 메뉴 닫기 버튼(MenuNew/CloseButton)이 부르는 경로: ToggleGameObject.Toggle → SetActive(false) → gameObject.SetActive + OnToggle(씬 실측)
+        Toggle = One(module.GetTypes().Where(x => x.FullName == "ToggleGameObject"), "root_toggle_type");
+        ToggleSetActive = One(Toggle.Methods.Where(m => m.Name == "SetActive" && m.IsPublic && !m.IsStatic && m.HasBody && m.Parameters.Count == 1
+            && m.Parameters[0].ParameterType.MetadataType == MetadataType.Boolean && m.ReturnType.MetadataType == MetadataType.Void), "root_toggle_setactive");
+        if (!ToggleSetActive.Body.Instructions.Any(i => CallsNamed(i, "GameObject", "SetActive"))) throw new Incompatible("root_toggle_shape");
+        // 루트 블록·메뉴 닫기는 게임이 이미 참조하는 멤버를 쓴다(AddComponent<CanvasGroup>만 새 참조 — 런타임 해석 검증이 본다)
+        var refs = module.GetMemberReferences().OfType<MethodReference>().ToList();
+        OpEquality = One(refs.Where(m => m.Name == "op_Equality" && m.DeclaringType.FullName == "UnityEngine.Object" && m.Parameters.Count == 2), "object_op_equality");
+        OpImplicit = One(refs.Where(m => m.Name == "op_Implicit" && m.DeclaringType.FullName == "UnityEngine.Object" && m.Parameters.Count == 1
+            && m.ReturnType.MetadataType == MetadataType.Boolean), "object_op_implicit");
+        GetGameObject = One(refs.Where(m => m.Name == "get_gameObject" && m.DeclaringType.FullName == "UnityEngine.Component" && m.Parameters.Count == 0), "component_get_gameobject");
+        GoGetComponent = One(refs.Where(m => m.Name == "GetComponent" && m.DeclaringType.FullName == "UnityEngine.GameObject" && m.HasGenericParameters && m.Parameters.Count == 0), "gameobject_getcomponent");
+        GoSetActive = One(refs.Where(m => m.Name == "SetActive" && m.DeclaringType.FullName == "UnityEngine.GameObject" && m.Parameters.Count == 1), "gameobject_setactive");
+        GoActiveSelf = One(refs.Where(m => m.Name == "get_activeSelf" && m.DeclaringType.FullName == "UnityEngine.GameObject" && m.Parameters.Count == 0), "gameobject_activeself");
+        // 루트 알파는 '목표 알파 == 0'으로 투명화 중을 판정한다. 게임 목표가 지금처럼 상수(켬 0.1, 끔 1, 둘 다 0 아님)일 때만 받는다:
+        //   ldarg.1; brtrue <켬>; ldc.r4 <끔>; br <저장>; ldc.r4 <켬>; stloc.0
+        var s = Smooth.Body.Instructions;
+        bool targets = SmoothAnchor == 5 && s[0].OpCode == OpCodes.Ldarg_1 && (s[1].OpCode == OpCodes.Brtrue_S || s[1].OpCode == OpCodes.Brtrue)
+            && s[2].OpCode == OpCodes.Ldc_R4 && (s[3].OpCode == OpCodes.Br_S || s[3].OpCode == OpCodes.Br) && s[4].OpCode == OpCodes.Ldc_R4
+            && (float)s[2].Operand != 0f && (float)s[4].Operand != 0f;
+        if (!targets) throw new Incompatible("root_smooth_targets");
+
+        RootField = Hover.Fields.SingleOrDefault(f => f.Name == RootFieldName);
+        CloseMenuMethod = Donut.Methods.SingleOrDefault(m => m.Name == CloseMenuName);
+        var start = HoverStart.Body.Instructions;
+        RootStartMarkers = Enumerable.Range(0, start.Count).Where(i => start[i].OpCode == OpCodes.Stfld && IsRootField(start[i].Operand as FieldReference)).ToList();
+        RootSmoothMarkers = Enumerable.Range(0, s.Count).Where(i => s[i].OpCode == OpCodes.Ldfld && IsRootField(s[i].Operand as FieldReference)).ToList();
+        CloseMenuCalls = Enumerable.Range(0, s.Count).Where(i => {
+            var r = s[i].Operand as MethodReference;
+            return s[i].OpCode == OpCodes.Call && r != null && r.Name == CloseMenuName && r.DeclaringType.FullName == Donut.FullName;
+        }).ToList();
+    }
+
+    static bool IsRootField(FieldReference f) { return f != null && f.Name == RootFieldName && f.DeclaringType.FullName == "TranslucentOnHover"; }
+
+    // 루트 블록 위치(투명화 블록이 있을 때만 의미가 있다): Start는 투명화 블록 바로 앞, Smooth는 투명화 블록 바로 다음
+    internal int RootStartAt { get { return HoverStart.Body.Instructions.Count - 1 - StartInsert - RootStartInsert; } }
+    internal int RootSmoothAt { get { return SmoothAnchor + 1 + SmoothInsert; } }
+
+    // 루트 후크가 전부 제자리에 있는지. 전부 없으면 false, 일부만 있으면 호환 안 됨.
+    internal bool RootHooked {
+        get {
+            bool any = RootField != null || CloseMenuMethod != null || RootStartMarkers.Count + RootSmoothMarkers.Count + CloseMenuCalls.Count > 0;
+            if (!any) return false;
+            bool whole = RootField != null && !RootField.IsStatic && RootField.IsPrivate && RootField.FieldType.FullName == "UnityEngine.CanvasGroup"
+                && CloseMenuMethod != null && CloseMenuMethod.IsStatic && CloseMenuMethod.HasBody
+                && RootStartMarkers.Count == 1 && RootStartMarkers[0] == RootStartAt + RootStartInsert - 1
+                && RootSmoothMarkers.Count == 2 && RootSmoothMarkers[0] == RootSmoothAt + 1
+                && CloseMenuCalls.Count == 1 && CloseMenuCalls[0] == RootSmoothAt + RootSmoothInsert - 1;
+            if (!whole) throw new Incompatible("root_partial");
+            return true;
+        }
+    }
+
+    // 패치가 더한 메서드 전부(본문 전체가 패치 산출물)
+    internal MethodDefinition[] Added { get { return HiddenAdded.Concat(new[] { CloseMenuMethod }.Where(m => m != null)).ToArray(); } }
+
     static TypeReference IteratorStateMachine(MethodDefinition m) {
         var attrs = m.CustomAttributes.Where(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.IteratorStateMachineAttribute").ToList();
         if (attrs.Count == 0) return null;
@@ -447,7 +581,7 @@ sealed class Target {
     static bool Same(MethodReference a, MethodDefinition b) { return a != null && a.Name == b.Name && a.DeclaringType.FullName == b.DeclaringType.FullName && a.Parameters.Count == b.Parameters.Count; }
 
     // 패치가 본문을 바꾸는 메서드 전부.
-    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate, OverUI, HoverFilter, DonutUpdate, SpeechUpdate, MemberStart, VisibilityToggle, SpawnUpdate }; } }
+    internal MethodDefinition[] Patched { get { return new[] { MoveNext, Smooth, Layer, HoverStart, SettingUpdate, OverUI, HoverFilter, DonutUpdate, SpeechUpdate, MemberStart, VisibilityToggle, SpawnUpdate, ShowPopup }; } }
 
     // 삽입 시퀀스(분기 대상 제외). Buy가 non-void면 pop 포함.
     internal int InsertLength { get { return Buy.ReturnType.MetadataType == MetadataType.Void ? 7 : 8; } }
@@ -512,10 +646,10 @@ static class Program {
         }
     }
 
-    const int PatchVersion = 3;
+    const int PatchVersion = 5;
     // 인자 규약 버전. 1 = patch/verify 3인자, 2 = Managed 인자 추가(D-028). 규약이나 PatchVersion을 바꾸면
     // electron/auto-chest.js의 기대값(PATCHER_CLI·PATCH_VERSION)도 같이 바꾼다. 앱은 다르면 설치를 막는다(D-029).
-    // 패치 세트 3(D-033 3단계)은 인자 규약을 바꾸지 않았다(inspect 출력에 hiddenFile만 더함).
+    // 패치 세트 3(D-033 3단계)은 인자 규약을 바꾸지 않았다(inspect 출력에 hiddenFile만 더함). 세트 4(D-046)·5(D-047)도 그대로다.
     const int CliVersion = 2;
 
     // 앱이 기대하는 패처인지 판정하는 용도. 기기마다 빌드하는 산출물이라 소스보다 오래된 패처가 남을 수 있다.
@@ -523,7 +657,9 @@ static class Program {
         return Emit(0, new Dictionary<string, object> { { "ok", true }, { "cli", CliVersion }, { "patchVersion", PatchVersion } });
     }
 
-    // 패치 세트 버전. 0 = 원본, 1 = 상자 자동 오픈만, 2 = + 투명화, 3 = + 차단 멤버 고양이 숨김. 그 밖의 조합은 우리가 만든 적 없는 상태다.
+    // 패치 세트 버전. 0 = 원본, 1 = 상자 자동 오픈만, 2 = + 투명화, 3 = + 차단 멤버 고양이 숨김, 4 = + 투명화 중 획득 팝업 숨김,
+    // 5 = + 투명화 루트 후크.
+    // 그 밖의 조합은 우리가 만든 적 없는 상태다.
     static int Version(Target t) {
         bool chest = t.Markers.Count == 1 && t.Markers[0] == t.AnchorIndex + 1;
         if (t.Markers.Count != 0 && !chest) throw new Incompatible("marker_unexpected");
@@ -531,7 +667,11 @@ static class Program {
         if (transparent && !chest) throw new Incompatible("marker_unexpected");
         bool hidden = t.HiddenHooked;
         if (hidden && !transparent) throw new Incompatible("marker_unexpected");
-        return hidden ? 3 : transparent ? 2 : chest ? 1 : 0;
+        bool popup = t.ItemPopupHooked;
+        if (popup && !hidden) throw new Incompatible("marker_unexpected");
+        bool root = t.RootHooked;
+        if (root && !popup) throw new Incompatible("marker_unexpected");
+        return root ? 5 : popup ? 4 : hidden ? 3 : transparent ? 2 : chest ? 1 : 0;
     }
 
     static string State(Target t) { return Version(t) == 0 ? "clean" : "patched"; }
@@ -557,7 +697,7 @@ static class Program {
         var t = Target.Find(module);
         int version = Version(t);
         if (version == PatchVersion) return Emit(3, new Dictionary<string, object> { { "ok", true }, { "state", "patched" }, { "patchVersion", version }, { "skipped", true } });
-        // 이전 세트(v1·v2)로 패치된 입력은 없는 훅만 더한다. 플래그가 다르면 게임이 옮겨진 것이라 원본에서 다시 패치해야 한다.
+        // 이전 세트(v1·v2·v3)로 패치된 입력은 없는 훅만 더한다. 플래그가 다르면 게임이 옮겨진 것이라 원본에서 다시 패치해야 한다.
         if (version >= 1 && !string.Equals((string)t.MoveNext.Body.Instructions[t.Markers[0]].Operand, flag, StringComparison.Ordinal)) throw new Incompatible("upgrade_flag_mismatch");
 
         // File.Exists는 게임 어셈블리가 이미 참조하는 코어 라이브러리(mscorlib) 기준으로 참조를 만든다.
@@ -568,7 +708,9 @@ static class Program {
 
         int inserted = version == 0 ? InsertChest(module, t, flag, exists) : 0;
         if (version < 2) inserted += InsertTransparent(module, t, TransparentFlag(flag), exists);
-        inserted += InsertHidden(module, t, HiddenFile(flag), fileType, exists);
+        if (version < 3) inserted += InsertHidden(module, t, HiddenFile(flag), fileType, exists);
+        if (version < 4) inserted += InsertItemPopup(t);
+        inserted += InsertRoot(module, t);
         // 삽입으로 거리가 늘어 sbyte 범위(-128~127)를 넘는 기존 짧은 분기는 같은 의미의 긴 분기로 바꾼다.
         // (실측: bgt.s가 삽입 구간을 건너뛰며 범위를 넘어 Cecil이 잘못된 오프셋을 썼다.) 그 외 명령은 그대로.
         // 더한 메서드는 처음부터 긴 분기만 쓴다.
@@ -578,7 +720,7 @@ static class Program {
         var reread = Read(output);
         var check = Target.Find(reread);
         if (Version(check) != PatchVersion) throw new InvalidDataException("post_patch_state");
-        if (!check.Patched.Concat(check.HiddenAdded).All(m => BranchTargetsResolved(m.Body))) throw new InvalidDataException("post_patch_branch");
+        if (!check.Patched.Concat(check.Added).All(m => BranchTargetsResolved(m.Body))) throw new InvalidDataException("post_patch_branch");
         try { ReferencesResolve(output, managedDir); }
         catch { File.Delete(output); throw; }   // 게임에서 깨질 결과물은 남기지 않는다
         return Emit(0, new Dictionary<string, object> { { "ok", true }, { "state", "patched" }, { "patchVersion", PatchVersion }, { "upgraded", version > 0 }, { "sha256", Sha256(output) }, { "inserted", inserted }, { "widenedBranches", widened } });
@@ -907,6 +1049,97 @@ static class Program {
             + listed.Body.Instructions.Count + hide.Body.Instructions.Count + visible.Body.Instructions.Count + body.Instructions.Count;
     }
 
+    // 투명화 중 획득 팝업 숨김(D-046, 세트 4): ShowPopup의 전송 다음(합류점)에 "if (CatTalkTransparent) return;".
+    // 전송(SendReceivedItem)은 게이트 앞이라 그대로다. 내 화면에서는 큐에도 넣지 않는다(투명화를 끈 뒤 몰아 뜨지 않음).
+    // 전송한 경로도 합류점으로 오므로 그 분기(brfalse)를 게이트 처음으로 옮긴다(훅 ①과 같은 방식). 게이트가 가는 ret은 게임의 "if (!gameObject) return;"이다.
+    // 켜짐 상태는 투명화 세트가 더한 필드다(이전 세트 입력이면 이미 있고, 원본 입력이면 위에서 방금 더했다).
+    static int InsertItemPopup(Target t) {
+        var state = t.HoverSetting.Fields.Single(f => f.Name == Target.StateFieldName);
+        var body = t.ShowPopup.Body;
+        var il = body.GetILProcessor();
+        var join = body.Instructions[t.PopupAt];
+        var exit = body.Instructions[t.PopupAt + 4];
+        var seq = new List<Instruction> { il.Create(OpCodes.Ldsfld, state), il.Create(OpCodes.Brtrue_S, exit) };
+        InsertBeforeRetarget(body, join, seq);
+        return seq.Count;
+    }
+
+    // 투명화 루트 후크(D-047, 세트 5). 투명화 블록(세트 2)이 이미 있는 본문에 넣는다(원본 입력이면 위에서 방금 넣었다).
+    static int InsertRoot(ModuleDefinition module, Target t) {
+        var sys = module.TypeSystem;
+        var groupType = t.HoverAlpha.FieldType;
+        var setAlpha = Accessor("set_alpha", groupType, sys.Void, sys.Single);
+        var goType = t.GoSetActive.DeclaringType;
+        // GameObject.AddComponent<CanvasGroup>(): 게임은 이 제네릭을 참조하지 않지만 런타임 UnityEngine.CoreModule에 있다(실측). 해석 검증이 다시 본다.
+        var addOpen = new MethodReference("AddComponent", sys.Void, goType) { HasThis = true };
+        var tParam = new GenericParameter("T", addOpen);
+        addOpen.GenericParameters.Add(tParam);
+        addOpen.ReturnType = tParam;
+        var addGroup = new GenericInstanceMethod(addOpen);
+        addGroup.GenericArguments.Add(groupType);
+        var getToggle = new GenericInstanceMethod(t.GoGetComponent);
+        getToggle.GenericArguments.Add(t.Toggle);
+
+        // 내 고양이의 루트 그룹. 직렬화하지 않는 private 인스턴스 필드(씬 데이터와 무관).
+        var root = new FieldDefinition(Target.RootFieldName, FieldAttributes.Private, groupType);
+        t.Hover.Fields.Add(root);
+
+        // internal static void EmoteDonut.CatTalkCloseMenu(): 열린 게임 메뉴를 게임 닫기 버튼과 같은 경로로 닫는다.
+        //   var d = Instance; if (!d) return; var menu = d._menu; if (!menu || !menu.activeSelf) return;
+        //   var toggle = menu.GetComponent<ToggleGameObject>(); if (toggle) toggle.SetActive(false); else menu.SetActive(false);
+        var close = new MethodDefinition(Target.CloseMenuName, MethodAttributes.Assembly | MethodAttributes.Static | MethodAttributes.HideBySig, sys.Void);
+        close.Body.Variables.Add(new VariableDefinition(goType));
+        close.Body.Variables.Add(new VariableDefinition(t.Toggle));
+        close.Body.InitLocals = true;
+        var il = close.Body.GetILProcessor();
+        var ret = il.Create(OpCodes.Ret);
+        var plain = il.Create(OpCodes.Ldloc_0);
+        Append(il,
+            il.Create(OpCodes.Ldsfld, t.DonutInstance), il.Create(OpCodes.Call, t.OpImplicit), il.Create(OpCodes.Brfalse, ret),
+            il.Create(OpCodes.Ldsfld, t.DonutInstance), il.Create(OpCodes.Ldfld, t.DonutMenu), il.Create(OpCodes.Stloc_0),
+            il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Call, t.OpImplicit), il.Create(OpCodes.Brfalse, ret),
+            il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Callvirt, t.GoActiveSelf), il.Create(OpCodes.Brfalse, ret),
+            il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Callvirt, getToggle), il.Create(OpCodes.Stloc_1),
+            il.Create(OpCodes.Ldloc_1), il.Create(OpCodes.Call, t.OpImplicit), il.Create(OpCodes.Brfalse, plain),
+            il.Create(OpCodes.Ldloc_1), il.Create(OpCodes.Ldc_I4_0), il.Create(OpCodes.Callvirt, t.ToggleSetActive), il.Create(OpCodes.Br, ret),
+            plain, il.Create(OpCodes.Ldc_I4_0), il.Create(OpCodes.Callvirt, t.GoSetActive),
+            ret);
+        close.Body.MaxStackSize = 2;
+        t.Donut.Methods.Add(close);
+
+        // Start: 투명화 블록 바로 앞 — if (_alpha.gameObject != gameObject) CatTalkRoot = gameObject.AddComponent<CanvasGroup>();
+        // 로비 고양이는 _alpha가 루트 자신이라 붙이지 않는다(이미 루트 그룹이다). 뒤따르는 투명화 블록의 SetTranslucentSmooth(true)가 처음 알파를 정한다.
+        var start = t.HoverStart.Body;
+        il = start.GetILProcessor();
+        var block = start.Instructions[start.Instructions.Count - 1 - Target.StartInsert];
+        var seqStart = new List<Instruction> {
+            il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Ldfld, t.HoverAlpha), il.Create(OpCodes.Callvirt, t.GetGameObject),
+            il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Call, t.GetGameObject), il.Create(OpCodes.Call, t.OpEquality),
+            il.Create(OpCodes.Brtrue_S, block),
+            il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Call, t.GetGameObject), il.Create(OpCodes.Callvirt, addGroup),
+            il.Create(OpCodes.Stfld, root),
+        };
+        InsertBefore(il, block, seqStart);
+
+        // SetTranslucentSmooth: 투명화 블록 바로 다음(그 블록의 '플래그 없음' 분기도 이리로) —
+        //   if (CatTalkRoot) { CatTalkRoot.alpha = (목표 == 0) ? 0 : 1; if (목표 == 0) EmoteDonut.CatTalkCloseMenu(); }
+        var smooth = t.Smooth.Body;
+        il = smooth.GetILProcessor();
+        var next = smooth.Instructions[t.SmoothAnchor + 1 + Target.SmoothInsert];
+        var seqSmooth = new List<Instruction> {
+            il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Ldfld, root), il.Create(OpCodes.Call, t.OpImplicit), il.Create(OpCodes.Brfalse_S, next),
+            il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Ldfld, root),
+            il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Ldc_R4, 0f), il.Create(OpCodes.Ceq), il.Create(OpCodes.Ldc_I4_0), il.Create(OpCodes.Ceq), il.Create(OpCodes.Conv_R4),
+            il.Create(OpCodes.Callvirt, setAlpha),
+            il.Create(OpCodes.Ldloc_0), il.Create(OpCodes.Ldc_R4, 0f), il.Create(OpCodes.Bne_Un_S, next),
+            il.Create(OpCodes.Call, close),
+        };
+        InsertBeforeRetarget(smooth, next, seqSmooth);
+
+        foreach (var b in new[] { start, smooth }) if (b.MaxStackSize < 3) b.MaxStackSize = 3;
+        return seqStart.Count + seqSmooth.Count + close.Body.Instructions.Count;
+    }
+
     // target 앞에 seq를 넣고, target으로 가던 분기·switch·예외 처리 경계를 seq 처음으로 옮긴다(모든 경로가 블록을 지나게).
     static void InsertBeforeRetarget(MethodBody body, Instruction target, List<Instruction> seq) {
         var il = body.GetILProcessor();
@@ -1041,30 +1274,32 @@ static class Program {
         if (Version(tb) != PatchVersion) throw new Incompatible("verify_not_patched");
         var ma = a.GetTypes().SelectMany(t => t.Methods).ToDictionary(m => m.FullName);
         var mb = b.GetTypes().SelectMany(t => t.Methods).ToDictionary(m => m.FullName);
-        // 패치가 더하는 메서드는 숨김 넷(CatTalkListed·CatTalkHide·CatTalkVisible·CatTalkPoll)뿐이다. 그 밖의 메서드 차이는 거부한다.
-        var addedMethods = new HashSet<string>(tb.HiddenAdded.Select(m => m.FullName));
-        if (addedMethods.Count != 4 || !ma.Keys.OrderBy(k => k).SequenceEqual(mb.Keys.Where(k => !addedMethods.Contains(k)).OrderBy(k => k)))
+        // 패치가 더하는 메서드는 숨김 넷(CatTalkListed·CatTalkHide·CatTalkVisible·CatTalkPoll)과 메뉴 닫기 하나(EmoteDonut.CatTalkCloseMenu)뿐이다.
+        // 그 밖의 메서드 차이는 거부한다.
+        var addedMethods = new HashSet<string>(tb.Added.Select(m => m.FullName));
+        if (addedMethods.Count != 5 || !ma.Keys.OrderBy(k => k).SequenceEqual(mb.Keys.Where(k => !addedMethods.Contains(k)).OrderBy(k => k)))
             throw new Incompatible("verify_method_set");
-        // 패치가 더하는 필드는 정확히 넷이다(투명화 둘, 숨김 둘). 그 밖의 타입·필드 차이는 거부한다.
-        Func<FieldDefinition, bool> added = f => f == tb.StateField || f == tb.NextPollField || f == tb.HiddenIdsField || f == tb.HiddenPollField;
+        // 패치가 더하는 필드는 정확히 다섯이다(투명화 둘, 숨김 둘, 루트 하나). 그 밖의 타입·필드 차이는 거부한다.
+        Func<FieldDefinition, bool> added = f => f == tb.StateField || f == tb.NextPollField || f == tb.HiddenIdsField || f == tb.HiddenPollField || f == tb.RootField;
         var ta2 = a.GetTypes().Select(t => t.FullName + "|" + string.Join(",", t.Fields.Select(f => f.FullName))).OrderBy(x => x);
         var tb2 = b.GetTypes().Select(t => t.FullName + "|" + string.Join(",", t.Fields.Where(f => !added(f)).Select(f => f.FullName))).OrderBy(x => x);
         if (!ta2.SequenceEqual(tb2)) throw new Incompatible("verify_type_or_field_set");
         // 메서드별 삽입 구간(시작, 길이). 이 구간을 뺀 나머지는 원본과 같아야 한다.
         var sites = new Dictionary<string, int[]> {
             { ta.MoveNext.FullName, new[] { tb.AnchorIndex + 1, tb.InsertLength } },
-            { ta.Smooth.FullName, new[] { tb.SmoothAnchor + 1, Target.SmoothInsert } },
+            { ta.Smooth.FullName, new[] { tb.SmoothAnchor + 1, Target.SmoothInsert + Target.RootSmoothInsert } },   // 투명화 블록 + 루트 블록(이어 붙음)
             { ta.Layer.FullName, new[] { tb.LayerAnchor + 1, Target.LayerInsert } },
             { ta.OverUI.FullName, new[] { tb.OverUIAnchor + 1, Target.OverUIInsert } },
             { ta.HoverFilter.FullName, new[] { 0, Target.FilterInsert } },
             { ta.DonutUpdate.FullName, new[] { tb.DonutAnchor + 1, Target.PopupInsert } },
             { ta.SpeechUpdate.FullName, new[] { tb.SpeechAnchor + 1, Target.PopupInsert } },
-            { ta.HoverStart.FullName, new[] { tb.HoverStart.Body.Instructions.Count - 1 - Target.StartInsert, Target.StartInsert } },
+            { ta.HoverStart.FullName, new[] { tb.RootStartAt, Target.RootStartInsert + Target.StartInsert } },   // 루트 블록 + 투명화 블록(이어 붙음)
             { ta.SettingUpdate.FullName, new[] { 0, Target.UpdateInsert } },
             // 숨김 setter는 사이트가 아니다: 원본과 전체가 같아야 한다(Cat Talk 연결 지문 범위)
             { ta.MemberStart.FullName, new[] { ta.StartCall, Target.MemberStartInsert } },
             { ta.VisibilityToggle.FullName, new[] { ta.ToggleCall, Target.ToggleInsert } },
             { ta.SpawnUpdate.FullName, new[] { 0, Target.SpawnInsert } },
+            { ta.ShowPopup.FullName, new[] { ta.PopupAt, Target.ItemPopupInsert } },
         };
         int compared = 0, diffs = 0;
         string firstDiff = null;
@@ -1093,9 +1328,11 @@ static class Program {
             && (tb.InsertLength == 7 || ins[p + 7].OpCode == OpCodes.Pop);
         bool transparentOk = TransparentSequencesOk(tb, TransparentFlag(flag));
         bool hiddenOk = HiddenSequencesOk(tb, HiddenFile(flag));
-        bool branchesOk = tb.Patched.Concat(tb.HiddenAdded).All(m => BranchTargetsResolved(m.Body));
-        bool ok = diffs == 0 && seqOk && transparentOk && hiddenOk && branchesOk && tb.MoveNext.Body.MaxStackSize >= Math.Max(ta.MoveNext.Body.MaxStackSize, 2);
-        var o = new Dictionary<string, object> { { "ok", ok }, { "patchVersion", Version(tb) }, { "methodsCompared", compared }, { "methodDiffs", diffs }, { "insertSequenceOk", seqOk }, { "transparentSequenceOk", transparentOk }, { "hiddenSequenceOk", hiddenOk }, { "branchTargetsOk", branchesOk },
+        bool popupOk = ItemPopupSequenceOk(tb);
+        bool rootOk = RootSequencesOk(tb);
+        bool branchesOk = tb.Patched.Concat(tb.Added).All(m => BranchTargetsResolved(m.Body));
+        bool ok = diffs == 0 && seqOk && transparentOk && hiddenOk && popupOk && rootOk && branchesOk && tb.MoveNext.Body.MaxStackSize >= Math.Max(ta.MoveNext.Body.MaxStackSize, 2);
+        var o = new Dictionary<string, object> { { "ok", ok }, { "patchVersion", Version(tb) }, { "methodsCompared", compared }, { "methodDiffs", diffs }, { "insertSequenceOk", seqOk }, { "transparentSequenceOk", transparentOk }, { "hiddenSequenceOk", hiddenOk }, { "itemPopupSequenceOk", popupOk }, { "rootSequenceOk", rootOk }, { "branchTargetsOk", branchesOk },
             { "maxStack", new[] { ta.MoveNext.Body.MaxStackSize, tb.MoveNext.Body.MaxStackSize } } };
         if (firstDiff != null) o["firstDiff"] = firstDiff;
         return Emit(ok ? 0 : 2, o);
@@ -1221,6 +1458,58 @@ static class Program {
             && t.ListedMethod.Body.ExceptionHandlers.Count == 0 && t.HideMethod.Body.ExceptionHandlers.Count == 0
             && t.VisibleMethod.Body.ExceptionHandlers.Count == 0 && PollHandlerOk(t.PollMethod.Body)
             && t.HiddenIdsField.IsPrivate && t.HiddenPollField.IsPrivate;
+    }
+
+    // 획득 팝업 게이트(D-046): 전송 다음이 "ldsfld CatTalkTransparent; brtrue <게임의 '오브젝트 없음' ret>"이고,
+    // 전송 분기를 포함해 원래 합류점으로 바로 가는 분기가 없다(모든 경로가 게이트를 지난다). 전송 호출 자체는 원본 대조(Verify)로 그대로임을 본다.
+    static bool ItemPopupSequenceOk(Target t) {
+        var body = t.ShowPopup.Body;
+        var ins = body.Instructions;
+        int at = t.PopupAt;
+        return at + Target.ItemPopupInsert + 4 < ins.Count
+            && ins[at].OpCode == OpCodes.Ldsfld && IsState(ins[at].Operand as FieldReference, t)
+            && (ins[at + 1].OpCode == OpCodes.Brtrue_S || ins[at + 1].OpCode == OpCodes.Brtrue)
+            && ins[at + 1].Operand == ins[at + Target.ItemPopupInsert + 4] && ins[at + Target.ItemPopupInsert + 4].OpCode == OpCodes.Ret
+            && !Targeted(body, ins[at + Target.ItemPopupInsert]);
+    }
+
+    // 투명화 루트 후크(D-047): 블록 둘과 더한 메서드가 기대 형태 그대로인지(패치 코드와 따로 적어 둔 표, 멤버는 전체 이름까지).
+    // Smooth 블록 다음 명령(원래 다음)으로 가는 분기는 블록 안의 것뿐이어야 한다(투명화 블록의 '플래그 없음' 분기도 루트 블록을 지난다).
+    static bool RootSequencesOk(Target t) {
+        const string root = "UnityEngine.CanvasGroup TranslucentOnHover::" + Target.RootFieldName;
+        const string go = "UnityEngine.GameObject UnityEngine.Component::get_gameObject()";
+        const string isSet = "call System.Boolean UnityEngine.Object::op_Implicit(UnityEngine.Object)";
+        var start = new[] { "ldarg.0", "ldfld UnityEngine.CanvasGroup TranslucentOnHover::_alpha", "callvirt " + go,
+            "ldarg.0", "call " + go, "call System.Boolean UnityEngine.Object::op_Equality(UnityEngine.Object,UnityEngine.Object)", "brtrue.s +12",
+            "ldarg.0", "ldarg.0", "call " + go, "callvirt !!0 UnityEngine.GameObject::AddComponent<UnityEngine.CanvasGroup>()", "stfld " + root };
+        var smooth = new[] { "ldarg.0", "ldfld " + root, isSet, "brfalse.s +17",
+            "ldarg.0", "ldfld " + root, "ldloc.0", "ldc.r4 0", "ceq", "ldc.i4.0", "ceq", "conv.r4",
+            "callvirt System.Void UnityEngine.CanvasGroup::set_alpha(System.Single)",
+            "ldloc.0", "ldc.r4 0", "bne.un.s +17", "call System.Void EmoteDonut::" + Target.CloseMenuName + "()" };
+        var close = new[] {
+            "ldsfld EmoteDonut EmoteDonut::Instance", isSet, "brfalse +25",
+            "ldsfld EmoteDonut EmoteDonut::Instance", "ldfld UnityEngine.GameObject EmoteDonut::_menu", "stloc.0",
+            "ldloc.0", isSet, "brfalse +25",
+            "ldloc.0", "callvirt System.Boolean UnityEngine.GameObject::get_activeSelf()", "brfalse +25",
+            "ldloc.0", "callvirt !!0 UnityEngine.GameObject::GetComponent<ToggleGameObject>()", "stloc.1",
+            "ldloc.1", isSet, "brfalse +22",
+            "ldloc.1", "ldc.i4.0", "callvirt System.Void ToggleGameObject::SetActive(System.Boolean)", "br +25",
+            "ldloc.0", "ldc.i4.0", "callvirt System.Void UnityEngine.GameObject::SetActive(System.Boolean)",
+            "ret" };
+        var body = t.Smooth.Body.Instructions;
+        int at = t.RootSmoothAt;
+        if (at + Target.RootSmoothInsert >= body.Count) return false;
+        var next = body[at + Target.RootSmoothInsert];
+        bool onlyBlockJumps = !Enumerable.Range(0, body.Count).Any(k => (k < at || k >= at + Target.RootSmoothInsert) && body[k].Operand == next);
+        return Exactly(t.HoverStart.Body, t.RootStartAt, start)
+            && Exactly(t.Smooth.Body, at, smooth) && onlyBlockJumps
+            && Whole(t.CloseMenuMethod, close, "System.Void", new string[0], new[] { "UnityEngine.GameObject", "ToggleGameObject" }, MethodAttributes.Assembly)
+            && t.CloseMenuMethod.Body.ExceptionHandlers.Count == 0
+            && t.RootField.IsPrivate && !t.RootField.IsStatic && t.RootField.FieldType.FullName == "UnityEngine.CanvasGroup";
+    }
+
+    static bool IsState(FieldReference f, Target t) {
+        return f != null && t.StateField != null && f.Name == t.StateField.Name && f.DeclaringType.FullName == t.StateField.DeclaringType.FullName;
     }
 
     // 원래 호출로 바로 가는 분기·예외 경계가 남았는지(남았으면 그 경로는 삽입 블록을 건너뛴다)
