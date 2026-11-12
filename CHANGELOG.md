@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-12
+
 ### Fixed
 
 - `auto-chest` — 투명화 중 내 고양이 주변 UI(획득 팝업·잠수 Zzz·오류 창 등)가 보이던 문제 수정, 열려 있던 게임 메뉴는 닫음(패치 세트 5, 이전 세트 설치본은 재적용 필요)

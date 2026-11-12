@@ -1,6 +1,6 @@
 {
   "name": "cat-talk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Bongo Cat 로비 채팅 데스크톱 메신저 (bongo-cat-chat 포크)",
   "author": "postcat23",
