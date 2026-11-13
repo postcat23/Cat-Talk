@@ -377,6 +377,26 @@ class Sidecar:
                 self.service.result(command["id"], "failed")
                 raise
             return {"id": command["id"]}
+        if action == "resend":
+            # Cat-Talk 추가(upstream 없음): 전송 실패(failed)한 내 메시지를 저장된 원문으로 다시 보낸다. send와 같은
+            # prepare·큐 경로라 새 uuid의 pending 행이 맨 아래에 생기고, 옛 실패 행은 prepare가 통과한 뒤 지운다(중복 0).
+            # unknown(결과 불명)은 실제로 나갔을 수 있어 대상이 아니다. 대상이 아니면 resend_unavailable(→ request_failed).
+            # 실패 행은 service.pending에서 이미 빠져 있어 echo 짝짓기에 끼어들지 않는다.
+            context, old = args.get("context"), args.get("id")
+            if context != self.service.context():
+                raise ValueError("connection_changed")
+            body = self.store.failed_own_body(old, context["account"], context["lobby"]) if isinstance(old, str) else None
+            if body is None:
+                raise ValueError("resend_unavailable")
+            command = self.service.prepare(context, body)
+            self.store.delete_failed_own(old)
+            command["queued"] = time.monotonic()
+            try:
+                self.commands.put_nowait(command)
+            except queue.Full:
+                self.service.result(command["id"], "failed")
+                raise
+            return {"id": command["id"]}
         if action == "draft":
             owner = args["account"]
             if not owner or owner not in self.known_accounts | {account} or args["lobby"] not in {r["lobby"] for r in self.store.rooms(owner)}:

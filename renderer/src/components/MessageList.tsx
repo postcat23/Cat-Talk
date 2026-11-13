@@ -10,7 +10,7 @@ const NEAR_TOP = 200;   // 맨 위에서 이 거리 안에 들어오면 과거�
 
 export default function MessageList() {
   const { settings } = useUi();
-  const { items, query, live, focus, newest, setLive, loadOlder, loadNewer, jumpTo } = useChat();
+  const { items, query, live, focus, newest, setLive, loadOlder, loadNewer, jumpTo, resend, cooldown } = useChat();
   const scroll = useRef<HTMLDivElement>(null);
   const firstId = useRef<string | undefined>(undefined);
   const height = useRef(0);   // 직전 scrollHeight: 과거 페이지가 붙은 만큼 scrollTop을 보정한다
@@ -72,8 +72,10 @@ export default function MessageList() {
           const prev = items[i - 1];
           const lead = !(prev && prev.kind === 'msg' && prev.sender === item.sender);
           const { seq } = item;
+          // ↻ 재전송은 대화 화면에서만. 검색 결과는 누르면 그 위치로 점프하는 목록이라 붙이지 않는다
           return <Message key={item.id} message={item} lead={lead} afterNotice={settings.presence && prev?.kind === 'presence'}
-            jumped={item.id === focus?.id} onJump={query && seq !== undefined ? () => void jumpTo(seq) : undefined} />;
+            jumped={item.id === focus?.id} onJump={query && seq !== undefined ? () => void jumpTo(seq) : undefined}
+            onResend={!query && item.resendable ? () => void resend(item.id) : undefined} resendDisabled={cooldown.active} />;
         })}
       </div>
       {!query && !live && (newest ? (

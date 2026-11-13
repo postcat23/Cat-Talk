@@ -2,6 +2,16 @@
 .inrow{display:flex;align-items:flex-end;gap:8px}
 .inrow textarea{flex:1;resize:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:16px 12px;font:inherit;font-size:13.5px;min-height:54px;max-height:120px;line-height:1.4}
 .inrow textarea:focus{outline:2px solid var(--accent)}
+/* 전송 버튼: 한 줄 입력창(54px)의 세로 가운데(아래 8px), 여러 줄이면 아래에 붙는다. 보낼 글이 없거나 보낼 수 없으면 흐리게.
+   쿨다운 중에는 회색 바탕 위에 진행 링(accent)이 위에서부터 시계 방향으로 차오른다(길이 = --cooldown) */
+.sendbtn{position:relative;flex:none;display:grid;place-items:center;width:38px;height:38px;margin-bottom:8px;border:0;border-radius:50%;
+  background:var(--accent);color:var(--accent-fg);cursor:pointer}
+.sendbtn:disabled{cursor:default;background:var(--line);color:var(--muted)}
+.sendbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.arrow{width:18px;height:18px}
+.ring{position:absolute;inset:-1px;width:40px;height:40px;transform:rotate(-90deg);pointer-events:none}
+.ring circle{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-dasharray:100;stroke-dashoffset:100;animation:cooldown var(--cooldown) linear forwards}
+@keyframes cooldown{to{stroke-dashoffset:0}}
 /* 안내·글자수 줄: 입력창과 띄우고(위 9px) 아래도 여유(패널 패딩 + 2px) */
 .help{display:flex;justify-content:space-between;margin-top:9px;padding-bottom:2px;font-size:11.5px;color:var(--muted)}
 .c{font-family:var(--mono);font-variant-numeric:tabular-nums}

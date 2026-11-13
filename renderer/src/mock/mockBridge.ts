@@ -69,13 +69,28 @@ function setBlocked({ account, steam_id: uid, blocked: on }: Record<string, unkn
   return { ok: true };
 }
 
+// worker(업스트림)의 1초 규칙 대역: 직전 전송 시도 후 1.0초 안이면 Steam에 보내지 않고 failed. 실패는 시도로 세지 않는다
+const WORKER_SEND_GAP_MS = 1000;
+let lastAttempt = -Infinity;
+
 function send(text: string) {
   const seq = nextSeq++;
   const row = { seq, id: 'local-' + seq, sender: ME_ID, name: PROFILES[ME_ID].name ?? '', body: text, received: Date.now() / 1000, own: 1, status: 'pending' };
   messages.push(row);
   revision++;
-  window.setTimeout(() => { row.status = 'accepted'; revision++; }, SEND_ACK_MS);
+  const now = performance.now();
+  const accepted = now - lastAttempt >= WORKER_SEND_GAP_MS;
+  if (accepted) lastAttempt = now;
+  window.setTimeout(() => { row.status = accepted ? 'accepted' : 'failed'; revision++; }, SEND_ACK_MS);
   return { id: row.id };
+}
+
+// 사이드카 resend 대역: 내 전송 실패 행만 지우고 같은 원문으로 다시 보낸다(새 행은 맨 아래). 아니면 resend_unavailable
+function resend({ id }: Record<string, unknown>) {
+  const index = messages.findIndex((m) => m.id === id && m.own === 1 && m.status === 'failed');
+  if (index < 0) return { error: 'resend_unavailable' };
+  const [old] = messages.splice(index, 1);
+  return send(old.body);
 }
 
 function setting(key: string, value: unknown) {
@@ -90,6 +105,7 @@ function dispatch(args: Record<string, unknown>) {
   switch (args.action) {
     case 'view': return view(args as ViewArgs);
     case 'send': return send(args.text as string);
+    case 'resend': return resend(args);
     case 'setting': return setting(args.key as string, args.value);
     case 'draft': drafts.set(args.lobby as string, args.text as string); return { ok: true };
     case 'refresh': return { ok: true };
