@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+### Added
+
+- `auto-update` — 드로어 '앱 업데이트'를 열 때 새 버전 확인(진행 중·준비됨·직전 확인 30초 이내면 생략), 설치 버전 배지(상태별 색)와 상태 문구(확인 중…·최신입니다·다운로드 중 N%·설치 준비됨 [재시작하여 설치]·확인/다운로드 실패 [다시 시도]) 표시, 백그라운드 확인 주기 6시간 → 2시간
+
 ## [1.0.1] - 2026-11-12
 
 ### Fixed

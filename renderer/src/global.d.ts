@@ -10,6 +10,7 @@ interface Window {
     version: string;   // app.getVersion() — package.json의 version
     update: {
       status(): Promise<import('./hooks/useAppUpdate').UpdateStatus>;
+      check(manual?: boolean): Promise<{ ok: boolean; reason?: string }>;
       install(): Promise<{ ok: boolean; reason?: string }>;
       onStatus(cb: (status: import('./hooks/useAppUpdate').UpdateStatus) => void): () => void;
     };

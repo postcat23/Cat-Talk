@@ -1,17 +1,20 @@
+import { useEffect } from 'react';
 import { OVERLAY_HEIGHT, useUi, type ChatHeight, type Settings, type Side, type Theme } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
-import { useUpdate, type UpdateState } from '../hooks/useAppUpdate';
+import { updateStatusText, useUpdate, type UpdateState } from '../hooks/useAppUpdate';
 import { STATE_LABEL } from '../chat/autoChest';
 import { BLOCKS_UNAVAILABLE, NO_BLOCKED_USERS } from '../chat/messages';
 import Cat from './Cat';
 import styles from './Drawer.module.css';
 
-// 앱 버전은 main의 app.getVersion()(package.json의 version)이다. 브라우저 dev에는 Electron이 없어 표시하지 않는다.
+// 앱 버전은 main의 app.getVersion()(package.json의 version)이다. '앱 업데이트' 배지로 늘 보인다(설치 버전).
+// 브라우저 dev에는 Electron이 없어 표시하지 않는다.
 const APP_VERSION = window.catTalk?.version ? `v${window.catTalk.version}` : null;
-// 배지는 확인 결과가 있을 때만: '최신'(새 버전 없음)·'업데이트 가능'(내려받아 둠). 확인 전·중·실패(비공개 레포 포함)·dev는
-// '최신'이라고 단정하지 않고 버전만 보여 준다(D-030).
-const UPDATE_BADGE: Partial<Record<UpdateState, string>> = { latest: '최신', ready: '업데이트 가능' };
+// 버전 배지 글자색(사용자 결정, 2026-11-13). 없는 상태(확인 중·확인 전)는 회색(--muted)
+const UPDATE_TONE: Partial<Record<UpdateState, 'good' | 'warn' | 'bad'>> = {
+  latest: 'good', disabled: 'good', downloading: 'warn', ready: 'warn', check_failed: 'bad', download_failed: 'bad',
+};
 
 type Option<T> = { value: T; label: string };
 
@@ -66,13 +69,17 @@ export default function Drawer() {
     const result = await (on ? chest.enable('transparent') : chest.disable('transparent'));
     if (result.ok) set({ clearCats: on });
   };
-  // 앱 업데이트(D-030): 내려받아 둔 업데이트를 [업데이트]로 적용(재시작)한다. 보내는 중이면 끝날 때까지 막고,
+  // 앱 업데이트(D-030): 내려받아 둔 업데이트를 [재시작하여 설치]로 적용(재시작)한다. 보내는 중이면 끝날 때까지 막고,
   // 쓰던 글이 있으면 대화 영역에 확인 카드를 띄우므로 드로어를 닫아 가리지 않게 한다.
   // 상자 설치·원본 복원 진행 카드가 떠 있는 동안(결과 문구 포함)에도 막는다 — 재시작이 게임 패치 흐름을 끊지 않게(D-039)
   const update = useUpdate();
   const updateReady = update?.state === 'ready';
-  const updateBadge = update ? UPDATE_BADGE[update.state] : undefined;
+  const updateFailed = update?.state === 'check_failed' || update?.state === 'download_failed';
+  const updateText = update ? updateStatusText(update) : '';
   const updateBlocked = sending || !!chest?.progress;
+  // 드로어를 열 때마다 확인한다(버튼 없음). 진행 중·준비됨·직전 확인 30초 이내면 main이 묻지 않는다
+  const checkUpdate = update?.check;
+  useEffect(() => { if (overlays.drawerOpen) checkUpdate?.(); }, [overlays.drawerOpen, checkUpdate]);
   const startUpdate = () => {
     if (!update || updateBlocked) return;
     const draft = hasDraft();
@@ -139,9 +146,10 @@ export default function Drawer() {
       <div className={styles.update}>
         <div className={styles.uhead}>앱 업데이트</div>
         <div className={styles.urow}>
-          {updateBadge && <span className={updateReady ? `${styles.ubadge} ${styles.avail}` : styles.ubadge}>{updateBadge}</span>}
-          {APP_VERSION && <span className={styles.uver}>{APP_VERSION}</span>}
-          {updateReady && <button className={styles.upbtn} disabled={updateBlocked} onClick={startUpdate}>업데이트</button>}
+          {APP_VERSION && <span className={styles.ubadge} data-tone={update ? UPDATE_TONE[update.state] : undefined}>{APP_VERSION}</span>}
+          {updateText && <span className={styles.utext}>{updateText}</span>}
+          {updateReady && <button className={styles.upbtn} disabled={updateBlocked} onClick={startUpdate}>재시작하여 설치</button>}
+          {updateFailed && <button className={`${styles.upbtn} ${styles.retry}`} onClick={update?.retry}>다시 시도</button>}
         </div>
       </div>
     </aside>
