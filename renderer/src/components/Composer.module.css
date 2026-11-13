@@ -1,15 +1,18 @@
 .composer{border-top:1px solid var(--line);padding:10px 12px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));background:var(--panel)}
-.inrow{display:flex;align-items:flex-end;gap:8px}
-.inrow textarea{flex:1;resize:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:12px;padding:16px 12px;font:inherit;font-size:13.5px;min-height:54px;max-height:120px;line-height:1.4}
-.inrow textarea:focus{outline:2px solid var(--accent)}
-/* 전송 버튼: 한 줄 입력창(54px)의 세로 가운데(아래 8px), 여러 줄이면 아래에 붙는다. 보낼 글이 없거나 보낼 수 없으면 흐리게.
+/* 입력 상자: 테두리·배경·포커스 링은 상자가 맡고, 안에 글 입력과 전송 버튼을 둔다(사용자 결정, 2026-11-13 — 버튼을 상자 안으로).
+   높이는 전과 같다: 한 줄 54px(테두리 포함), 최대 120px. 포커스 링은 글을 쓰는 중(textarea 포커스)에만 */
+.inrow{display:flex;align-items:flex-end;border:1px solid var(--line);background:var(--surface);border-radius:12px}
+.inrow:has(textarea:focus){outline:2px solid var(--accent)}
+.inrow textarea{flex:1;min-width:0;resize:none;border:0;background:none;color:var(--fg);padding:16px 6px 16px 12px;font:inherit;font-size:13.5px;
+  min-height:52px;max-height:118px;line-height:1.4;outline:none}
+/* 전송 버튼: 상자 안 오른쪽. 한 줄이면 세로 가운데(위아래 9px), 여러 줄이면 아래에 붙는다. 보낼 글이 없거나 보낼 수 없으면 흐리게.
    쿨다운 중에는 회색 바탕 위에 진행 링(accent)이 위에서부터 시계 방향으로 차오른다(길이 = --cooldown) */
-.sendbtn{position:relative;flex:none;display:grid;place-items:center;width:38px;height:38px;margin-bottom:8px;border:0;border-radius:50%;
+.sendbtn{position:relative;flex:none;display:grid;place-items:center;width:34px;height:34px;margin:0 9px 9px 0;border:0;border-radius:50%;
   background:var(--accent);color:var(--accent-fg);cursor:pointer}
 .sendbtn:disabled{cursor:default;background:var(--line);color:var(--muted)}
 .sendbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.arrow{width:18px;height:18px}
-.ring{position:absolute;inset:-1px;width:40px;height:40px;transform:rotate(-90deg);pointer-events:none}
+.arrow{width:17px;height:17px}
+.ring{position:absolute;inset:-1px;width:36px;height:36px;transform:rotate(-90deg);pointer-events:none}
 .ring circle{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-dasharray:100;stroke-dashoffset:100;animation:cooldown var(--cooldown) linear forwards}
 @keyframes cooldown{to{stroke-dashoffset:0}}
 /* 안내·글자수 줄: 입력창과 띄우고(위 9px) 아래도 여유(패널 패딩 + 2px) */

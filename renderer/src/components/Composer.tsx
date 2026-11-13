@@ -3,9 +3,9 @@ import { SEND_COOLDOWN_MS, type Cooldown, type RestoredDraft } from '../hooks/us
 import styles from './Composer.module.css';
 
 const MAX_LEN = 50;
-const MAX_HEIGHT = 120;
+const MAX_HEIGHT = 118;   // 글 입력 최대 높이. 입력 상자 테두리(위아래 1px)를 더하면 120px
 
-// Enter 또는 오른쪽 전송 버튼으로 보낸다. 전송 버튼은 전송 쿨다운(useChatView SEND_COOLDOWN_MS)을 보이려고 넣었다(사용자 결정,
+// Enter 또는 입력 상자 안 오른쪽 전송 버튼으로 보낸다. 전송 버튼은 전송 쿨다운(useChatView SEND_COOLDOWN_MS)을 보이려고 넣었다(사용자 결정,
 // 2026-11-13 — 목업 v34는 버튼 없이 Enter만). 쿨다운 동안 Enter·버튼은 보내지 않고 글은 입력창에 그대로 두며,
 // 버튼 테두리에 진행 링이 차오른다.
 // hidden이면 display:none으로만 가린다(언마운트하면 입력 중이던 글이 사라진다).
