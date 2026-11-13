@@ -41,6 +41,7 @@ export type UiAction =
 
 // 채팅 높이에 연동되는 값: 드로어·모달 최대 높이(--ovh), 반응 카드 최대 개수.
 // 100%는 뒤 채팅이 보이게 70%로 캡, 창이 작은 70%·50%는 오버레이가 창 전체 높이를 채운다.
+// 단 드로어는 100%에서도 캡 없이 대화 영역 전체까지 늘어난다(Drawer.module.css .tall) — 참여자 모달만 70%.
 export const OVERLAY_HEIGHT: Record<ChatHeight, string> = { '100%': '70%', '70%': '100%', '50%': '100%' };
 export const MAX_CARDS: Record<ChatHeight, number> = { '100%': 5, '70%': 4, '50%': 3 };
 

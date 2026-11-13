@@ -3,6 +3,9 @@
   transform:translateY(-100%);visibility:hidden;transition:transform .28s cubic-bezier(.4,0,.2,1),visibility 0s linear .28s;display:flex;flex-direction:column;
   padding:10px 16px 26px;gap:13px;overflow-y:auto}
 .show{transform:translateY(0);visibility:visible;transition:transform .28s cubic-bezier(.4,0,.2,1)}
+/* 채팅 높이 100%: 드로어만 대화 영역 전체까지(70% 캡 해제) — 열자마자 '앱 업데이트' 버전 상태가 보이게(사용자 결정, 2026-11-13).
+   내용 높이·둥근 모서리는 그대로이고, 대화 영역 안이라 입력창은 계속 보이고 쓸 수 있다. 참여자 모달은 70% 캡 유지 */
+.tall{max-height:100%}
 /* 창이 작은 70%·50%: 내용 길이와 무관하게 창 전체를 덮는다. 둥근 모서리는 뒤 패널이 비쳐 없앤다 */
 .full{height:100%;border-radius:0}
 .drawer h3{margin:0;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
