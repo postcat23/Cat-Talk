@@ -54,6 +54,19 @@ class VolatileStore(Store):
             blocked = set(blocked) | self.hidden_senders
         return super().message_page(account, lobby, allowed, query, before, limit, start, seen, blocked)
 
+    # 재전송(resend, Cat-Talk 추가 — server.py): 전송 실패한 내 메시지만 대상이다. 업스트림 Store에는 행 단위 삭제가 없어
+    # 인메모리 messages에 직접 쓴다. receipts는 ON DELETE CASCADE이고, 실패 행에는 보통 receipt가 없다(reject_echo가 옮김).
+    def failed_own_body(self, id, account, lobby):
+        """이 계정·로비의 내 메시지 중 status='failed'인 행의 원문. 없으면 None."""
+        row = self.db.execute("SELECT body FROM messages WHERE id=? AND own=1 AND status='failed' AND account=? AND lobby=?",
+                              (id, account, lobby)).fetchone()
+        return row[0] if row else None
+
+    def delete_failed_own(self, id):
+        """재전송으로 대신한 실패 행을 지운다. 실패한 내 메시지가 아니면 지우지 않는다. 지운 행 수를 돌려준다."""
+        with self.db:
+            return self.db.execute("DELETE FROM messages WHERE id=? AND own=1 AND status='failed'", (id,)).rowcount
+
     def blocked_users(self, account):
         # 업스트림 Store와 같은 반환: {steam_id: name}, steam_id 순. 깨진 저장값은 버린다
         value = self.setting(blocked_key(account), default={})

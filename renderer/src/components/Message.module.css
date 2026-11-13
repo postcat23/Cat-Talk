@@ -31,6 +31,13 @@
 .me .binfo{align-items:flex-end}
 .tm{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);white-space:nowrap}
 .status{font-size:10px;color:var(--muted);white-space:nowrap}
+/* ↻ 재전송(전송 실패한 내 메시지만): 강조 없는 원형 아이콘 버튼. 행 아래(시간 줄)에 맞추고, 쿨다운 중에는 흐리게 */
+.resend{flex:none;display:grid;place-items:center;width:26px;height:26px;margin-bottom:1px;border:0;border-radius:50%;
+  background:var(--line);color:var(--fg);cursor:pointer}
+.resend:hover:not(:disabled){background:color-mix(in srgb, var(--fg) 16%, var(--surface))}
+.resend:disabled{opacity:.45;cursor:default}
+.resend:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.resend svg{width:15px;height:15px}
 /* 검색 결과는 눌러서 대화의 그 위치로 간다 */
 .jumpable{cursor:pointer}
 /* 점프해 온 메시지: 테두리 링이 잠깐 켜졌다 사라진다. 시간은 useChatView HIGHLIGHT_MS와 같게. 수치는 스크린샷 확인 후 확정 */

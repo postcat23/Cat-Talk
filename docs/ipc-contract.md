@@ -41,7 +41,8 @@
 |---|---|---|---|---|
 | `view` | `lobby?,account?,query?,before?,start?,seen?,limit?=100,reactions?,language?` | 아래 §3 전체 상태 객체 | `invalid_query` | 600ms 폴링. 검색·페이징·읽음 집계 |
 | `avatars` | `ids[]`(최대 64) | `{images:{id:dataUri}}` | — | Cat-Talk 추가. `view`의 `avatar_id`로 PNG data URI를 받는다. 모르는 id는 응답에서 빠진다 |
-| `send` | `context,text` | `{id}` | `connection_changed`·`development_limit_50`·`control_character`·`storage_failed_before_send` | 워커 commands 큐로 전달 |
+| `send` | `context,text` | `{id}` | `connection_changed`·`development_limit_50`·`control_character`·`storage_failed_before_send` | 워커 commands 큐로 전달. 워커(업스트림)는 직전 전송 시도 후 1.0초 안의 전송과 큐에서 2.0초 넘게 기다린 전송을 Steam에 보내지 않고 `failed`로 돌린다. Cat-Talk 렌더러는 전송·재전송을 낸 순간부터 쿨다운 동안 다음 전송을 막는다(D-049) |
+| `resend` | `context,id` | `{id}`(새 메시지 id) | `connection_changed`·`storage_failed_before_send` | Cat-Talk 추가(upstream 없음, D-049). `id`가 현재 계정·로비의 내 메시지이고 status `failed`인 저장된 행이어야 한다(`unknown`은 실제로 나갔을 수 있어 제외). 아니면 `resend_unavailable`(→ `request_failed`). 저장된 원문으로 `send`와 같은 `prepare`·큐 경로를 타 새 uuid의 `pending` 행이 맨 아래에 생기고, `prepare`가 통과하면 옛 실패 행을 지운다(`VolatileStore.delete_failed_own`) — 결과가 다시 `failed`면 맨 아래에 남는다 |
 | `draft` | `account,lobby,text` | `{ok:true}` | `account_changed` | 세션 한정(아래 §5) |
 | `setting` | `key,value` | `{ok:true}` | `invalid_setting` | key: `theme`/`collapsed`/`language`/`reactions_enabled`/`notification_flash`/`notification_toast`. Cat-Talk 추가: `chat_opacity`(정수 20~100)/`presence_notices`/`clear_cats`/`auto_open_chest`(bool) |
 | `delete` | `account,lobby?` | `{ok:true}` | `account_changed` | 현재 계정 기록 삭제 |
@@ -186,7 +187,7 @@
 ## 8. 에러 코드 목록
 
 렌더러로 통과되는 코드: `connection_changed`, `development_limit_50`, `control_character`, `storage_failed_before_send`, `legal_unavailable`, `invalid_steam_id`, `steam_profile_unavailable`, `steam_profile_failed`, `block_unavailable`.
-`invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large`, `invalid_nickname`(Cat-Talk) → `request_failed`로 접힘(내부에선 발생하지만 렌더러로 나가지 않음).
+`invalid_query`, `invalid_setting`, `account_changed`, `invalid_merge_limit`, `request_too_large`, `invalid_nickname`(Cat-Talk), `resend_unavailable`(Cat-Talk) → `request_failed`로 접힘(내부에선 발생하지만 렌더러로 나가지 않음).
 그 외 전부 → `request_failed`. SQLite/OS → `storage_failed`. `update_permission` 실패 → `{error:update_permission_failed}`.
 Cat-Talk 전송 계층 추가 코드: `not_wired`(사이드카 미배선 액션), `bridge_down`(main↔사이드카 전송 실패).
 Cat-Talk main 추가 코드: `steam_trade_failed`(교환 요청 URI 형식 재확인 또는 `shell.openExternal` 실패. 사이드카 허용 목록과 무관하게 main이 만든다).

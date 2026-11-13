@@ -16,6 +16,12 @@ const PAGE_SIZE = 50;     // LIVE 창·load-more 단위. 검색은 view 기본�
 const MAX_LIVE_LIMIT = 1000;   // 사이드카 상한
 const JUMP_CONTEXT = 25;   // 검색 점프: 매치 앞뒤로 불러올 개수
 const HIGHLIGHT_MS = 2000;   // MessageList.module.css jumped 애니메이션과 같은 시간
+// 전송 쿨다운(사용자 결정, 2026-11-13). worker(업스트림, 불변)는 직전 전송 시도 후 1.0초 안의 전송을 Steam에 보내지 않고
+// failed로 돌린다. 전송(Enter·전송 버튼·↻ 재전송)을 낸 순간부터 이 시간 동안 다음 전송을 막아 그 실패를 만들지 않는다.
+// 1300 = 1.0초 + 관측 최대 흔들림 203ms + 여유 약 100ms(사용자 결정). 사이드카는 바로 접수하지만 worker는 0.15초 주기로 큐를
+// 꺼내므로(접수→처리 0~172ms) worker가 보는 간격이 낸 간격보다 짧아질 수 있다. 실측(가짜 송신, 210쌍): 1.10초 4/30·1.15초 2/30·
+// 1.20초 0/30 실패. 남는 드문 실패는 ↻ 재전송이 받는다 — D-049
+export const SEND_COOLDOWN_MS = 1300;
 
 // 화면의 대화 창. 검색 결과는 여기 넣지 않아 검색을 풀면 그대로 돌아온다
 interface Timeline { messages: ViewMessage[]; hasMore: boolean; hasNewer: boolean }
@@ -27,6 +33,8 @@ const png = (uri: string | undefined) => (uri?.startsWith('data:image/png;base64
 export interface Toast { id: number; text: string }
 export interface Focus { id: string }   // 점프 대상. 점프마다 새 객체라 같은 메시지로 다시 가도 스크롤한다
 export interface RestoredDraft { text: string }   // 같은 글이어도 복원마다 새 객체라 입력창이 다시 받는다
+// 전송 쿨다운 표시용. key는 쿨다운을 시작할 때마다 올라 진행 링 애니메이션을 처음부터 다시 그린다
+export interface Cooldown { active: boolean; key: number }
 
 export interface Chat {
   items: ChatItem[];
@@ -52,7 +60,9 @@ export interface Chat {
   loadOlder(): Promise<void>;
   loadNewer(): Promise<void>;
   jumpTo(seq: number): Promise<void>;
-  send(text: string): Promise<boolean>;
+  send(text: string): Promise<boolean>;   // 쿨다운 중이거나 보낼 수 없으면 false(글은 입력창에 남는다)
+  resend(id: string): Promise<void>;      // 전송 실패한 내 메시지를 다시 보낸다(옛 행은 사라지고 맨 아래에 새로). 쿨다운 공유
+  cooldown: Cooldown;
   openProfile(uid: string): Promise<void>;
   openTrade(uid: string): Promise<void>;
   setNickname(uid: string, name: string): Promise<void>;   // 빈 값이면 초기화(기본 Steam 닉네임으로 복귀)
@@ -78,6 +88,9 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [focus, setFocus] = useState<Focus | null>(null);
   const [latest, setLatest] = useState<ViewMessage | null>(null);   // HISTORY 폴링이 받은 최신 메시지
   const [sending, setSending] = useState(false);
+  const [cooldown, setCooldown] = useState<Cooldown>({ active: false, key: 0 });
+  const cooldownUntil = useRef(0);   // performance.now() 기준. 판정은 이 값으로 하고 cooldown 상태는 표시용이다
+  const cooldownTimer = useRef(0);
 
   const viewRef = useRef<ViewResponse | null>(null);
   const queryRef = useRef('');
@@ -314,10 +327,22 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, [applyTimeline, dispatch, showError]);
 
+  // 쿨다운 중이면 false. 아니면 지금부터 쿨다운을 시작하고 true(전송을 낸 순간 기준 — 사이드카 응답을 기다리지 않는다)
+  const takeSendSlot = useCallback(() => {
+    const now = performance.now();
+    if (now < cooldownUntil.current) return false;
+    cooldownUntil.current = now + SEND_COOLDOWN_MS;
+    clearTimeout(cooldownTimer.current);
+    setCooldown((c) => ({ active: true, key: c.key + 1 }));
+    cooldownTimer.current = window.setTimeout(() => setCooldown((c) => ({ ...c, active: false })), SEND_COOLDOWN_MS);
+    return true;
+  }, []);
+  useEffect(() => () => clearTimeout(cooldownTimer.current), []);
+
   // 사용자가 입력창에서 보낸 텍스트만 여기로 온다. 자동 송신 경로는 없다.
   const send = useCallback(async (text: string) => {
     const current = viewRef.current;
-    if (!current?.can_send) return false;
+    if (!current?.can_send || !takeSendSlot()) return false;
     setSending(true);
     try {
       await rpc('send', { context: current.context, text });
@@ -330,7 +355,24 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     } finally {
       setSending(false);
     }
-  }, [poll, setLive, showError]);
+  }, [poll, setLive, showError, takeSendSlot]);
+
+  // ↻ 재전송: 사용자가 누른 실패 메시지만. 사이드카가 저장된 원문으로 다시 보내고 옛 행을 지운다(새 행은 맨 아래).
+  // 쿨다운을 send와 함께 써서 연타·연속 전송으로 다시 실패하지 않게 한다. 맨 아래로 간 메시지가 보이게 LIVE로 돌린다
+  const resend = useCallback(async (id: string) => {
+    const current = viewRef.current;
+    if (!current?.can_send || !takeSendSlot()) return;
+    setSending(true);
+    try {
+      await rpc('resend', { context: current.context, id });
+      setLive(true);
+      void poll();
+    } catch (error) {
+      showError(error);
+    } finally {
+      setSending(false);
+    }
+  }, [poll, setLive, showError, takeSendSlot]);
 
   const hasDraft = useCallback(() => draftText.current.trim() !== '', []);
 
@@ -444,7 +486,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, openProfile, openTrade, setNickname, setBlocked, refresh, saveSettings, saveDraft, sending, hasDraft,
+    items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, resend, cooldown, openProfile, openTrade, setNickname, setBlocked, refresh, saveSettings, saveDraft, sending, hasDraft,
     blocksReady: shown?.blocks_ready ?? true,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),

@@ -21,7 +21,10 @@ export interface ChatMessage {
   own: boolean;
   text: string;
   time: string;    // HH:MM
-  status?: string; // 내 메시지 전송 상태
+  status?: string; // 내 메시지 전송 상태(화면 문구)
+  // ↻ 재전송 대상: 내 메시지이고 상태 코드가 failed인 저장된 행. unknown(결과 불명)은 실제로 나갔을 수 있어 제외하고,
+  // 미저장 행(저장 실패로 보내지 않음 — 글이 입력창에 남는다)도 제외한다
+  resendable?: boolean;
 }
 
 export interface PresenceItem {
@@ -158,6 +161,7 @@ export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatIt
       // 나간 참여자는 profiles에 없어도 메시지에 남은 이름으로 표시한다
       author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf, view.nicknames),
       status: m.unsaved ? UNSAVED_LABEL : STATUS_LABEL[m.status],
+      resendable: own && m.status === 'failed' && !m.unsaved,
     };
   });
 }
