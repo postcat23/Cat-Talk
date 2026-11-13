@@ -12,8 +12,10 @@ contextBridge.exposeInMainWorld('catTalk', {
   // 앱 버전(main의 app.getVersion() = package.json). 드로어 '앱 업데이트'에 표시한다.
   version: ipcRenderer.sendSync('app:get-version'),
   // 앱 자동 업데이트(D-030). 설치본에서만 동작하고 dev는 state 'disabled'. install은 내려받아 둔 업데이트를 재시작으로 적용한다.
+  // check는 드로어를 열 때(manual=false)와 [다시 시도](manual=true) 확인 요청이다.
   update: {
     status: () => ipcRenderer.invoke('update:status'),
+    check: (manual) => ipcRenderer.invoke('update:check', manual === true),
     install: () => ipcRenderer.invoke('update:install'),
     onStatus: (cb) => {
       const listener = (_e, status) => cb(status);

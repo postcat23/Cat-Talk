@@ -28,12 +28,20 @@
 .bnote{margin:0;font-size:12.5px;color:var(--muted)}
 .update{display:flex;flex-direction:column;gap:9px}
 .uhead{font-size:13.5px;font-weight:600}
+/* 행: [설치 버전 배지] 상태 문구 … 버튼. 배지는 늘 보이는 중립 칩, 문구는 좁으면 줄바꿈 */
 .urow{display:flex;align-items:center;gap:8px}
-.ubadge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(47,169,107,.18);color:var(--good)}
-.ubadge.avail{background:rgba(109,75,216,.18);color:var(--accent)}
-.uver{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--muted)}
-.upbtn{margin-left:auto;display:inline-flex;font:inherit;font-size:12.5px;font-weight:600;border:0;border-radius:9px;padding:7px 12px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
+/* 버전 글자색은 상태별(사용자 결정): 확인 중 회색 · 최신 초록 · 다운로드·설치 준비 주황 · 실패 빨강 */
+.ubadge{flex:none;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
+.ubadge[data-tone="good"]{color:var(--good-text)}
+.ubadge[data-tone="warn"]{color:var(--warn-text)}
+.ubadge[data-tone="bad"]{color:var(--bad-text)}
+/* 상태 문구는 상태와 무관하게 테마 기본 글자색(사용자 결정) — 상태 색은 버전 배지만 */
+.utext{min-width:0;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.upbtn{flex:none;margin-left:auto;display:inline-flex;font:inherit;font-size:12.5px;font-weight:600;border:0;border-radius:9px;padding:7px 12px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
 .upbtn:disabled{opacity:.5;cursor:default}
+/* [다시 시도]는 강조 없는 보조 버튼(차단 해제와 같은 색) */
+.upbtn.retry{background:var(--line);color:var(--fg)}
+.upbtn.retry:hover{background:color-mix(in srgb, var(--fg) 16%, var(--surface))}
 /* 라운드 카드. 배경은 드로어(--surface)에서 전경색 쪽으로 한 단계(라이트·다크 공통 토큰 혼합) */
 .chest{display:flex;align-items:center;gap:10px;font-size:13.5px;line-height:1.2;
   background:color-mix(in srgb, var(--fg) 8%, var(--surface));border-radius:12px;padding:10px 12px}

@@ -328,6 +328,8 @@ const updater = createUpdater({
   beforeInstall: async () => { windowState.flush(state); await stopSidecar(); },
 });
 ipcMain.handle('update:status', () => updater.status());
+// 드로어를 열 때(manual=false)와 [다시 시도](manual=true). 진행 중·준비됨·직전 확인 30초 이내(manual 제외)면 묻지 않는다
+ipcMain.handle('update:check', (_e, manual) => updater.check(manual === true));
 ipcMain.handle('update:install', () => updater.install());
 
 // 앱 버전(package.json의 version). 드로어 표시용이며, 업데이트를 붙이면 electron-updater도 이 값을 기준으로 비교한다.
