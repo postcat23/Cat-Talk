@@ -162,9 +162,12 @@
 | `result` | `service.result` | `id,status('accepted'/'failed'/'unknown')` |
 | `default_avatar` | 사이드카 보관(LRU 밖) → `view.default_avatar_id` | `avatar`(PNG data URI) — Cat-Talk 글루(`sidecar/default_avatar.py`)가 보낸다 |
 | `steam_ignored` | 사이드카 보관 → 게임 고양이 숨김 목록(§9, D-040) | `account`, `ids`(Steam '모든 대화 차단' 전체 SteamID64 정렬, 열거 실패면 `null`) — Cat-Talk 글루(`sidecar/steam_relationship.py`)가 Steam 세션의 첫 열거와 목록이 바뀔 때 보낸다 |
+| `steam_released` | 사이드카가 그 worker를 끝내고 새 worker를 띄운다(아래) | 없음 — Cat-Talk 글루(`sidecar/steam_release.py`)가 Steam을 잡았던 `Steam.close()`(SteamAPI_Shutdown) 직후 보낸다 |
 
 **commands(controller→worker)**: `{type:'send',id,text,context}`, `{type:'refresh'}`.
-**큐 사양**: commands `maxsize=64`, events `maxsize=2048`, `stop`은 Event. spawn 컨텍스트.
+**큐 사양**: commands `maxsize=64`, events `maxsize=2048`, `stop`은 Event(worker마다 새로). spawn 컨텍스트.
+
+**worker 교체·재시작(Cat-Talk)**: Steam은 앱(3419430)을 프로세스 단위로 추적해, worker가 SteamAPI_Shutdown을 불러도 그 프로세스가 살아 있는 한 Bongo Cat을 '실행 중'(`HKCU\Software\Valve\Steam\Apps\3419430\Running=1`)으로 유지한다 — 게임을 꺼도 Steam에서 다시 실행하면 '이미 실행 중'으로 막혔다(D-019 실측). 그래서 사이드카는 `steam_released`를 받으면 그 worker의 `stop`을 걸어 끝내고(5초 안에 안 끝나면 terminate + 큐 교체) 새 worker를 띄운다. 새 worker는 게임을 찾기 전에는 Steam을 초기화하지 않아, 게임이 꺼져 있는 동안 Steam 등록이 없다. 사이드카·store는 그대로라 대화 기록이 남는다. 업스트림은 연결 끊김 `state`를 먼저 보내고(보내던 메시지는 거기서 `unknown`으로 정리) 그 뒤 Steam을 놓는다. 교체가 아닌 worker 종료(크래시·강제 종료)는 지금처럼 `worker_stopped`를 알리고 3초 뒤 새 worker를 띄운다(업스트림은 앱 재시작이 필요했다).
 
 ---
 
