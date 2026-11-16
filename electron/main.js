@@ -7,6 +7,9 @@ const { createAutoChest, defaultSys } = require('./auto-chest');
 const { countBadge, dotIcon } = require('./badge');
 const { attachImeMemory } = require('./ime-memory');
 const { createUpdater } = require('./updater');
+const { createLogger } = require('./logger');
+const { createReporter } = require('./report');
+const os = require('os');
 
 const REQUEST_TIMEOUT_MS = 5000;
 const DEV = process.env.CATTALK_DEV === '1';
@@ -33,8 +36,19 @@ const state = windowState.load();
 app.setPath('userData', path.join(app.getPath('appData'), 'Cat Talk'));
 // 잠금을 못 얻은 두 번째 실행은 첫 실행에 알리고(second-instance → 펼치기) 아무것도 시작하지 않고 끝난다(whenReady 참고).
 // quit()만 부르면 whenReady의 시작 작업이 그대로 돌아, 꺼지기 전에 사이드카(와 worker)가 잠깐 뜬다(D-041 실측).
+// 진단 로그(관측 전용, D-050). 동작은 바꾸지 않는다.
+const log = createLogger(path.join(windowState.dataDir(), 'logs'));
+log.main('start', { version: app.getVersion(), packaged: app.isPackaged, dev: DEV, pid: process.pid,
+  electron: process.versions.electron, os: `${os.platform()} ${os.release()} ${os.arch()}` });
 const primary = app.requestSingleInstanceLock();
+log.main('instance_lock', { primary });
 if (!primary) app.quit();
+app.on('child-process-gone', (_e, d) => log.main('child_process_gone', { type: d.type, reason: d.reason, exitCode: d.exitCode, name: d.name || d.serviceName }));
+app.on('gpu-info-update', () => log.main('gpu_info_update', app.getGPUFeatureStatus()));
+app.on('will-quit', () => log.main('will_quit'));
+const METRICS_MS = 60 * 1000;   // 사용자 결정
+const logMetrics = () => log.main('metrics', app.getAppMetrics().map((m) => ({ type: m.type, pid: m.pid,
+  cpu: Math.round(m.cpu.percentCPUUsage * 10) / 10, memKB: m.memory.workingSetSize })));
 app.setAppUserModelId(APP_ID);
 app.on('second-instance', () => openAndExpand());
 process.stderr.on('error', () => {});   // 콘솔 없이 실행되면 쓰기가 실패할 수 있다. 사이드카는 계속 돈다.
@@ -65,13 +79,21 @@ function startSidecar() {
       : [...(custom ? [windowlessPython(custom)] : ['pyw', '-3.11']), script];
   // libuv는 상속 stdio가 하나도 없을 때만 CREATE_NO_WINDOW를 붙인다. 그래서 prod는 stderr를 상속 대신
   // 파이프로 받아 Electron stderr로 넘긴다(사이드카가 fd2를 fd1로 복제하므로 버리면 안 된다).
+  // stderr는 dev도 파이프로 받아 진단 로그(sidecar.log)에 남기고 콘솔에도 그대로 넘긴다(D-050).
   const child = spawn(cmd, args, {
-    stdio: ['pipe', 'pipe', DEV ? 'inherit' : 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: !DEV,
-    // 설정 DB(settings.sqlite3)가 창 상태·패처 백업과 같은 데이터 폴더에 생기도록 main이 정한 폴더를 넘긴다(D-041)
-    env: { ...process.env, CATTALK_DATA: windowState.dataDir() },
+    // 설정 DB(settings.sqlite3)가 창 상태·패처 백업과 같은 데이터 폴더에 생기도록 main이 정한 폴더를 넘긴다(D-041).
+    // CATTALK_LOG_DIR: 사이드카·worker의 faulthandler 파일 위치
+    env: { ...process.env, CATTALK_DATA: windowState.dataDir(), CATTALK_LOG_DIR: log.dir },
   });
-  if (child.stderr) child.stderr.on('data', (chunk) => { try { process.stderr.write(chunk); } catch (e) { /* 콘솔 없음 */ } });
+  log.main('sidecar_spawn', { pid: child.pid, cmd: path.basename(cmd) });
+  child.stderr.on('data', (chunk) => {
+    log.sidecar(chunk);
+    try { process.stderr.write(chunk); } catch (e) { /* 콘솔 없음 */ }
+  });
+  child.on('error', (e) => log.main('sidecar_error', { code: e.code }));
+  child.on('exit', (code, signal) => log.main('sidecar_exit', { pid: child.pid, code, signal }));
   sidecar = child;
   stdoutBuf = '';
   // 사이드카가 없거나 죽어도 창은 살아 있어야 한다. 대기 요청을 끊어 렌더러가 bridge_down을 표시하게 한다.
@@ -256,6 +278,12 @@ function createWindow() {
   });
   // 등록된 앱 ID를 쓰면 작업표시줄이 창 아이콘 대신 exe 아이콘을 보여 준다. 창에는 등록하지 않은 ID를 따로 준다.
   if (process.platform === 'win32') win.setAppDetails({ appId: WINDOW_APP_ID });
+  log.main('window_created', { bounds: win.getBounds() });
+  win.webContents.on('render-process-gone', (_e, d) => log.main('render_process_gone', { reason: d.reason, exitCode: d.exitCode }));
+  win.webContents.on('did-finish-load', () => log.main('renderer_loaded'));
+  win.webContents.on('did-fail-load', (_e, code, desc) => log.main('renderer_load_failed', { code, desc }));
+  win.on('unresponsive', () => log.main('window_unresponsive'));
+  win.on('responsive', () => log.main('window_responsive'));
   // 생성 직후에도 한 번 맞춘다(혼합 배율에서 생성 좌표가 어긋날 수 있다).
   dockTo(display);
   // 작업표시줄로 최소화했다 복원한 뒤 최상위가 풀린다는 보고가 있어 복원·표시 때마다 다시 건다.
@@ -332,6 +360,13 @@ ipcMain.handle('update:status', () => updater.status());
 ipcMain.handle('update:check', (_e, manual) => updater.check(manual === true));
 ipcMain.handle('update:install', () => updater.install());
 
+// 버그 신고·요청 사항(D-050). 웹훅 URL·태그·첨부는 main만 다룬다(렌더러는 제목·내용·연결 상태만 넘긴다).
+const reporter = createReporter({ logDir: log.dir, log, openPath: (p) => shell.openPath(p) });
+ipcMain.on('report:available', (e) => { e.returnValue = reporter.available(); });
+ipcMain.handle('report:preview', () => reporter.preview());
+ipcMain.handle('report:open-preview', () => reporter.openPreview());
+ipcMain.handle('report:submit', (_e, args) => reporter.submit(args));
+
 // 앱 버전(package.json의 version). 드로어 표시용이며, 업데이트를 붙이면 electron-updater도 이 값을 기준으로 비교한다.
 ipcMain.on('app:get-version', (e) => { e.returnValue = app.getVersion(); });
 
@@ -370,6 +405,9 @@ ipcMain.on('window:set-interactive', (_e, interactive) => {
 app.whenReady().then(() => {
   if (!primary) return;   // 두 번째 실행: 사이드카·창·업데이트 확인·토스트 등록을 하지 않는다
   registerToastIdentity();
+  log.main('ready', { gpu: app.getGPUFeatureStatus() });
+  logMetrics();
+  setInterval(logMetrics, METRICS_MS).unref?.();
   startSidecar(); createWindow();
   updater.start();
   // 해상도·배율·작업표시줄 변화: 현재 디스플레이 기준으로 재도크. 그 디스플레이가 빠지면 남은 쪽으로.

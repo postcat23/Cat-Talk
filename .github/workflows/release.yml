@@ -93,6 +93,15 @@ jobs:
             Write-Output "Created draft release v$version"
           } else { Write-Output "Reusing draft release v$version" }
 
+      # 버그 신고·요청 사항 웹훅(D-050). 레포에 없고 Actions 시크릿에서 asar에 들어갈 파일로만 쓴다(로그에 찍지 않는다).
+      # 시크릿이 없으면 경고만 남기고 신고 버튼이 비활성인 설치본을 만든다.
+      - name: Write report webhook from secret
+        env:
+          CATTALK_REPORT_WEBHOOK: ${{ secrets.CATTALK_REPORT_WEBHOOK }}
+        run: |
+          if (-not $env:CATTALK_REPORT_WEBHOOK) { Write-Host '::warning::CATTALK_REPORT_WEBHOOK secret is not set - report buttons will be disabled'; exit 0 }
+          @{ url = $env:CATTALK_REPORT_WEBHOOK } | ConvertTo-Json -Compress | Set-Content -Path electron/report-webhook.json -Encoding utf8NoBOM -NoNewline
+
       - name: Build installer and publish draft release
         run: npx electron-builder --win --publish always
         env:

@@ -28,6 +28,7 @@ from bongo_chat.service import ChatService, NOTIFICATION_KEYS
 from bongo_chat.worker import unavailable
 from default_avatar import run_worker_with_default
 from volatile_store import VolatileStore
+from diag import enable_faulthandler, mark
 
 MAX_REQUEST = 32768
 # 아바타 PNG는 view에 싣지 않고 id만 보낸다(600ms 폴링마다 수십 KB×참여자×2가 되는 것을 막는다).
@@ -101,8 +102,11 @@ def data_dir():
 class Sidecar:
     def __init__(self, data, offline=False, read_only=False):
         # D-003: 채팅 계열은 인메모리(종료 시 소멸), settings만 디스크.
+        started = time.monotonic()
         self.store = VolatileStore(data / "settings.sqlite3")
         self.service = ChatService(self.store)
+        mark("db_open", seconds=round(time.monotonic() - started, 3))
+        self.diag_state = None   # 마지막으로 남긴 (state, notice, lobby_verified, send_enabled) — 바뀔 때만 표식
         self.known_accounts = set()
         self.avatar_images = OrderedDict()   # id -> data URI
         self.default_avatar = None   # (id, data URI): 게임 기본 고양이. 아바타 미해결 시 렌더러 플레이스홀더
@@ -127,6 +131,7 @@ class Sidecar:
             self.worker = self.context.Process(target=run_worker_with_default,
                 args=(self.commands, self.events, self.stop, read_only, True), daemon=True)
             self.worker.start()
+            mark("worker_spawn", pid=self.worker.pid)
 
     def poll(self):
         try:
@@ -141,6 +146,7 @@ class Sidecar:
                         self.known_accounts.add(event["account"])
                     self.service.update(event)
                     self.update_steam_hidden()
+                    self.mark_state(event)
                 elif event.get("type") == "message":
                     # Steam 차단한 사람의 메시지는 업스트림이 받아 두지만(앱 차단이 아니므로) 화면에서 숨기니 알림 수에서 뺀다
                     if self.service.receive(event) and event.get("sender") not in self.steam_hidden:
@@ -156,12 +162,21 @@ class Sidecar:
                 elif event.get("type") == "result":
                     self.service.result(event["id"], event["status"])
             if self.worker and not self.worker.is_alive() and self.service.state.get("notice") != "worker_stopped":
+                mark("worker_stopped", exitcode=self.worker.exitcode)
                 self.service.update(unavailable("worker_stopped"))
             if time.monotonic()-self.last_prune > 60:
                 self.service.write(self.store.prune)
                 self.last_prune = time.monotonic()
         except (sqlite3.Error, OSError):
             self.service.storage_error = True
+
+    def mark_state(self, event):
+        # worker 상태 전이(연결 단계·오류 코드·재시도)만 남긴다. 계정·로비·이름·멤버는 남기지 않는다
+        key = (event.get("state"), event.get("notice"), bool(event.get("lobby_verified")), bool(event.get("send_enabled")))
+        if key != self.diag_state:
+            self.diag_state = key
+            mark("worker_state", state=key[0], notice=key[1], lobby_verified=key[2], send_enabled=key[3],
+                 members=len(event.get("members") or []))
 
     def close(self):
         if self.closed:
@@ -497,6 +512,8 @@ def read_stdin(stream, inbox, shutdown):
 
 
 def main():
+    enable_faulthandler("sidecar")
+    mark("start", pid=os.getpid(), frozen=bool(getattr(sys, "frozen", False)))
     # 네이티브(Steam/Mono)·자식 프로세스가 C 레벨로 stdout에 쓰면 IPC 스트림이 깨진다.
     # 진짜 stdout은 IPC 전용으로 떼어 두고 fd1은 stderr로 돌린다. worker spawn 전에 해야 한다.
     ipc_fd = os.dup(1)

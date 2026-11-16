@@ -14,6 +14,12 @@ interface Window {
       install(): Promise<{ ok: boolean; reason?: string }>;
       onStatus(cb: (status: import('./hooks/useAppUpdate').UpdateStatus) => void): () => void;
     };
+    report: {
+      available: boolean;
+      preview(): Promise<{ parts: { name: string; bytes: number }[]; name: string; bytes: number }>;
+      openPreview(): Promise<{ ok: boolean }>;
+      submit(args: { kind: 'bug' | 'request'; title: string; body: string; conn: string }): Promise<{ ok: boolean; reason?: string }>;
+    };
     onExpand(cb: () => void): () => void;
     setDockSide(side: 'left' | 'right'): void;
     setChatHeight(pct: 100 | 70 | 50): void;

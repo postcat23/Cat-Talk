@@ -45,6 +45,11 @@
 /* [다시 시도]는 강조 없는 보조 버튼(차단 해제와 같은 색) */
 .upbtn.retry{background:var(--line);color:var(--fg)}
 .upbtn.retry:hover{background:color-mix(in srgb, var(--fg) 16%, var(--surface))}
+/* 버그 신고·요청 사항(D-050): 앱 업데이트 아래 보조 버튼 두 개(차단 해제와 같은 색) */
+.report{display:flex;gap:8px}
+.rbtn{flex:1;height:34px;font:inherit;font-size:12.5px;font-weight:600;border:0;border-radius:9px;background:var(--line);color:var(--fg);cursor:pointer}
+.rbtn:hover:not(:disabled){background:color-mix(in srgb, var(--fg) 16%, var(--surface))}
+.rbtn:disabled{opacity:.5;cursor:default}
 /* 라운드 카드. 배경은 드로어(--surface)에서 전경색 쪽으로 한 단계(라이트·다크 공통 토큰 혼합) */
 .chest{display:flex;align-items:center;gap:10px;font-size:13.5px;line-height:1.2;
   background:color-mix(in srgb, var(--fg) 8%, var(--surface));border-radius:12px;padding:10px 12px}

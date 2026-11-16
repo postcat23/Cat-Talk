@@ -23,6 +23,14 @@ contextBridge.exposeInMainWorld('catTalk', {
       return () => ipcRenderer.removeListener('update:status', listener);
     },
   },
+  // 버그 신고·요청 사항(D-050). available은 빌드에 웹훅이 들어 있는지. preview는 첨부될 로그 목록·크기,
+  // openPreview는 첨부될 내용(식별자 지운 뒤)을 임시 파일로 연다. submit({kind:'bug'|'request', title, body, conn})
+  report: {
+    available: ipcRenderer.sendSync('report:available'),
+    preview: () => ipcRenderer.invoke('report:preview'),
+    openPreview: () => ipcRenderer.invoke('report:open-preview'),
+    submit: (args) => ipcRenderer.invoke('report:submit', args),
+  },
   // 트레이 '열기/펼치기'·두 번째 실행 시 접힌 패널을 펼친다. 해제 함수를 돌려준다.
   onExpand: (cb) => {
     const listener = () => cb();

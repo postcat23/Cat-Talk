@@ -68,6 +68,7 @@ export interface Chat {
   setNickname(uid: string, name: string): Promise<void>;   // 빈 값이면 초기화(기본 Steam 닉네임으로 복귀)
   setBlocked(uid: string, blocked: boolean): Promise<void>;   // 앱 차단·해제(D-033). 성공 안내 없이 목록 변화로 보인다
   refresh(): Promise<void>;
+  notify(text: string): void;   // 안내 토스트(에러 토스트와 같은 자리). 신고 등록 결과 등
   saveSettings(patch: Partial<Settings>): void;
   saveDraft(text: string, now?: boolean): void;
   sending: boolean;      // 보낸 메시지의 응답을 기다리는 중. 그동안 앱 업데이트(재시작)를 막는다(D-030)
@@ -119,6 +120,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const showError = useCallback((error: unknown) => {
     setToast({ id: nextToast.current++, text: errorText(error) });
   }, []);
+  const notify = useCallback((text: string) => setToast({ id: nextToast.current++, text }), []);
 
   const applyTimeline = useCallback((next: Timeline) => {
     timelineRef.current = next;
@@ -486,7 +488,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
   return {
-    items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, resend, cooldown, openProfile, openTrade, setNickname, setBlocked, refresh, saveSettings, saveDraft, sending, hasDraft,
+    items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, resend, cooldown, openProfile, openTrade, setNickname, setBlocked, refresh, notify, saveSettings, saveDraft, sending, hasDraft,
     blocksReady: shown?.blocks_ready ?? true,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
