@@ -9,14 +9,19 @@ export type ChestState = 'not_installed' | 'on' | 'off' | 'incompatible' | 'need
 export interface ChestStatus { state: ChestState; transparent?: ChestState; reason?: string; restorable?: boolean }
 export interface ChestResult { ok: boolean; reason?: string; rolledBack?: boolean; restored?: boolean }
 export interface ChestProgress {
-  phase: 'checking' | 'countdown' | 'cancelled' | 'stopping_worker' | 'closing_game' | 'patching' | 'restoring' | 'launching' | 'verifying' | 'done' | 'failed';
+  phase: 'checking' | 'countdown' | 'cancelled' | 'stopping_worker' | 'closing_game' | 'waiting_steam' | 'patching' | 'restoring' | 'launching' | 'verifying' | 'done' | 'failed';
   seconds?: number;
   reason?: string;
   rolledBack?: boolean;
   restored?: boolean;     // 원본 복원: 실패했어도 DLL은 이미 되돌렸는지
   features?: Feature[];   // 이 설치로 켜는 기능
-  action?: 'install' | 'restore';   // 진행 중인 일(없으면 설치)
+  // 진행 중인 일(없으면 설치). restart·launch는 드로어 '게임 재시작'·'게임 실행'(같은 게임 조작·카운트다운을 쓴다)
+  action?: 'install' | 'restore' | 'restart' | 'launch';
 }
+// 드로어 게임 카드: found = 게임 설치를 찾았는지, running = 게임 프로세스가 떠 있는지
+export interface GameStatus { found: boolean; running: boolean }
+// 게임 카드 상태 문구(상자 카드의 STATE_LABEL처럼 제목 아래). '게임을 찾지 못함'은 상자 카드 no_game과 같은 문구
+export const gameStateLabel = (g: GameStatus) => (!g.found ? '게임을 찾지 못함' : g.running ? '실행 중' : '꺼짐');
 
 export const FEATURE_NAME: Record<Feature, string> = { chest: '상자 자동 오픈', transparent: '모든 고양이 투명화' };
 
@@ -82,7 +87,32 @@ function restoreText(p: ChestProgress) {
   }
 }
 
+// 게임 재시작(action 'restart')·실행('launch') 문구. 재시작이 Steam 해제를 못 기다리고 끝나면 켜져 있던 게임을 한 번 다시 실행해 본다
+// (설치·복원과 같은 규칙)이라, 그때는 결과를 단정하지 않고 다음 행동을 안내한다.
+function restartText(p: ChestProgress) {
+  const again = p.action === 'restart';
+  switch (p.phase) {
+    case 'countdown': return `${p.seconds}초 뒤 게임을 종료하고 다시 실행합니다.`;
+    case 'closing_game': return '게임을 종료하는 중입니다.';
+    case 'waiting_steam': return 'Steam에서 게임이 종료되기를 기다리는 중입니다.';
+    case 'launching': return again ? '게임을 다시 실행하는 중입니다.' : '게임을 실행하는 중입니다.';
+    case 'done': return again ? '게임을 다시 실행했습니다.' : '게임을 실행했습니다.';
+    case 'cancelled': return '게임 재시작을 취소했습니다.';
+    case 'failed':
+      switch (p.reason) {
+        case 'game_close_failed': return '게임이 종료되지 않아 재시작을 중단했습니다. 게임을 직접 닫고 다시 시도해 주세요.';
+        case 'steam_still_running': return again
+          ? 'Steam에 게임이 아직 실행 중으로 표시되어 재시작이 늦어졌습니다. 게임이 켜지지 않으면 잠시 뒤 다시 실행해 주세요.'
+          : 'Steam에 게임이 아직 실행 중으로 표시되어 실행하지 못했습니다. 잠시 뒤 다시 시도해 주세요.';
+        case 'game_start_failed': return '게임이 시작되지 않았습니다. Steam에서 직접 실행해 주세요.';
+        default: return again ? '게임을 다시 실행하지 못했습니다.' : '게임을 실행하지 못했습니다.';
+      }
+    default: return '';
+  }
+}
+
 export function progressText(p: ChestProgress) {
+  if (p.action === 'restart' || p.action === 'launch') return restartText(p);
   if (p.action === 'restore') return restoreText(p);
   switch (p.phase) {
     case 'checking': return '설치 가능 여부를 확인 중입니다.';
@@ -98,6 +128,6 @@ export function progressText(p: ChestProgress) {
       const text = FAILURE[p.reason ?? ''] ?? '설치하지 못했습니다.';
       return p.rolledBack ? `${text} 게임 파일을 원본으로 되돌렸습니다.` : text;
     }
-    default: return '';   // 'restoring'은 원본 복원(action 'restore')에서만 온다
+    default: return '';   // 'restoring'은 원본 복원(action 'restore'), 'waiting_steam'은 게임 재시작·실행에서만 온다
   }
 }

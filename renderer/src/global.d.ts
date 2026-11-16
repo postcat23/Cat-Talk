@@ -36,5 +36,9 @@ interface Window {
       onProgress(cb: (progress: import('./chat/autoChest').ChestProgress) => void): () => void;
       onChanged(cb: () => void): () => void;
     };
+    game: {
+      status(): Promise<import('./chat/autoChest').GameStatus>;
+      restart(): Promise<import('./chat/autoChest').ChestResult>;
+    };
   };
 }

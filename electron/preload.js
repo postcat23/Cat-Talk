@@ -64,4 +64,10 @@ contextBridge.exposeInMainWorld('catTalk', {
       return () => ipcRenderer.removeListener('chest:changed', listener);
     },
   },
+  // 드로어 '게임 재시작'·'게임 실행'. status는 {found, running}. restart는 켜져 있으면 카운트다운 뒤 재시작, 꺼져 있으면 실행만 한다.
+  // 진행·취소는 chest.onProgress·chest.cancel을 같이 쓴다(action 'restart' | 'launch').
+  game: {
+    status: () => ipcRenderer.invoke('game:status'),
+    restart: () => ipcRenderer.invoke('game:restart'),
+  },
 });

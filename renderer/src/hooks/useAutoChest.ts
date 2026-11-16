@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useUi } from '../state/UiContext';
-import type { ChestProgress, ChestResult, ChestState, Feature } from '../chat/autoChest';
+import type { ChestProgress, ChestResult, ChestState, Feature, GameStatus } from '../chat/autoChest';
 
 const PROGRESS_LINGER_MS = 5000;   // 끝난 뒤 결과 문구를 보여 주는 시간
 const RECHECK_MS = 60000;          // 설정 ON인 동안 패치 소실(업데이트)을 다시 확인하는 주기. 판정만 하고 쓰지 않는다
@@ -24,6 +24,9 @@ export interface AutoChest {
   dismissReinstall(): void;        // 재설치 토스트 [X]: 이번 실행 동안만 숨김(설정·플래그는 그대로 — 게임 쪽 기능은 계속 동작할 수 있다)
   restore(): Promise<void>;        // 원본 복원 토스트 [원본 복원]
   dismissRestore(): void;          // 원본 복원 토스트 [X]
+  game: GameStatus | null;         // 드로어 게임 버튼 문구(확인 전 null)
+  refreshGame(): Promise<void>;
+  restartGame(): Promise<void>;    // '게임 재시작'(켜져 있으면 카운트다운 뒤) · '게임 실행'(꺼져 있으면)
 }
 
 // 두 기능은 게임 패치 하나를 함께 쓴다(설치·재적용 공통, 플래그만 기능별).
@@ -31,7 +34,9 @@ export interface AutoChest {
 // onTurnedOff: 그 기능들의 설정 값을 끄기로 저장하는 쪽(UI 상태 + setting 액션).
 export function useAutoChest(chestWanted: boolean, transparentWanted: boolean, onTurnedOff: (features: Feature[]) => void): AutoChest | null {
   const chest = window.catTalk?.chest;
+  const gameApi = window.catTalk?.game;
   const { dispatch } = useUi();
+  const [game, setGame] = useState<GameStatus | null>(null);
   const wantedList = useMemo(() => [chestWanted && 'chest', transparentWanted && 'transparent'].filter(Boolean) as Feature[], [chestWanted, transparentWanted]);
   const wanted = wantedList.length > 0;
   const [state, setState] = useState<ChestState | null>(null);
@@ -53,6 +58,11 @@ export function useAutoChest(chestWanted: boolean, transparentWanted: boolean, o
     setRestorable(s.restorable === true);
   }, [chest]);
 
+  const refreshGame = useCallback(async () => {
+    if (!gameApi) return;
+    try { setGame(await gameApi.status()); } catch { /* 다음 확인에서 다시 묻는다 */ }
+  }, [gameApi]);
+
   // 원본 복원 제안이 꺼지면(다시 필요해짐·복원됨) 닫음 기억도 푼다 — 다음에 불필요해지면 새로 띄운다
   useEffect(() => { if (!restorable) setRestoreHidden(false); }, [restorable]);
 
@@ -71,9 +81,10 @@ export function useAutoChest(chestWanted: boolean, transparentWanted: boolean, o
       if (p.phase === 'checking' || p.phase === 'countdown') dispatch({ type: 'closeOverlays' });
       if (p.phase === 'done' || p.phase === 'failed' || p.phase === 'cancelled') {
         linger.current = window.setTimeout(() => setProgress(null), PROGRESS_LINGER_MS);
+        void refreshGame();   // 게임이 켜졌는지·꺼졌는지 바뀌었을 수 있다(드로어 버튼 문구)
       }
     });
-  }, [chest, dispatch]);
+  }, [chest, dispatch, refreshGame]);
 
   useEffect(() => {
     if (!chest) return;
@@ -129,6 +140,15 @@ export function useAutoChest(chestWanted: boolean, transparentWanted: boolean, o
 
   const dismissRestore = useCallback(() => setRestoreHidden(true), []);
 
+  // 진행 카드가 드로어에 가리지 않게 먼저 닫는다(실행은 카운트다운이 없어 진행 알림만으로는 닫히지 않는다)
+  const restartGame = useCallback(async () => {
+    if (!gameApi) return;
+    dispatch({ type: 'closeOverlays' });
+    setBusy(true);
+    try { await gameApi.restart(); }
+    finally { setBusy(false); await refreshGame(); }
+  }, [gameApi, dispatch, refreshGame]);
+
   if (!chest) return null;
   return {
     state, transparent, progress, busy,
@@ -136,6 +156,7 @@ export function useAutoChest(chestWanted: boolean, transparentWanted: boolean, o
     needsReinstall: wanted && state === 'patcher_mismatch' && !busy && !reinstallHidden,
     needsRestore: !wanted && restorable && !busy && !restoreHidden,
     wanted: wantedList, enable, disable, cancel, reapply, dismissReapply, dismissReinstall, restore, dismissRestore,
+    game, refreshGame, restartGame,
   };
 }
 

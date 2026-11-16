@@ -351,6 +351,10 @@ ipcMain.handle('chest:disable', (_e, feature) => chest.disable(feature));
 ipcMain.handle('chest:reapply', (_e, features) => chest.reapply(features));
 ipcMain.handle('chest:restore', () => chest.restore());
 ipcMain.on('chest:cancel', () => chest.cancel());
+// 드로어 '게임 재시작'·'게임 실행'. 상자 흐름과 같은 게임 조작·카운트다운(chest:cancel)·진행 알림(chest:progress, action 'restart'|'launch')을 쓴다.
+// 사이드카는 내리지 않는다(대화 기록 유지): 게임이 꺼지면 사이드카가 Steam을 놓은 worker를 새로 띄워 Steam의 '실행 중'이 풀린다.
+ipcMain.handle('game:status', () => chest.gameStatus());
+ipcMain.handle('game:restart', () => chest.restartGame());
 
 // 앱 자동 업데이트(D-030). 설치본에서만 확인·내려받기를 한다(dev는 electron-updater를 읽지도 않는다).
 // 적용 전에 사이드카를 정상 종료해 worker를 남기지 않는다.
