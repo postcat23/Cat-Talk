@@ -151,7 +151,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     ids.forEach((id) => requested.add(id));
     rpc<{ images: Record<string, string> }>('avatars', { ids })
       .then(({ images }) => setAvatars((current) => ({ ...current, ...images })))
-      .catch(() => ids.forEach((id) => requested.delete(id)));   // 표시는 이모지 폴백, 다음 폴링에서 재시도
+      .catch(() => ids.forEach((id) => requested.delete(id)));   // 표시는 기본 고양이(없으면 실루엣), 다음 폴링에서 재시도
   }, []);
 
   // 배경 저장이라 실패해도 알리지 않는다. 글은 입력창에 남아 있고 다음 입력 때 다시 저장한다.
@@ -452,9 +452,10 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   }, [dispatch, showError]);
 
   const shown = failed ? null : view;
-  const ready = shown?.avatar_stage === 'ready';
-  // 아바타가 아직 없거나(스킨 변경 중 포함) 받기 전이면 게임 기본 고양이. 그것도 없으면(브라우저 dev 등) 이모지
-  const placeholder = ready && shown?.default_avatar_id ? avatars[shown.default_avatar_id] : undefined;
+  // 아바타 준비 상태는 마지막으로 받은 view 기준: 폴링이 잠깐 실패해도 HISTORY 창의 고양이를 받아 둔 이미지로 유지한다
+  const ready = view?.avatar_stage === 'ready';
+  // 아바타가 아직 없거나(스킨 변경 중 포함) 받기 전이면 게임 기본 고양이. 그것도 없으면(시작 직후 로딩·렌더 불가·브라우저 dev) 실루엣
+  const placeholder = ready && view?.default_avatar_id ? avatars[view.default_avatar_id] : undefined;
   const avatarOf = useCallback<AvatarLookup>(
     (id) => (ready ? (id && avatars[id]) || placeholder : undefined), [ready, avatars, placeholder]);
   const items = useMemo(() => {

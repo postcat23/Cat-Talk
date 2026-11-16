@@ -14,7 +14,7 @@ interface Props {
 
 export default function Message({ message, lead, afterNotice, jumped, onJump, onResend, resendDisabled }: Props) {
   const sender = message.author;
-  const cls = [styles.msg, message.own ? styles.me : styles.peer, lead && styles.lead, lead && sender.avatar && styles.sprite,
+  const cls = [styles.msg, message.own ? styles.me : styles.peer, lead && styles.lead,
     lead && afterNotice && styles.afterNotice, jumped && styles.jumped, onJump && styles.jumpable]
     .filter(Boolean).join(' ');
   return (

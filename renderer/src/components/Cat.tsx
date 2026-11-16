@@ -28,11 +28,13 @@ function Sprite({ src }: { src: string }) {
   );
 }
 
-// 고양이 표시. 실아바타(스킨+모자 합성 256px 정지 PNG)가 있으면 그것을, 없으면 이모지 플레이스홀더.
+// 고양이 표시. 실아바타(스킨+모자 합성 256px 정지 PNG)가 있으면 그것을, 없으면(게임 기본 고양이도 아직 없거나 렌더 불가)
+// 앱 고양이 실루엣을 부모 칸 바닥에 붙여 그린다.
 // framing — full: 스프라이트 전체, face: 프로필 틀(모달·반응), sprite: 콘텐츠 가로폭 고정(말풍선 위·드로어 프로필).
+// Sprite는 src마다 새로 마운트한다(key): 이전 이미지의 bbox로 새 이미지를 한 번 그리는 깜빡임을 막는다.
 export default function Cat({ src, framing = 'full' }: { src?: string; framing?: 'full' | 'face' | 'sprite' }) {
-  if (!src) return <>🐱</>;
+  if (!src) return <span className={styles.sil} aria-hidden="true" />;
   if (framing === 'face') return <Face src={src} />;
-  if (framing === 'sprite') return <Sprite src={src} />;
+  if (framing === 'sprite') return <Sprite key={src} src={src} />;
   return <img className={styles.full} src={src} alt="" draggable={false} />;
 }

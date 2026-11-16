@@ -7,7 +7,7 @@ export interface ReactionCard {
   sender: string;        // participant id
   kind: ReactionKind;
   content: string;
-  avatar?: string;       // 발신자 정지 PNG(반응 시점). 없으면 참여자 아바타·이모지 폴백
+  avatar?: string;       // 발신자 정지 PNG(반응 시점). 없으면 참여자 아바타·실루엣 폴백
   image?: string;        // emote 이미지
   n: number;
   leaving: boolean;

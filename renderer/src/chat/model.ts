@@ -8,8 +8,7 @@ export interface Participant {
   name: string;    // 표시 이름: 닉네임 덮어쓰기(D-032)가 있으면 그 값, 없으면 base
   base: string;    // 원본 Steam 이름. 닉네임 모달 placeholder
   color: string;   // 아바타 배경
-  hat: string;     // 고양이 모자(이모지 임시 표시). 없거나 실제 아이템 번호면 ''
-  avatar?: string; // 실아바타 data URI(스킨+모자 합성 정지 PNG). 없으면 이모지 폴백
+  avatar?: string; // 실아바타 data URI(스킨+모자 합성 정지 PNG). 없으면 실루엣 폴백(Cat)
 }
 
 export interface ChatMessage {
@@ -41,7 +40,7 @@ export interface ViewProfile {
   name?: string;
   avatar_id?: string;   // 이미지는 avatars 액션으로 받는다
   color?: string;  // 목업 데이터 전용. 실제 view에는 없다
-  hat?: string | number;   // 목업은 이모지 문자열, 실제 view는 게임 아이템 번호(벗으면 -1)라 표시하지 않는다
+  hat?: number;   // 게임 아이템 번호(벗으면 -1). 렌더러는 쓰지 않는다(모자는 실아바타 합성 이미지에 포함)
   blocked?: boolean;       // participants 항목에만: 앱에서 차단한 멤버(D-033). 목록·참여자 수에서 숨긴다
 }
 
@@ -120,7 +119,7 @@ function paletteColor(uid: string) {
   return PALETTE[hash % PALETTE.length];
 }
 
-// avatar_id → 받아 둔 data URI. 아직 없거나 아바타가 준비 전이면 undefined(이모지 폴백)
+// avatar_id → 받아 둔 data URI. 아직 없거나 아바타가 준비 전이면 undefined(실루엣 폴백)
 export type AvatarLookup = (avatarId: string | undefined) => string | undefined;
 
 export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string, avatarOf?: AvatarLookup,
@@ -128,7 +127,6 @@ export function toParticipant(uid: string, profile: ViewProfile | undefined, fal
   const base = profile?.name || fallbackName;
   return {
     id: uid, name: displayName(uid, base, nicks), base, color: profile?.color ?? paletteColor(uid),
-    hat: typeof profile?.hat === 'string' ? profile.hat : '',
     avatar: avatarOf?.(profile?.avatar_id),
   };
 }
