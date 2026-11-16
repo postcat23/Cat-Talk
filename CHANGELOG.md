@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `electron` — 접힌 채팅을 OPEN으로 펼치거나 최소화 후 복원하면 최상단 고정이 풀려 다른 창 밑으로 내려가던 문제 수정
+
 ## [1.0.2] - 2026-11-16
 
 ### Added
