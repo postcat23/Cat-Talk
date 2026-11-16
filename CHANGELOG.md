@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-16
+
 ### Added
 
 - `game` — 드로어 게임 카드: 게임이 켜져 있으면 [재시작](5초 카운트다운·취소 가능 → 종료 → Steam 해제 대기 → 다시 실행), 꺼져 있으면 [실행]. 대화 기록은 그대로
