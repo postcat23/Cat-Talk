@@ -139,7 +139,7 @@ export default function Drawer() {
             {chest.game && <span className={styles.cstate}>{gameStateLabel(chest.game)}</span>}
           </span>
           <div className={styles.cbtns}>
-            <button className={styles.cbtn} disabled={gameBlocked} onClick={() => void chest.restartGame()}>{gameRunning ? '재시작' : '실행'}</button>
+            <button className={`${styles.cbtn} ${styles.active}`} disabled={gameBlocked} onClick={() => void chest.restartGame()}>{gameRunning ? '재시작' : '실행'}</button>
           </div>
         </div>
       )}
