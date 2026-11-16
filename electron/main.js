@@ -20,6 +20,10 @@ const ICON = path.join(__dirname, 'app-icon.ico');
 const RES = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
 const APP_ID = 'CatTalk.Desktop';   // Windows 토스트 발신자
 const WINDOW_APP_ID = 'CatTalk.Window';   // 작업표시줄용. 레지스트리에 등록하지 않는다(registerToastIdentity 참고)
+// 항상 위 레벨. Windows Electron은 기본값 'floating'(~'status')이면 창이 활성화될 때마다 주 작업표시줄(Shell_TrayWnd) 바로 뒤로
+// 옮긴다(native_window_views.cc MoveBehindTaskBarIfNeeded). 주 작업표시줄이 일반 창보다 아래에 놓인 상태(다중 모니터 등)에서는
+// 열기(OPEN) 클릭 한 번에 Cat Talk가 일반 창 밑으로 내려갔다(실측 2026-11-16). 'pop-up-menu' 이상은 이 이동을 하지 않는다.
+const TOPMOST_LEVEL = 'pop-up-menu';
 
 let win = null, tray = null, sidecar = null, nextId = 1, stdoutBuf = '';
 const pending = new Map();   // id -> {resolve, reject, timer}
@@ -286,9 +290,10 @@ function createWindow() {
   win.on('responsive', () => log.main('window_responsive'));
   // 생성 직후에도 한 번 맞춘다(혼합 배율에서 생성 좌표가 어긋날 수 있다).
   dockTo(display);
+  // 항상 위 레벨은 TOPMOST_LEVEL. 생성 옵션 alwaysOnTop: true는 기본 레벨 'floating'이라 바로 덮어쓴다.
   // 작업표시줄로 최소화했다 복원한 뒤 최상위가 풀린다는 보고가 있어 복원·표시 때마다 다시 건다.
-  // 생성 옵션(alwaysOnTop: true)과 같은 기본 레벨. Windows에선 레벨과 무관하게 HWND_TOPMOST다.
-  const keepOnTop = () => { if (win && !win.isDestroyed()) win.setAlwaysOnTop(true); };
+  const keepOnTop = () => { if (win && !win.isDestroyed()) win.setAlwaysOnTop(true, TOPMOST_LEVEL); };
+  keepOnTop();
   win.on('restore', keepOnTop);
   win.on('show', keepOnTop);
   attachImeMemory(win);
