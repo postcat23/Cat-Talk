@@ -5,22 +5,24 @@
 /* 머리: 고양이 + 닉네임 (상대=고양이,닉 / 나=닉,고양이) */
 .head{display:flex;align-items:flex-end;gap:5px;position:relative;z-index:0}
 .me .head{flex-direction:row-reverse}
-.nm{font-weight:600;font-size:12.5px;color:var(--fg);padding-bottom:14px}
-/* 본문 행: 말풍선 + (안쪽 끝) 시간. lead에만 음수 마진으로 고양이 발을 말풍선 뒤로 */
+.nm{font-weight:600;font-size:12.5px;color:var(--fg);padding-bottom:calc(var(--sprite-tuck) + 4px)}
+/* 본문 행: 말풍선 + (안쪽 끝) 시간 */
 .row{display:flex;align-items:flex-end;gap:6px;max-width:100%}
-.lead .row{margin-top:-10px}
-/* 실아바타: 고양이 박스 = 콘텐츠 bbox(Cat sprite)라 투명 여백 보정이 필요 없다.
-   --sprite-w: 모든 스킨 공통 콘텐츠 가로폭(모달과 같은 정규화), --sprite-tuck: 말풍선 뒤로 숨는 양(0 = 그림 바닥이 말풍선 상단에 밀착),
+/* 머리 고양이(CatBadge): 칸 = 가로 --sprite-w × 세로 --sprite-slot. 그림(실아바타 = 콘텐츠 bbox 박스, 없으면 실루엣)은 칸 바닥에 붙어
+   투명 여백 보정이 필요 없다. 실아바타 유무와 관계없이 같은 칸이라 아바타가 바뀌거나 늦게 와도 행 높이가 그대로다.
+   --sprite-w: 모든 스킨 공통 콘텐츠 가로폭(모달과 같은 정규화),
+   --sprite-slot: 칸 높이 48px(사용자 결정). 전 스킨×모자 실측(2026-11-16, 109,881 조합, 가로 42px) 상위 1% 경계 47.2px를 올린 값.
+     최대 54.27px(Zeus+Mistletoe)까지 위로 최대 6.3px 삐져나오고, 키 작은 아바타는 머리 위가 빈다,
+   --sprite-tuck: 말풍선 뒤로 숨는 양(0 = 그림 바닥이 말풍선 상단에 밀착),
    --sprite-inset: 그림 가장자리와 말풍선 시작 모서리 사이 거리. 닉네임은 말풍선 위 4px.
    수치는 스크린샷 확인 후 확정 */
-.sprite{--sprite-w:42px;--sprite-tuck:0px;--sprite-inset:4px}
-.sprite .row{margin-top:calc(-1 * var(--sprite-tuck))}
-.sprite .nm{padding-bottom:calc(var(--sprite-tuck) + 4px)}
+.lead{--sprite-w:42px;--sprite-slot:48px;--sprite-tuck:0px;--sprite-inset:4px}
+.lead .row{margin-top:calc(-1 * var(--sprite-tuck))}
 /* 각자 말풍선의 시작 모서리 쪽(상대=왼쪽, 나=오른쪽). 첫 자식이 고양이 */
-.peer.sprite .head > :first-child{margin-left:var(--sprite-inset)}
-/* 상대 고양이는 좌우 반전해 말풍선 쪽(오른쪽)을 보게 한다. 박스 = 콘텐츠 bbox라 중심 기준 반전으로 위치·크기 불변 */
+.peer .head > :first-child{margin-left:var(--sprite-inset)}
+/* 상대 고양이는 좌우 반전해 말풍선 쪽(오른쪽)을 보게 한다. 칸 중심 기준 반전이라 위치·크기 불변 */
 .peer .head > :first-child{transform:scaleX(-1)}
-.me.sprite .head > :first-child{margin-right:var(--sprite-inset)}
+.me .head > :first-child{margin-right:var(--sprite-inset)}
 /* 입퇴장 공지 바로 다음 묶음은 공지의 아래 마진이 간격을 맡는다(공지 위아래 대칭) */
 .lead.afterNotice{margin-top:0}
 .me .row{flex-direction:row-reverse}

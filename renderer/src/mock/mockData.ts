@@ -2,18 +2,18 @@
 import type { ViewMessage, ViewProfile } from '../chat/model';
 
 export const PROFILES: Record<string, ViewProfile> = {
-  p1: { name: '미소미소된장국', color: '#f2c0a0', hat: '🎩' },
-  p2: { name: 'RATOY', color: '#ffe08a', hat: '🧢' },
-  p3: { name: 'FwanTaStic K', color: '#b7e0ff', hat: '👑' },
-  p4: { name: '리버', color: '#ffc2d1', hat: '🎀' },
-  p5: { name: '리네', color: '#d8c0ff', hat: '🍃' },
-  p6: { name: 'Comedian', color: '#c8f0c8', hat: '🤡' },
-  p7: { name: 'CUBE', color: '#cfd6ff', hat: '' },
-  p8: { name: 'ConE', color: '#ffd27d', hat: '🧙' },
-  p9: { name: '자깡', color: '#b7e0ff', hat: '🐟' },
-  p10: { name: 'Borizaru', color: '#ffd0b0', hat: '' },
-  p11: { name: '넙치', color: '#cfe', hat: '🧢' },
-  p12: { name: '모리', color: '#fcd', hat: '' },
+  p1: { name: '미소미소된장국', color: '#f2c0a0' },
+  p2: { name: 'RATOY', color: '#ffe08a' },
+  p3: { name: 'FwanTaStic K', color: '#b7e0ff' },
+  p4: { name: '리버', color: '#ffc2d1' },
+  p5: { name: '리네', color: '#d8c0ff' },
+  p6: { name: 'Comedian', color: '#c8f0c8' },
+  p7: { name: 'CUBE', color: '#cfd6ff' },
+  p8: { name: 'ConE', color: '#ffd27d' },
+  p9: { name: '자깡', color: '#b7e0ff' },
+  p10: { name: 'Borizaru', color: '#ffd0b0' },
+  p11: { name: '넙치', color: '#cfe' },
+  p12: { name: '모리', color: '#fcd' },
 };
 
 export const ME_ID = 'p8';

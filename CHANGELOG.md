@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `chat` — 랜덤 스킨 등으로 아바타가 바뀔 때 메시지 고양이 높이가 달라져 대화 스크롤이 튀던 문제 수정(고양이 칸 높이 48px 고정, 키 큰 모자는 칸 위로 약간 나옴). 아바타가 없을 때 🐱·모자 이모지 대신 고양이 실루엣 표시(참여자 목록은 다크 테마에서도 검정), 사이드카 응답이 잠깐 실패해도 받아 둔 아바타 유지
+
 ## [1.0.2] - 2026-11-16
 
 ### Added
