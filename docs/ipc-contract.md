@@ -162,9 +162,12 @@
 | `result` | `service.result` | `id,status('accepted'/'failed'/'unknown')` |
 | `default_avatar` | 사이드카 보관(LRU 밖) → `view.default_avatar_id` | `avatar`(PNG data URI) — Cat-Talk 글루(`sidecar/default_avatar.py`)가 보낸다 |
 | `steam_ignored` | 사이드카 보관 → 게임 고양이 숨김 목록(§9, D-040) | `account`, `ids`(Steam '모든 대화 차단' 전체 SteamID64 정렬, 열거 실패면 `null`) — Cat-Talk 글루(`sidecar/steam_relationship.py`)가 Steam 세션의 첫 열거와 목록이 바뀔 때 보낸다 |
+| `steam_released` | 사이드카가 그 worker를 끝내고 새 worker를 띄운다(아래) | 없음 — Cat-Talk 글루(`sidecar/steam_release.py`)가 Steam을 잡았던 `Steam.close()`(SteamAPI_Shutdown) 직후 보낸다 |
 
 **commands(controller→worker)**: `{type:'send',id,text,context}`, `{type:'refresh'}`.
-**큐 사양**: commands `maxsize=64`, events `maxsize=2048`, `stop`은 Event. spawn 컨텍스트.
+**큐 사양**: commands `maxsize=64`, events `maxsize=2048`, `stop`은 Event(worker마다 새로). spawn 컨텍스트.
+
+**worker 교체·재시작(Cat-Talk)**: Steam은 앱(3419430)을 프로세스 단위로 추적해, worker가 SteamAPI_Shutdown을 불러도 그 프로세스가 살아 있는 한 Bongo Cat을 '실행 중'(`HKCU\Software\Valve\Steam\Apps\3419430\Running=1`)으로 유지한다 — 게임을 꺼도 Steam에서 다시 실행하면 '이미 실행 중'으로 막혔다(D-019 실측). 그래서 사이드카는 `steam_released`를 받으면 그 worker의 `stop`을 걸어 끝내고(5초 안에 안 끝나면 terminate + 큐 교체) 새 worker를 띄운다. 새 worker는 게임을 찾기 전에는 Steam을 초기화하지 않아, 게임이 꺼져 있는 동안 Steam 등록이 없다. 사이드카·store는 그대로라 대화 기록이 남는다. 업스트림은 연결 끊김 `state`를 먼저 보내고(보내던 메시지는 거기서 `unknown`으로 정리) 그 뒤 Steam을 놓는다. 교체가 아닌 worker 종료(크래시·강제 종료)는 지금처럼 `worker_stopped`를 알리고 3초 뒤 새 worker를 띄운다(업스트림은 앱 재시작이 필요했다).
 
 ---
 
@@ -205,14 +208,17 @@ Cat-Talk main 추가 코드: `steam_trade_failed`(교환 요청 URI 형식 재�
 | `chest:disable()` | invoke | 플래그 삭제 |
 | `chest:reapply()` | invoke | 재적용 토스트의 [재시작]. 사전 점검을 통과하면 카운트다운 없이 바로 설치 흐름. 재적용이 필요한 상태가 아니면 아무것도 하지 않는다. 토스트 [X]는 `chest:disable` + 설정 끄기 |
 | `chest:restore()` | invoke | 원본 복원 토스트의 [원본 복원](D-038). 패치본이고 패치를 쓰는 기능이 없을 때만. 버전 확인(백업 SHA + verify) → 게임이 켜져 있으면 카운트다운 → 종료 → 복원 → 재실행, 꺼져 있으면 복원만. `{ok, reason?, restored?}` |
-| `chest:cancel` | send | 카운트다운 취소(설치·복원 공통) |
-| `chest:progress` | main → 렌더러 | `{phase, seconds?, reason?, rolledBack?, restored?, action?}`. `action`이 `'restore'`면 원본 복원 진행 |
+| `chest:cancel` | send | 카운트다운 취소(설치·복원·게임 재시작 공통) |
+| `chest:progress` | main → 렌더러 | `{phase, seconds?, reason?, rolledBack?, restored?, action?}`. `action`이 `'restore'`면 원본 복원, `'restart'`·`'launch'`면 게임 재시작·실행 진행 |
 | `chest:changed` | main → 렌더러 | 숨김 목록이 바뀌었음(원본 복원 제안 판정이 바뀔 수 있음). 렌더러는 `chest:status`를 다시 부른다 |
+| `game:status()` | invoke | `{found, running}` — 드로어 게임 버튼 문구('게임 재시작'·'게임 실행'). 드로어가 열려 있는 동안 3초마다 묻는다 |
+| `game:restart()` | invoke | 누른 순간 게임이 켜져 있으면 재시작: 카운트다운(취소 가능) → 일반 종료 → Steam 해제 대기 → `steam://rungameid` → 기동 확인. 꺼져 있으면 실행: Steam 해제 대기 → 실행 → 기동 확인. 사이드카(worker)는 건드리지 않는다(위 §6 worker 교체가 Steam을 푼다). 설치·복원과 겹치면 `busy`. `{ok, reason?}` |
 
 - `state`: `not_installed`·`on`·`off`·`incompatible`·`needs_reapply`·`installing`·`restoring`·`no_game`·`error`·`patcher_mismatch`.
   - 원본 복원 제안(D-038): `restorable` = 패치본(이전 세트·경로가 바뀐 것 포함) + 설정 OFF + 기능 플래그 없음 + 게임 고양이 숨김 목록(사이드카 알림)이 빔. 목록에 Steam 차단 전체가 들어가므로 '빔' = 앱 차단도 Steam 차단도 하나도 없음이다(D-040. 전체 목록 열거에 실패한 실행에서는 이번 실행에서 만난 Steam 차단만 반영된다). 목록을 이번 실행에서 아직 모르면 `false`. 복원 때 백업이 지금 DLL의 원본이 아니면(게임 업데이트 등) 덮어쓰지 않고 `failed`(`version_mismatch`) — 렌더러가 Steam 무결성 확인을 안내한다. 성공하면 기능 플래그와 `CatTalkHidden.ids`를 지운다.
   - `patcher_mismatch`(D-029): 패처가 없거나(`reason: missing`) 앱이 기대하는 규약과 다름(`reason: mismatch`, `version` 명령 없음·값 다름·의존 DLL 누락 포함). 재적용으로는 못 고쳐 켜기·재적용을 막는다(끄기는 허용). prod는 앱 재설치, dev는 `tools/auto_chest/build.ps1`. 렌더러는 설정이 켜져 있으면 '앱 재설치가 필요합니다' 토스트를 띄운다([X] = 이번 실행 동안 숨김).
-- `phase`: `checking`·`countdown`·`cancelled`·`stopping_worker`·`closing_game`·`patching`·`restoring`·`launching`·`verifying`·`done`·`failed`.
+- `phase`: `checking`·`countdown`·`cancelled`·`stopping_worker`·`closing_game`·`waiting_steam`(게임 재시작·실행만)·`patching`·`restoring`·`launching`·`verifying`·`done`·`failed`.
+- 게임 재시작·실행 실패 `reason`: `game_close_failed`(게임이 안 꺼짐 — 게임은 그대로), `steam_still_running`(15초 안에 Steam이 안 풀림 — 재시작이면 켜져 있던 게임을 한 번 다시 실행해 본다, 실행이면 실행하지 않는다), `game_start_failed`(60초 안에 게임 프로세스가 안 뜸).
 - 설치 순서: 구조 판정(패처 규약 포함) → 사전 점검(별도 파일에 패치·verify, 재적용이면 원본 백업 SHA도, Cat Talk 연결 호환성 지문이 원본과 같은지) → 카운트다운(켜기만) → 사이드카(worker) 종료 → 게임 종료 → Steam 해제 대기 → 백업(clean일 때만) → 패치·verify → 교체·재검증 → Steam 재실행 → 기동 확인 → 플래그 생성 → 사이드카 재시작. 사전 점검에 실패하면 worker·게임을 건드리지 않고 `failed`(`incompatible`·`preflight_failed`)로 끝난다. 교체 후 실패하면 백업으로 복원한다.
 - 설정 저장은 기존 `setting` 액션(`auto_open_chest`)을 그대로 쓴다. 렌더러가 결과가 `ok`일 때만 저장한다.
 - 패치 세트 버전(패처 `inspect`의 `patchVersion`, 앱 기대값 `PATCH_VERSION`): 1 = 상자 자동 오픈, 2 = + 투명화(D-028), 3 = + 차단 멤버 고양이 숨김(D-033 3단계), 4 = + 투명화 중 내 고양이 획득 팝업 숨김(D-046), 5 = + 투명화 루트 후크(D-047). 세트는 누적이고, 앱 기대값보다 낮은 설치본은 `needs_reapply`(`reason: outdated`)다 — 재적용 한 번(게임 재시작)으로 올라간다. 인자 규약(`cli`)은 2 그대로다.

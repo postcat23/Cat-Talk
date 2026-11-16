@@ -8,6 +8,8 @@
 // 투명화 중 획득 팝업 숨김(D-046, 세트 4)·투명화 루트 후크(D-047, 세트 5): 투명화 플래그를 그대로 쓴다(이 모듈 변경은 기대 세트 값뿐).
 // 원본 복원(D-038): 패치는 남았는데 패치를 쓰는 기능이 하나도 없으면(설정·플래그 꺼짐 + 숨김 목록 빔) 렌더러가 토스트로 제안하고,
 // [원본 복원]이 백업이 지금 DLL의 원본인지 확인한 뒤 되돌린다(재적용과 대칭: 게임이 켜져 있으면 카운트다운 → 종료 → 복원 → 재실행).
+// 게임 재시작·실행(드로어): 같은 게임 조작·카운트다운·진행 알림을 쓰고, 설치·복원과 겹치지 않는다. worker는 건드리지 않는다 —
+// 게임이 꺼지면 사이드카가 Steam을 놓은 worker를 새 프로세스로 바꿔 Steam의 '실행 중'이 풀린다(sidecar/steam_release.py).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -91,6 +93,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
   const probeHome = path.join(home, 'staging', 'probe');
   let busy = false, cancelled = false;
   let busyKind = 'install';   // 진행 중인 일: 'install'(사전 점검·설치·재적용) | 'restore'(원본 복원). 판정이 상태 이름을 고른다
+  let restarting = false;     // 게임 재시작·실행 중. 패치 설치 상태와 무관하므로 busy와 따로 두고, 서로 시작을 막는다
   let toolCheck = null;   // 맞다고 확인한 패처·Mono.Cecil 파일의 (수정 시각·크기). 바뀌면 다시 묻는다
 
   // managed: 패처가 결과의 모든 참조를 게임 런타임 어셈블리로 해석해 보는 폴더(스트리핑된 API 차단, D-028)
@@ -430,7 +433,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     // 백업이 지금 DLL의 원본인지 먼저 본다(백업 SHA + verify: 현재 DLL = 백업 + 우리 훅). 아니면(게임 업데이트·이전 세트·경로 변경 등)
     // 덮어쓰지 않고 'version_mismatch'로 끝낸다(렌더러가 Steam 무결성 확인을 안내). 게임이 켜져 있으면 카운트다운(취소 가능) 뒤 진행한다.
     async restore() {
-      if (busy) return { ok: false, reason: 'busy' };
+      if (busy || restarting) return { ok: false, reason: 'busy' };
       const s = await installState(false);
       if (!s.patched) return { ok: false, reason: s.state };
       if (!unneeded(s.game)) return { ok: false, reason: 'still_needed' };
@@ -452,7 +455,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     // 이전 패치 세트(v1~v4)도 여기서 재적용 대상이라 설치 흐름으로 v5가 된다.
     async enable(feature = 'chest') {
       if (!known(feature)) return { ok: false, reason: 'unknown_feature' };
-      if (busy) return { ok: false, reason: 'busy' };
+      if (busy || restarting) return { ok: false, reason: 'busy' };
       const current = await installState(false);
       if (['incompatible', 'error', 'no_game', 'patcher_mismatch'].includes(current.state)) return { ok: false, reason: current.state };
       if (current.state === 'installed') { fs.writeFileSync(featureFlag(current.game, feature), ''); return { ok: true }; }
@@ -475,7 +478,7 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     // 재적용이 필요한 상태가 아니면(구조가 바뀌어 호환 안 됨·패처 불일치 포함) 아무것도 하지 않는다. 사전 점검을 통과해야 시작한다.
     async reapply(features = ['chest']) {
       if (!Array.isArray(features) || features.length === 0 || !features.every(known)) return { ok: false, reason: 'unknown_feature' };
-      if (busy) return { ok: false, reason: 'busy' };
+      if (busy || restarting) return { ok: false, reason: 'busy' };
       const current = await status(true);
       if (current.state !== 'needs_reapply') return { ok: false, reason: current.state };
       const game = await sys.findGame();
@@ -483,6 +486,50 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
       const pre = await preflight(game, wanted);
       if (!pre.ok) return pre;
       return installThenSync(game, wanted);
+    },
+
+    // 드로어의 게임 버튼 문구용. found: 게임 설치를 찾았는지, running: 게임 프로세스가 떠 있는지
+    async gameStatus() {
+      const game = await sys.findGame();
+      return { found: !!game, running: game ? await sys.gameRunning() : false };
+    },
+
+    // 드로어 '게임 재시작'·'게임 실행'. 누른 순간의 실제 상태로 고른다(진행 알림 action 'restart' | 'launch').
+    // 재시작: 카운트다운(취소 가능) → 일반 종료(강제 아님) → Steam '실행 중' 해제 대기 → 재실행 → 게임 프로세스 확인.
+    // 실행: Steam 해제 대기 → 실행 → 확인(카운트다운 없음). 해제를 기다리는 건 방금 게임을 닫았을 때 Steam이 '이미 실행 중'을 띄우지 않게.
+    // 실패하면 켜져 있던 게임은 되살린다(설치·복원과 같은 규칙). worker·사이드카는 건드리지 않아 대화 기록이 남는다.
+    async restartGame() {
+      if (busy || restarting) return { ok: false, reason: 'busy' };
+      const game = await sys.findGame();
+      if (!game) return { ok: false, reason: 'no_game' };
+      const wasRunning = await sys.gameRunning();
+      const action = wasRunning ? 'restart' : 'launch';
+      const notify = (p) => notifyRaw({ ...p, action });
+      let launched = false;
+      restarting = true;
+      try {
+        if (wasRunning) {
+          if (!(await countdown([], 'restart'))) return { ok: false, reason: 'cancelled' };
+          notify({ phase: 'closing_game' });
+          await sys.closeGame();
+          if (!(await waitFor(async () => !(await sys.gameRunning()), GAME_CLOSE_MS))) throw new Failure('game_close_failed');
+        }
+        notify({ phase: 'waiting_steam' });
+        if (!(await waitFor(async () => !(await sys.steamRunning(game.appId)), STEAM_RELEASE_MS))) throw new Failure('steam_still_running');
+        notify({ phase: 'launching' });
+        await sys.launch(game.appId);
+        launched = true;
+        if (!(await waitFor(() => sys.gameRunning(), LAUNCH_MS))) throw new Failure('game_start_failed');
+        notify({ phase: 'done' });
+        return { ok: true };
+      } catch (e) {
+        const reason = e instanceof Failure ? e.message : 'unexpected';
+        if (wasRunning && !launched && !(await sys.gameRunning())) await sys.launch(game.appId);
+        notify({ phase: 'failed', reason });
+        return { ok: false, reason };
+      } finally {
+        restarting = false;
+      }
     },
   };
 }

@@ -3,7 +3,7 @@ import { OVERLAY_HEIGHT, useUi, type ChatHeight, type Settings, type Side, type 
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
 import { updateStatusText, useUpdate, type UpdateState } from '../hooks/useAppUpdate';
-import { STATE_LABEL } from '../chat/autoChest';
+import { gameStateLabel, STATE_LABEL } from '../chat/autoChest';
 import { BLOCKS_UNAVAILABLE, NO_BLOCKED_USERS } from '../chat/messages';
 import Cat from './Cat';
 import styles from './Drawer.module.css';
@@ -15,6 +15,8 @@ const APP_VERSION = window.catTalk?.version ? `v${window.catTalk.version}` : nul
 const UPDATE_TONE: Partial<Record<UpdateState, 'good' | 'warn' | 'bad'>> = {
   latest: 'good', disabled: 'good', downloading: 'warn', ready: 'warn', check_failed: 'bad', download_failed: 'bad',
 };
+
+const GAME_CHECK_MS = 3000;   // 드로어가 열려 있는 동안 게임 켜짐 여부를 다시 보는 간격(버튼 문구 '게임 재시작'·'게임 실행')
 
 type Option<T> = { value: T; label: string };
 
@@ -86,6 +88,17 @@ export default function Drawer() {
     if (draft) dispatch({ type: 'closeOverlays' });
     update.request(draft);
   };
+  // 게임 재시작·실행: 드로어가 열려 있는 동안 게임이 켜졌는지 다시 보고 버튼 문구를 맞춘다.
+  // 게임을 못 찾았거나 상자 설치·복원·재시작이 진행 중(결과 문구 포함)이면 막는다
+  const refreshGame = chest?.refreshGame;
+  useEffect(() => {
+    if (!overlays.drawerOpen || !refreshGame) return;
+    void refreshGame();
+    const timer = window.setInterval(() => void refreshGame(), GAME_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [overlays.drawerOpen, refreshGame]);
+  const gameRunning = chest?.game?.running === true;
+  const gameBlocked = !chest?.game?.found || chestBusy || !!chest?.progress;
 
   return (
     <aside className={['thin-scroll', styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' ? styles.full : styles.tall].filter(Boolean).join(' ')} aria-label="메뉴">
@@ -116,6 +129,20 @@ export default function Drawer() {
             : <Switch on={settings[key]} label={label} onToggle={() => set({ [key]: !settings[key] })} />}
         </div>
       ))}
+      {/* 게임 카드(상자 카드와 같은 모양): 재시작(켜져 있으면 카운트다운 뒤 종료 → Steam 해제 대기 → 재실행)·실행(꺼져 있으면).
+          대화 기록은 그대로. 브라우저 dev엔 없다 */}
+      {chest && (
+        <div className={styles.chest}>
+          <span className={styles.cicon}>🎮</span>
+          <span className={styles.ctitle}>
+            게임
+            {chest.game && <span className={styles.cstate}>{gameStateLabel(chest.game)}</span>}
+          </span>
+          <div className={styles.cbtns}>
+            <button className={`${styles.cbtn} ${styles.active}`} disabled={gameBlocked} onClick={() => void chest.restartGame()}>{gameRunning ? '재시작' : '실행'}</button>
+          </div>
+        </div>
+      )}
       {/* 구분선은 프로필↔설정, 설정 영역↔차단 목록, 차단 목록↔앱 업데이트 3개. 상자 카드는 자체 배경이 구분 역할.
           켜기 = 설치돼 있으면 플래그만, 아니면 카운트다운 후 설치(재적용 포함), 끄기 = 플래그 삭제(D-019) */}
       <div className={styles.chest}>

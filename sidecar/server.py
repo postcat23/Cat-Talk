@@ -31,6 +31,11 @@ from volatile_store import VolatileStore
 from diag import enable_faulthandler, mark
 
 MAX_REQUEST = 32768
+# worker 교체(steam_release 글루): Steam을 놓은 worker가 스스로 끝나기를 기다리는 상한. 그 worker는 재시도 대기 중이라 stop을 걸면
+# discovery·avatars 정리(join 각 1초) 뒤 끝난다. 넘기면 terminate한다.
+WORKER_RETIRE_GRACE = 5.0
+# 교체가 아닌 worker 종료(크래시·강제 종료) 뒤 새 worker를 띄우기까지. 업스트림이 같은 프로세스에서 재시도하는 간격(3초)과 같다.
+WORKER_RESPAWN_DELAY = 3.0
 # 아바타 PNG는 view에 싣지 않고 id만 보낸다(600ms 폴링마다 수십 KB×참여자×2가 되는 것을 막는다).
 # 메모리에만 두고 렌더러가 avatars 액션으로 한 번씩 받아 간다.
 MAX_AVATARS = 256
@@ -118,6 +123,9 @@ class Sidecar:
         self.steam_ignored_account = ""   # 전체 목록 응답(성공·실패)을 받은 계정
         self.hidden_pushed = None   # main에 마지막으로 알린 게임 고양이 숨김 목록(D-033 3단계). 이번 실행에서 아직 없으면 None
         self.worker = None
+        self.read_only = read_only
+        self.retire_by = None   # Steam을 놓은 worker를 끝내는 중이면 강제 종료 기한(monotonic). 끝나면 새 worker를 띄운다
+        self.respawn_at = None   # worker가 예기치 않게 끝났으면 다시 띄울 시각(monotonic)
         self.closed = False
         self.last_prune = time.monotonic()
         self.context = mp.get_context("spawn")
@@ -127,11 +135,72 @@ class Sidecar:
         if offline:
             self.service.update(unavailable("offline"))
         else:
-            # render_avatars=True: 디코딩은 worker가 검증된 채팅 준비를 publish한 뒤에 시작한다.
-            self.worker = self.context.Process(target=run_worker_with_default,
-                args=(self.commands, self.events, self.stop, read_only, True), daemon=True)
-            self.worker.start()
-            mark("worker_spawn", pid=self.worker.pid)
+            self.spawn_worker()
+
+    def spawn_worker(self):
+        # worker마다 stop을 새로 둔다(교체할 worker만 멈춘다). 큐는 이어 쓴다: 옛 worker는 정상 종료로 끝나 큐를 깨끗이 놓고,
+        # 남은 명령은 새 worker가 연결 context 불일치로 failed 처리한다(업스트림이 같은 프로세스에서 재시도할 때와 같다).
+        # render_avatars=True: 디코딩은 worker가 검증된 채팅 준비를 publish한 뒤에 시작한다.
+        self.stop = self.context.Event()
+        self.worker = self.context.Process(target=run_worker_with_default,
+            args=(self.commands, self.events, self.stop, self.read_only, True), daemon=True)
+        self.worker.start()
+        mark("worker_spawn", pid=self.worker.pid)
+
+    def retire_worker(self):
+        """Steam을 놓은 worker를 끝낸다(steam_release 글루). Steam은 그 프로세스가 끝나야 Bongo Cat '실행 중'을 푼다(D-019).
+        stop만 걸고 기다린다 — worker는 재시도 대기(stop.wait) 중이라 discovery·avatars 정리 후 곧 끝난다. 새 worker는 tend_worker가 띄운다."""
+        if self.closed or self.worker is None or self.retire_by is not None or not self.worker.is_alive():
+            return
+        mark("worker_retire", pid=self.worker.pid)
+        self.stop.set()
+        self.retire_by = time.monotonic() + WORKER_RETIRE_GRACE
+
+    def tend_worker(self):
+        """worker 교체(Steam 놓음)와 예기치 않은 종료 뒤 재시작을 맡는다. poll마다 부른다(메인 스레드라 짧게 끝낸다).
+        새 worker를 띄우지 못하면(OSError 등) 사이드카는 살려 두고 WORKER_RESPAWN_DELAY 뒤 다시 띄운다."""
+        if self.closed or self.worker is None:
+            return
+        if self.retire_by is not None:
+            if self.worker.is_alive():
+                if time.monotonic() < self.retire_by:
+                    return
+                self.worker.terminate()  # 이 앱의 자식 worker만. 게임 프로세스는 건드리지 않는다.
+                self.worker.join(1)
+                mark("worker_terminated", pid=self.worker.pid)
+                # 쓰는 도중 끊긴 프로세스는 큐를 망가뜨릴 수 있어 새 큐로 바꾼다(남은 이벤트는 이번 poll에서 이미 비웠다)
+                self.replace_queues()
+            mark("worker_retired", pid=self.worker.pid, exitcode=self.worker.exitcode)
+            self.retire_by = None
+            self.respawn()
+            return
+        if self.worker.is_alive():
+            return
+        if self.respawn_at is None:
+            # 교체가 아닌 종료(크래시·강제 종료 등): 지금처럼 끊김을 알리고, 잠시 뒤 새 worker로 다시 연결한다
+            mark("worker_stopped", exitcode=self.worker.exitcode)
+            try:
+                self.service.update(unavailable("worker_stopped"))
+            except (sqlite3.Error, OSError):
+                self.service.storage_error = True
+            self.respawn_at = time.monotonic() + WORKER_RESPAWN_DELAY
+        elif time.monotonic() >= self.respawn_at:
+            self.respawn_at = None
+            self.respawn()
+
+    def respawn(self):
+        try:
+            self.spawn_worker()
+        except Exception as exc:
+            mark("worker_spawn_failed", error=type(exc).__name__)
+            self.respawn_at = time.monotonic() + WORKER_RESPAWN_DELAY
+
+    def replace_queues(self):
+        for pipe in (self.commands, self.events):
+            pipe.cancel_join_thread()
+            pipe.close()
+        self.commands = self.context.Queue(maxsize=64)
+        self.events = self.context.Queue(maxsize=2048)
 
     def poll(self):
         try:
@@ -161,14 +230,15 @@ class Sidecar:
                     self.update_steam_ignored(event)
                 elif event.get("type") == "result":
                     self.service.result(event["id"], event["status"])
-            if self.worker and not self.worker.is_alive() and self.service.state.get("notice") != "worker_stopped":
-                mark("worker_stopped", exitcode=self.worker.exitcode)
-                self.service.update(unavailable("worker_stopped"))
+                elif event.get("type") == "steam_released":
+                    # 업스트림은 연결 끊김 상태를 먼저 보내고(보내던 메시지는 거기서 '알 수 없음'으로 정리) 그 뒤 Steam을 놓는다
+                    self.retire_worker()
             if time.monotonic()-self.last_prune > 60:
                 self.service.write(self.store.prune)
                 self.last_prune = time.monotonic()
         except (sqlite3.Error, OSError):
             self.service.storage_error = True
+        self.tend_worker()   # 저장소 오류(storage_error)와 섞지 않는다
 
     def mark_state(self, event):
         # worker 상태 전이(연결 단계·오류 코드·재시도)만 남긴다. 계정·로비·이름·멤버는 남기지 않는다
