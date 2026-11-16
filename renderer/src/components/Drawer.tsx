@@ -152,6 +152,13 @@ export default function Drawer() {
           {updateFailed && <button className={`${styles.upbtn} ${styles.retry}`} onClick={update?.retry}>다시 시도</button>}
         </div>
       </div>
+      {/* 버그 신고·요청 사항(D-050): 앱 가운데 모달 → Discord 포럼. 웹훅이 없는 빌드(dev 등)는 비활성. 브라우저 dev엔 없다 */}
+      {window.catTalk && (
+        <div className={styles.report}>
+          <button className={styles.rbtn} disabled={!window.catTalk.report.available} onClick={() => dispatch({ type: 'openReport', kind: 'bug' })}>버그 신고</button>
+          <button className={styles.rbtn} disabled={!window.catTalk.report.available} onClick={() => dispatch({ type: 'openReport', kind: 'request' })}>요청 사항</button>
+        </div>
+      )}
     </aside>
   );
 }

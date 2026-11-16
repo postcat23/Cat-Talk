@@ -44,7 +44,56 @@ def _with_default(base, events):
     return DefaultAvatars
 
 
+def _install_diag():
+    """worker 단계 표식(관측 전용, D-050): upstream worker 모듈이 쓰는 이름을 감싸 시작·끝·시간·결과 코드만 남긴다.
+    원래 함수를 그대로 부르고 예외도 그대로 다시 던진다(동작 불변). 탐색 바이트 수는 upstream이 세지 않아 남기지 않는다."""
+    import os
+    from bongo_chat import worker as worker_module
+    from diag import enable_faulthandler, mark
+    os.environ["CATTALK_DIAG_ROLE"] = "worker"
+    enable_faulthandler("worker")
+    mark("start", pid=os.getpid())
+
+    def timed(stage, fn):
+        def wrapper(*args, **kwargs):
+            started = time.monotonic()
+            try:
+                result = fn(*args, **kwargs)
+            except Exception as exc:
+                code = str(exc)
+                mark(stage, ok=False, seconds=round(time.monotonic() - started, 3),
+                     error=code if code.isascii() and code.replace("_", "").isalnum() and len(code) <= 80 else type(exc).__name__)
+                raise
+            mark(stage, ok=True, seconds=round(time.monotonic() - started, 3))
+            return result
+        return wrapper
+
+    worker_module.running_game = timed("game_detect", worker_module.running_game)
+    worker_module.verify_compatibility = timed("compatibility", worker_module.verify_compatibility)
+    steam_class = worker_module.Steam
+    steam_class.start = timed("steam_init", steam_class.start)
+    discovery_class = worker_module.MemoryDiscovery
+    original_run = discovery_class.run
+
+    def discovery_run(self):
+        started = time.monotonic()
+        mark("discovery_begin")
+        try:
+            original_run(self)
+        finally:
+            memory = self.memory
+            method = (getattr(memory, "diagnostics", None) or {}).get("discovery_method") if memory else None
+            mark("discovery_end", ok=not self.failed and memory is not None, failed=self.failed, method=method,
+                 seconds=round(time.monotonic() - started, 3))
+
+    discovery_class.run = discovery_run
+
+
 def run_worker_with_default(commands, events, stop, read_only=False, render_avatars=True):
+    try:
+        _install_diag()
+    except Exception:
+        pass   # 진단 실패가 worker를 막지 않는다
     avatars_module.Avatars = _with_default(avatars_module.Avatars, events)
     install_steam_block(events)   # 멤버 프로필에 Steam '모든 대화 차단' 여부(D-033 2단계) + 차단한 사람 전체 목록 알림(D-040)
     run_worker(commands, events, stop, read_only, render_avatars)
