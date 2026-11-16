@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 
 import { OVERLAY_HEIGHT, useUi } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
 import Cat from './Cat';
+import YellowCards from './YellowCards';
 import styles from './ParticipantModal.module.css';
 
 const MENU_HEIGHT = 130;   // .menu 높이(4항목). 모달 아래로 잘리지 않게 위치를 올릴 때 쓴다
@@ -46,7 +47,8 @@ export default function ParticipantModal() {
         {sorted.map((p) => (
           <div key={p.id} className={styles.prow}>
             <span className={styles.av} style={{ background: p.color }}><Cat src={p.avatar} framing="face" /></span>
-            <span className={styles.nm}>{p.name}</span>
+            {/* 이름 글자만 말줄임하고 옐로카드(D-052)는 이름 바로 뒤에 붙인다 */}
+            <span className={styles.nm}><span className={styles.nmt}>{p.name}</span><YellowCards count={p.warns} /></span>
             {p.id === me?.id
               ? <span className={styles.meBadge}>나</span>
               : <button className={styles.dots} aria-label="더보기" aria-haspopup="menu" aria-expanded={menu?.id === p.id} onPointerDown={stop} onClick={(e) => toggleMenu(e, p.id)}>⋯</button>}

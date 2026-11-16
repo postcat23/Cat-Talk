@@ -1,0 +1,41 @@
+/* 공개수배 전단(D-052). 대화 영역 가운데, 반응 카드(z 4) 위·스크림(z 6)과 드로어 아래. 클릭은 통과한다.
+   타임라인(총 4.6초 = WantedPoster.tsx DURATION_MS): 0~0.45s 등장 → 0.5~1.1s 조준선이 사진으로 → 1.2·1.6·2.0s 세 발(번쩍임·탄흔·흔들림)
+   → 2.4s 조준선 사라짐 → 3.8~4.6s 전단 사라짐. 수치·색은 스크린샷 확인 후 확정 */
+.stage{position:absolute;inset:0;z-index:5;display:grid;place-items:center;pointer-events:none;
+  background:rgba(0,0,0,.28);animation:dim 4.6s linear forwards}
+@keyframes dim{0%{opacity:0}8%{opacity:1}83%{opacity:1}100%{opacity:0}}
+/* 전단 원본 1199×1312. 사진틀(투명 구멍) = 왼쪽 14.93%·위 24.09%·너비 70.06%·높이 39.25%(실측) */
+.poster{position:relative;width:min(78%,320px);aspect-ratio:1199/1312;
+  animation:drop .45s cubic-bezier(.2,1.4,.4,1) both,jolt .14s linear 1.2s,jolt .14s linear 1.6s,jolt .14s linear 2s,out .8s ease-in 3.8s forwards}
+@keyframes drop{from{opacity:0;transform:translateY(-24px) scale(.7) rotate(-8deg)}to{opacity:1;transform:rotate(-2deg)}}
+@keyframes jolt{0%,100%{transform:rotate(-2deg)}25%{transform:translate(-4px,2px) rotate(-3deg)}60%{transform:translate(3px,-2px) rotate(-1deg)}}
+@keyframes out{to{opacity:0;transform:rotate(-2deg) scale(.94)}}
+.paper{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;filter:drop-shadow(0 8px 18px rgba(0,0,0,.45))}
+/* 사진: 전단 뒤에 두어 투명 사진틀로만 보인다. 낡은 사진 느낌으로 옅은 세피아 */
+.photo{position:absolute;left:14.93%;top:24.09%;width:70.06%;height:39.25%;overflow:hidden;background:#d9c39a;filter:sepia(.3);
+  display:flex;align-items:flex-end;justify-content:center;--sprite-w:60%}
+/* 아바타는 채팅과 같은 콘텐츠 bbox 박스(Cat sprite): 그림 가로폭을 사진틀의 60%로, 바닥에 서게. 모자가 아주 큰 조합은 위가 잘릴 수 있다 */
+.photo > *{flex:none}
+/* 한 발 = 번쩍임(::before) + 탄흔(::after). 시각은 인라인 animation-delay(+ CSS 변수 없이 같은 값을 두 의사요소가 상속) */
+.shot{position:absolute;width:0;height:0}
+.shot::before,.shot::after{content:'';position:absolute;left:0;top:0;border-radius:50%;transform:translate(-50%,-50%) scale(0);
+  animation-delay:inherit;animation-fill-mode:forwards}
+.shot::before{width:70px;height:70px;background:radial-gradient(circle,rgba(255,250,220,.95),rgba(255,190,70,.55) 40%,transparent 70%);animation-name:flash;animation-duration:.16s}
+.shot::after{width:13px;height:13px;background:radial-gradient(circle,#160d06 0 38%,#3b2a18 48%,rgba(255,240,210,.7) 56%,transparent 66%);
+  animation-name:hole;animation-duration:.1s;animation-timing-function:ease-out}
+@keyframes flash{0%{transform:translate(-50%,-50%) scale(.3);opacity:1}100%{transform:translate(-50%,-50%) scale(1.2);opacity:0}}
+@keyframes hole{to{transform:translate(-50%,-50%) scale(1)}}
+/* 조준선: 사진 가운데(전단 높이 43.7%)로 들어왔다가 마지막 발 뒤 사라진다 */
+.crosshair{position:absolute;left:50%;top:43.7%;width:46px;height:46px;margin:-23px 0 0 -23px;border:2px solid #e53935;border-radius:50%;
+  opacity:0;animation:aim 2.4s ease-out .5s forwards}
+.crosshair::before,.crosshair::after{content:'';position:absolute;background:#e53935}
+.crosshair::before{left:50%;top:-8px;bottom:-8px;width:2px;margin-left:-1px}
+.crosshair::after{top:50%;left:-8px;right:-8px;height:2px;margin-top:-1px}
+@keyframes aim{0%{opacity:0;transform:translate(70px,-50px) scale(1.3)}25%{opacity:1;transform:none}80%{opacity:1;transform:none}100%{opacity:0;transform:scale(.8)}}
+/* 움직임 줄이기: 등장·흔들림·조준선 없이 탄흔만 남긴 전단을 보여 주고 사라진다 */
+@media (prefers-reduced-motion:reduce){
+  .poster{animation:out .6s ease-in 3.8s forwards}
+  .crosshair{display:none}
+  .shot::before{display:none}
+  .shot::after{animation:none;transform:translate(-50%,-50%) scale(1)}
+}

@@ -5,7 +5,8 @@ upstream worker는 run_worker 안에서 `from .avatars import Avatars`를 호출
 모듈 속성을 이 서브클래스로 바꿔 끼운다(upstream 파일은 수정하지 않는다).
 기본 스킨은 upstream worker와 같다: 장착 해제(-1) 슬롯은 CatLeft/CatRight, 모자 없음.
 run_worker_with_default는 Steam '모든 대화 차단' 글루(steam_relationship — 멤버별 판정 D-033, 전체 목록 알림 D-040)와
-Steam 놓음 알림 글루(steam_release — 사이드카가 그 worker를 새 프로세스로 교체해 Steam의 '게임 실행 중'을 푼다)도 함께 끼운다.
+Steam 놓음 알림 글루(steam_release — 사이드카가 그 worker를 새 프로세스로 교체해 Steam의 '게임 실행 중'을 푼다),
+경고·공개수배 멤버 데이터 글루(steam_warns, D-052)도 함께 끼운다.
 """
 import queue
 import threading
@@ -15,6 +16,7 @@ from bongo_chat import avatars as avatars_module
 from bongo_chat.worker import run_worker
 from steam_relationship import install as install_steam_block
 from steam_release import install as install_steam_release
+from steam_warns import install as install_steam_warns
 
 DEFAULT_SKIN = "Cat"
 RENDER_TIMEOUT = 60   # 에셋 로드 + 1장 합성 상한(초). 넘기면 포기하고 이모지 폴백 유지
@@ -99,4 +101,5 @@ def run_worker_with_default(commands, events, stop, read_only=False, render_avat
     avatars_module.Avatars = _with_default(avatars_module.Avatars, events)
     install_steam_block(events)   # 멤버 프로필에 Steam '모든 대화 차단' 여부(D-033 2단계) + 차단한 사람 전체 목록 알림(D-040)
     install_steam_release(events)   # Steam을 놓으면 알림 → 사이드카가 이 worker를 새 프로세스로 교체(게임 재실행 막힘 방지)
+    install_steam_warns()   # 경고·공개수배(D-052): cattalk.* 멤버 데이터 읽기(프로필)·쓰기(cattalk 명령)
     run_worker(commands, events, stop, read_only, render_avatars)

@@ -17,6 +17,9 @@ const ERROR_TEXT: Record<string, string> = {
   steam_profile_failed: 'Steam 프로필을 열지 못했습니다. Steam 실행 상태를 확인해 주세요.',
   steam_trade_failed: 'Steam 교환 요청 페이지를 열지 못했습니다. Steam 실행 상태를 확인해 주세요.',
   block_unavailable: '차단 설정을 저장하지 못했습니다. 이전 설정을 유지합니다.',
+  // 경고(D-052): 대상이 지금 로비에 없거나 연결이 바뀌었으면 warn_unavailable. warn_command는 경고 명령이 채팅 경로로 갔을 때(정상이면 안 옴)
+  warn_unavailable: '경고하지 못했습니다. 대상이 지금 로비에 있는지 확인해 주세요.',
+  warn_command: '경고 명령은 채팅으로 보내지 않습니다.',
   not_wired: '아직 지원하지 않는 기능입니다.',
   bridge_down: '채팅 기능에 연결하지 못했습니다.',
   request_failed: REQUEST_FAILED,
