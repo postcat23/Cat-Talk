@@ -149,7 +149,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   // 경고·공개수배(D-052): 새 공개수배는 대기열 뒤에(같은 처형은 한 번), 경고 쓰기 실패는 안내 토스트
   const takeWanted = useCallback((data: ViewResponse) => {
     const fresh = data.wanted ?? [];
-    if (fresh.length) setWantedQueue((queue) => [...queue, ...fresh.filter((w) => !queue.some((q) => q.id === w.id))]);
+    const at = Date.now();
+    if (fresh.length) setWantedQueue((queue) => [...queue, ...fresh.filter((w) => !queue.some((q) => q.id === w.id)).map((w) => ({ ...w, at }))]);
     if (data.warn_failed) setToast({ id: nextToast.current++, text: WARN_FAILED });
   }, []);
 

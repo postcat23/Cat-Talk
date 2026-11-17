@@ -45,7 +45,8 @@ export interface ViewProfile {
   blocked?: boolean;       // participants 항목에만: 앱에서 차단한 멤버(D-033). 목록·참여자 수에서 숨긴다
 }
 
-export interface WantedEvent { id: string; target: string }   // id = 로비:대상:처형 시각(같은 처형은 한 번)
+// id = 로비:대상:처형 시각(같은 처형은 한 번). at = 렌더러가 받은 시각(Date.now) — 화면이 가려져 보류할 때 기한 판정용
+export interface WantedEvent { id: string; target: string; at?: number }
 
 export interface BlockedUser { steam_id: string; name: string }   // 차단 시점의 Steam 이름(모르면 '')
 

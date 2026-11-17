@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+### Added
+
+- `warn` — 채팅창을 접어 두었거나 드로어·참여자 목록이 열려 있거나 창이 최소화·트레이로 숨은 동안 발동한 공개수배는 다시 보일 때 띄움(1분이 지나면 생략)
+
 ### Fixed
 
 - `warn` — 공개수배 전단이 일부 Cat Talk 사용자(3번째 경고를 직접 쓰지 않은 사람, 대상 본인 포함)에게 간헐적으로 뜨지 않던 문제 수정. 합계 3인 순간을 놓쳐도 리셋 때 남는 처형 표식을 보고 띄움(같은 처형은 한 번만, 켤 때·입장 때 이미 있던 표식은 띄우지 않음)
