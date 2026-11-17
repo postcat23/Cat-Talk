@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `warn` — 공개수배 전단이 일부 Cat Talk 사용자(3번째 경고를 직접 쓰지 않은 사람, 대상 본인 포함)에게 간헐적으로 뜨지 않던 문제 수정. 합계 3인 순간을 놓쳐도 리셋 때 남는 처형 표식을 보고 띄움(같은 처형은 한 번만, 켤 때·입장 때 이미 있던 표식은 띄우지 않음)
+
 ## [1.0.4] - 2026-11-17
 
 ### Added

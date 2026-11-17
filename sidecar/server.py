@@ -37,6 +37,7 @@ MAX_REQUEST = 32768
 INTERNAL_PROFILE_KEYS = {"steam_blocked", "cattalk_warns", "cattalk_wanted"}
 CATTALK_ID = "cattalk-"     # 경고 멤버 데이터 쓰기 명령 id 접두(채팅 send 명령과 결과를 가른다)
 WARN_OP_RETRY = 5.0          # 같은 정리 쓰기를 다시 보내기 전 기다리는 시간(프로필에 반영되기 전 중복 방지)
+WANTED_MARKER_GRACE = 5.0    # 합계 3으로 띄운 뒤 이 시간 안에 오는 같은 대상의 처형 표식은 같은 처형으로 본다(기여자마다 표식을 따로 씀)
 # worker 교체(steam_release 글루): Steam을 놓은 worker가 스스로 끝나기를 기다리는 상한. 그 worker는 재시도 대기 중이라 stop을 걸면
 # discovery·avatars 정리(join 각 1초) 뒤 끝난다. 넘기면 terminate한다.
 WORKER_RETIRE_GRACE = 5.0
@@ -139,6 +140,11 @@ class Sidecar:
         self.warn_ops = {}         # 진행 중인 cattalk 쓰기: 명령 id → (op 키, 보낸 시각, op)
         self.warn_failed = 0       # 렌더러에 알릴 경고 쓰기 실패 수(다음 view에서 받아 간다)
         self.warn_diag_last = None  # 진단 표식: 마지막으로 남긴 경고 데이터 수신 요약(바뀔 때만 남긴다)
+        # 처형 표식으로 놓친 공개수배 잡기: 기준 로비, 표식을 이미 한 번 본 멤버, 대상별로 아는 가장 늦은 처형 시각
+        self.wanted_base_lobby = None
+        self.wanted_base_members = set()
+        self.wanted_seen_cut = {}
+        self.wanted_last = {}      # 대상 → (마지막으로 띄운 처형 시각, 띄운 때 monotonic) — 두 경로가 같은 처형을 두 번 띄우지 않게
         self.closed = False
         self.last_prune = time.monotonic()
         self.context = mp.get_context("spawn")
@@ -230,24 +236,53 @@ class Sidecar:
         for target, row in tally.items():
             if row["count"] < warn_model.THRESHOLD:
                 continue
-            key = f"{lobby}:{target}:{row['last']}"
-            if key in self.wanted_fired:
-                continue
-            mark("wanted_fire", count=row["count"], shown=target in members, mine=bool(mine and target in mine[0]),
-                 self_target=target == account,
-                 contributors=sum(1 for warns, _ in data.values() if target in warns and warns[target][1] > row["cut"]))
-            self.wanted_fired[key] = True
-            while len(self.wanted_fired) > 256:
-                self.wanted_fired.popitem(last=False)
-            if target in members:
-                self.wanted_events.append({"id": key, "target": target})
-                del self.wanted_events[:-16]
-            if mine and target in mine[0]:
+            fired = self.fire_wanted(lobby, target, row["last"], members, "count", count=row["count"],
+                                     mine=bool(mine and target in mine[0]), self_target=target == account,
+                                     contributors=sum(1 for warns, _ in data.values() if target in warns and warns[target][1] > row["cut"]))
+            if fired and mine and target in mine[0]:
                 self.queue_cattalk({"op": "consume", "target": target, "when": row["last"]}, context)
+        self.detect_executions(lobby, account, members, data)
         if mine:
             for target, when in warn_model.stale(mine[0], warn_model.cuts(data)).items():
                 if target in members:
                     self.queue_cattalk({"op": "consume", "target": target, "when": when}, context)
+
+    def fire_wanted(self, lobby, target, when, members, via, **diag):
+        """공개수배를 한 번 띄운다(같은 처형 = 로비·대상·처형 시각은 한 번만). 새로 띄웠으면 True.
+        via: count = 합계가 3인 순간을 직접 봄, marker = 그 순간을 놓쳤지만 새 처형 표식을 봄."""
+        key = f"{lobby}:{target}:{when}"
+        if key in self.wanted_fired:
+            return False
+        mark("wanted_fire", via=via, shown=target in members, **diag)
+        self.wanted_fired[key] = True
+        while len(self.wanted_fired) > 256:
+            self.wanted_fired.popitem(last=False)
+        self.wanted_last[target] = (max(when, self.wanted_last.get(target, (0, 0.0))[0]), time.monotonic())
+        if target in members:
+            self.wanted_events.append({"id": key, "target": target})
+            del self.wanted_events[:-16]
+        return True
+
+    def detect_executions(self, lobby, account, members, data):
+        """처형 표식(cattalk.wanted)으로 놓친 공개수배를 띄운다.
+        합계 3은 처형한 기여자가 0.3초쯤 뒤 바로 정리해 사라지므로, 1초마다 읽는 다른 클라이언트는 그 순간을 놓칠 수 있다(1.0.4 실측).
+        표식은 로비에 남으므로 '이미 알던 멤버의 표식이 대상의 처형 시각을 앞으로 밀었다' = 새 처형으로 보고 띄운다.
+        켜질 때·로비를 옮길 때·새 멤버 데이터가 처음 보일 때 이미 있던 표식은 지난 처형이라 기준으로만 삼는다.
+        옛 항목 정리(stale)가 남기는 표식은 이미 아는 처형 시각과 같아 앞으로 밀지 않으므로 띄우지 않는다."""
+        if self.wanted_base_lobby != lobby:
+            self.wanted_base_lobby, self.wanted_base_members, self.wanted_seen_cut, self.wanted_last = lobby, set(), {}, {}
+        known = {uid: entry for uid, entry in data.items() if uid in self.wanted_base_members}
+        now = time.monotonic()
+        for target, when in warn_model.cuts(known).items():
+            if when <= self.wanted_seen_cut.get(target, 0):
+                continue
+            last_when, last_at = self.wanted_last.get(target, (0, 0.0))
+            if when <= last_when or now - last_at < WANTED_MARKER_GRACE:
+                continue   # 합계 3으로 이미 띄운 같은 처형(다른 기여자의 표식이 몇 초 늦게·조금 다른 시각으로 와도)
+            self.fire_wanted(lobby, target, when, members, "marker", self_target=target == account)
+        for target, when in warn_model.cuts(data).items():
+            self.wanted_seen_cut[target] = max(self.wanted_seen_cut.get(target, 0), when)
+        self.wanted_base_members = (self.wanted_base_members | set(data)) & members
 
     def warn_diag(self, account, members, profiles, data, tally):
         """진단 표식(D-050·D-052): 경고 멤버 데이터 수신 상태를 개수로만, 바뀔 때만 남긴다(ID·이름·값은 넣지 않는다).
