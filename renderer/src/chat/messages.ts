@@ -29,6 +29,9 @@ const ERROR_TEXT: Record<string, string> = {
 export const NO_BLOCKED_USERS = '차단한 사용자가 없습니다.';
 export const BLOCKS_UNAVAILABLE = '차단 목록을 확인할 수 없어 상대 대화를 보류합니다. 연결 상태 새로고침 후 다시 확인해 주세요.';
 
+// 경고를 끈 채 '@이름 경고!'를 입력했을 때(사용자 결정: 보내지 않고 안내, 글은 입력창에 남긴다)
+export const WARN_OFF = '경고가 꺼져 있습니다. 드로어 > 플레이에서 켤 수 있습니다.';
+
 export const PROFILE_OPENING = 'Steam 프로필을 여는 중입니다.';
 export const TRADE_OPENING = 'Steam 교환 페이지를 여는 중입니다.';
 

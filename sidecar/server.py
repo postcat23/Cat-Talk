@@ -62,10 +62,13 @@ UI_SETTINGS = {
     "presence_notices": (True, lambda value: type(value) is bool),
     "clear_cats": (False, lambda value: type(value) is bool),
     "auto_open_chest": (False, lambda value: type(value) is bool),
+    # 드로어 '플레이 > 경고'(기본 켜기). 렌더러만 읽는다 — 끄면 내 화면의 노란 카드·전단과 내 '@경고!' 입력만 멈추고,
+    # 집계·발동·처형 정리(consume)는 그대로 돈다(다른 사용자 화면에 영향 없음)
+    "play_warn": (True, lambda value: type(value) is bool),
 }
 # 렌더러가 알리는 공개수배 전단 처리 결과(진단 로그 전용, 결과 코드만): 끝까지 재생 / 같은 대상과 묶여 생략 /
-# 가려진 채 1분 지남 / 대상이 목록에 없음
-WANTED_DISPLAY = ("shown", "coalesce", "expired", "absent")
+# 플레이 > 경고 꺼짐 / 가려진 채 1분 지남 / 대상이 목록에 없음
+WANTED_DISPLAY = ("shown", "coalesce", "off", "expired", "absent")
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",
     "legal", "check_updates", "restart_update", "update_permission",

@@ -24,6 +24,7 @@ const pageVisible = () => document.visibilityState === 'visible';
 // 로비의 Cat Talk 사용자마다 같은 처형을 각자 화면에 한 번 띄운다(대상 본인 포함). 클릭은 아래로 통과한다.
 // 대상이 목록에 없으면(나감·차단) 띄우지 않고 넘긴다. 여러 건이면 차례대로(같은 대상은 useChatView가 하나로 묶는다).
 // 재생 도중 화면이 가려지면 멈추고, 1분 안에 다시 보이면 처음부터 다시 띄운다.
+// 플레이 > 경고가 꺼져 있으면 useChatView가 대기열을 비워 두므로 여기 올 것이 없다.
 export default function WantedPoster() {
   const { wanted, byId, dismissWanted } = useChat();
   const { overlays } = useUi();

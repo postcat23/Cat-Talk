@@ -7,6 +7,7 @@ import { ChatContext, useChatView } from './hooks/useChatView';
 import { AutoChestContext, useAutoChest } from './hooks/useAutoChest';
 import { AppUpdateContext, useAppUpdate } from './hooks/useAppUpdate';
 import type { Feature } from './chat/autoChest';
+import { mentionEnabled } from './chat/play';
 import CollapseTab from './components/CollapseTab';
 import TopBar from './components/TopBar';
 import SearchBar from './components/SearchBar';
@@ -20,7 +21,7 @@ const HEIGHT_PCT: Record<ChatHeight, 100 | 70 | 50> = { '100%': 100, '70%': 70, 
 function Panel() {
   const { settings, overlays, dispatch } = useUi();
   const reactions = useReactionStack(MAX_CARDS[settings.height], settings.catInteraction);
-  const chat = useChatView(reactions.push, settings.catInteraction);
+  const chat = useChatView(reactions.push, settings.catInteraction, settings.playWarn);
   const { saveSettings } = chat;
   const chestOff = useCallback((features: Feature[]) => {
     const patch = { ...(features.includes('chest') && { autoOpenChest: false }), ...(features.includes('transparent') && { clearCats: false }) };
@@ -59,7 +60,8 @@ function Panel() {
             {/* 창이 작은 70%·50%에서 오버레이를 열면 입력창을 숨겨 오버레이(--ovh 100%)가 창 전체를 덮게 한다 */}
             <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen)}
               restored={chat.restoredDraft} cooldown={chat.cooldown} onSend={chat.send} onDraft={chat.saveDraft}
-              participants={chat.participants} meId={chat.me?.id} onWarn={chat.warn} onNotify={chat.notify} />
+              participants={chat.participants} meId={chat.me?.id} onWarn={chat.warn} onNotify={chat.notify}
+              warnEnabled={settings.playWarn} mention={mentionEnabled(settings)} />
           </div>
           {/* 닉네임 변경(D-032): 패널 전체 기준 가운데. 대화 영역 오버레이와 달리 상단바·입력창까지 덮는다 */}
           <NicknameModal />

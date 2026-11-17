@@ -16,6 +16,7 @@ export interface Settings {
   presence: boolean;
   hideTaskbarIcon: boolean; // 토글 UI만, 동작 연결은 2e-2b
   autoOpenChest: boolean;   // true=켜기 활성. 켜기/끄기 버튼 UI만, 적용/복원 로직은 보류
+  playWarn: boolean;        // 드로어 '플레이 > 경고'(기본 켜기). 끄면 내 화면의 노란 카드·공개수배 전단과 내 '@경고!' 입력만 멈춘다
 }
 
 export type ReportKind = 'bug' | 'request';
@@ -58,7 +59,7 @@ const initialState: UiState = {
   settings: {
     theme: 'system', side: saved?.side ?? 'right', height: (saved && SAVED_HEIGHT[saved.heightPct]) ?? '100%', opacity: 100,
     taskbarAlert: true, toastAlert: true, catInteraction: true, clearCats: false, presence: true,
-    hideTaskbarIcon: saved?.hideTaskbar ?? false, autoOpenChest: false,
+    hideTaskbarIcon: saved?.hideTaskbar ?? false, autoOpenChest: false, playWarn: true,
   },
   overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false, nicknameFor: null, reportKind: null },
 };

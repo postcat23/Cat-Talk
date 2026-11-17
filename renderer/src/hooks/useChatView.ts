@@ -86,7 +86,8 @@ export interface Chat {
 // 공개수배 전단 처리 결과를 사이드카 진단 로그에 남긴다(결과 코드만, 대상·로비는 보내지 않는다). 실패는 무시
 const reportWanted = (result: WantedResult) => { rpc('wanted_display', { result }).catch(() => {}); };
 
-export function useChatView(pushReaction: ReactionStack['push'], reactionsEnabled: boolean): Chat {
+// warnEnabled = 드로어 '플레이 > 경고'. 끄면 공개수배 전단을 받는 대로 버리고 경고 쓰기를 보내지 않는다(내 화면·내 입력만)
+export function useChatView(pushReaction: ReactionStack['push'], reactionsEnabled: boolean, warnEnabled: boolean): Chat {
   const { dispatch } = useUi();
   const [view, setView] = useState<ViewResponse | null>(null);
   const [failed, setFailed] = useState(false);
@@ -104,6 +105,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [wantedQueue, setWantedQueue] = useState<WantedEvent[]>([]);
   const wantedRef = useRef<WantedEvent[]>([]);             // 대기열과 같은 값. 판정·진단 기록을 상태 갱신 함수 밖에서 하려고 둔다
   const wantedEnded = useRef(new Map<string, number>());   // 대상 → 그 대상 전단이 끝까지 재생된 시각(Date.now). 취합 판정용
+  const warnOn = useRef(warnEnabled);
   const cooldownUntil = useRef(0);   // performance.now() 기준. 판정은 이 값으로 하고 cooldown 상태는 표시용이다
   const cooldownTimer = useRef(0);
 
@@ -169,6 +171,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       let queue = wantedRef.current;
       for (const w of fresh) {
         if (queue.some((q) => q.id === w.id)) continue;
+        if (!warnOn.current) { reportWanted('off'); continue; }
         const same = queue.find((q) => q.target === w.target);
         const ended = wantedEnded.current.get(w.target);
         if (same || (ended !== undefined && at - ended < WANTED_COALESCE_MS)) {
@@ -182,6 +185,14 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
     if (data.warn_failed) setToast({ id: nextToast.current++, text: WARN_FAILED });
   }, [setWanted]);
+
+  // 플레이 > 경고를 끄면 대기 중이던 전단도 버린다(다시 켜도 꺼져 있던 동안의 것은 띄우지 않는다)
+  useEffect(() => {
+    warnOn.current = warnEnabled;
+    if (warnEnabled || wantedRef.current.length === 0) return;
+    wantedRef.current.forEach(() => reportWanted('off'));
+    setWanted([]);
+  }, [warnEnabled, setWanted]);
 
   // view에는 id만 온다. 처음 보는 이미지만 받아 메모리에 둔다(디스크·localStorage에 쓰지 않는다).
   const fetchAvatars = useCallback((data: ViewResponse) => {
@@ -535,7 +546,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   // 경고(D-052): 사이드카가 worker로 멤버 데이터 쓰기를 보낸다. 결과는 비동기(실패는 다음 view의 warn_failed)
   const warn = useCallback(async (target: string) => {
     const current = viewRef.current;
-    if (!current?.can_send) return false;
+    if (!current?.can_send || !warnOn.current) return false;   // 꺼져 있으면 입력창이 먼저 막고 안내한다
     try {
       await rpc('warn', { context: current.context, target });
       void poll();
