@@ -4,6 +4,7 @@ import ReactionStack from './ReactionStack';
 import MessageList from './MessageList';
 import Drawer from './Drawer';
 import ParticipantModal from './ParticipantModal';
+import WantedPoster from './WantedPoster';
 import styles from './Conversation.module.css';
 
 // 대화 영역. 드로어·참여자 모달·스크림은 이 범위 안에만 겹쳐 입력창을 가리지 않는다.
@@ -14,6 +15,8 @@ export default function Conversation({ reactions }: { reactions: Stack }) {
     <div className={styles.conv}>
       <ReactionStack stack={reactions} />
       <MessageList />
+      {/* 공개수배(D-052): 경고 총횟수가 3에 닿은 대상의 전단·총격 모션. 대화 위, 드로어·모달 아래 */}
+      <WantedPoster />
       <div className={overlayOpen ? `${styles.scrim} ${styles.show}` : styles.scrim} onClick={() => dispatch({ type: 'closeOverlays' })} />
       <Drawer />
       <ParticipantModal />

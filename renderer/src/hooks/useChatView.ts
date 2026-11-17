@@ -5,10 +5,12 @@ import { errorText, noticeText, PROFILE_OPENING, TRADE_OPENING, VIEW_UNAVAILABLE
 import {
   accountStatus, connState, displayName, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
   type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
+  type WantedEvent,
 } from '../chat/model';
 import type { ReactionStack } from './useReactionStack';
 
 const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 재구성한다
+const WARN_FAILED = '경고를 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.';   // 경고 쓰기 실패 안내(D-052)
 const MAX_SEEN_REACTIONS = 256;
 const MAX_AVATAR_REQUEST = 32;   // 사이드카 상한(64) 안에서 나눠 받는다. 남은 건 다음 폴링에
 const DRAFT_SAVE_MS = 300;
@@ -69,6 +71,9 @@ export interface Chat {
   setBlocked(uid: string, blocked: boolean): Promise<void>;   // 앱 차단·해제(D-033). 성공 안내 없이 목록 변화로 보인다
   refresh(): Promise<void>;
   notify(text: string): void;   // 안내 토스트(에러 토스트와 같은 자리). 신고 등록 결과 등
+  warn(target: string): Promise<boolean>;   // 경고(D-052): 내 cattalk.warns의 대상 +1. 채팅으로 보내지 않는다
+  wanted: WantedEvent | null;                // 띄울 공개수배(차례대로 하나씩)
+  dismissWanted(id: string): void;           // 전단·모션이 끝나면 다음 것으로
   saveSettings(patch: Partial<Settings>): void;
   saveDraft(text: string, now?: boolean): void;
   sending: boolean;      // 보낸 메시지의 응답을 기다리는 중. 그동안 앱 업데이트(재시작)를 막는다(D-030)
@@ -90,6 +95,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [latest, setLatest] = useState<ViewMessage | null>(null);   // HISTORY 폴링이 받은 최신 메시지
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState<Cooldown>({ active: false, key: 0 });
+  const [wantedQueue, setWantedQueue] = useState<WantedEvent[]>([]);
   const cooldownUntil = useRef(0);   // performance.now() 기준. 판정은 이 값으로 하고 cooldown 상태는 표시용이다
   const cooldownTimer = useRef(0);
 
@@ -138,6 +144,13 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
         reactionInput.current.pushReaction(event.sender, event.kind, event.text ?? '', png(event.avatar), png(event.image));
       }
     }
+  }, []);
+
+  // 경고·공개수배(D-052): 새 공개수배는 대기열 뒤에(같은 처형은 한 번), 경고 쓰기 실패는 안내 토스트
+  const takeWanted = useCallback((data: ViewResponse) => {
+    const fresh = data.wanted ?? [];
+    if (fresh.length) setWantedQueue((queue) => [...queue, ...fresh.filter((w) => !queue.some((q) => q.id === w.id))]);
+    if (data.warn_failed) setToast({ id: nextToast.current++, text: WARN_FAILED });
   }, []);
 
   // view에는 id만 온다. 처음 보는 이미지만 받아 메모리에 둔다(디스크·localStorage에 쓰지 않는다).
@@ -194,6 +207,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
         reactions: reactionInput.current.reactionsEnabled && !q && !document.hidden,
       });
       takeReactions(data, requestedAt);   // 사이드카는 준 반응을 지우므로 응답을 버려도 받아 둔다
+      takeWanted(data);                    // 공개수배·경고 실패도 사이드카가 한 번만 준다(D-052)
       if (sent !== version.current) return;
       setFailed(false);
       fetchAvatars(data);
@@ -228,7 +242,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       busy.current = false;
       if (again.current) { again.current = false; void poll(); }
     }
-  }, [applyTimeline, dispatch, fetchAvatars, takeDraft, takeReactions]);
+  }, [applyTimeline, dispatch, fetchAvatars, takeDraft, takeReactions, takeWanted]);
 
   useEffect(() => {
     void poll();
@@ -472,7 +486,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const participants = useMemo(
     // 앱에서 차단한 멤버는 목록·상단바 참여자 수에서 뺀다(D-033). view.participants에는 blocked 플래그와 함께 남아 있다
     () => Object.entries(shown?.participants ?? {}).filter(([, p]) => !p.blocked)
-      .map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf, shown?.nicknames)),
+      .map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf, shown?.nicknames, shown?.warns)),
     [shown, avatarOf],
   );
   const nicknames = useMemo(() => shown?.nicknames ?? {}, [shown]);
@@ -482,14 +496,30 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   );
   const account = shown?.context.account ?? '';
   const me = useMemo(
-    () => (account && shown?.profiles[account] ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf) : null),
+    () => (account && shown?.profiles[account] ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf, undefined, shown.warns) : null),
     [account, shown, avatarOf],
   );
   const lookup = useMemo(() => new Map(participants.map((p) => [p.id, p])), [participants]);
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
+  // 경고(D-052): 사이드카가 worker로 멤버 데이터 쓰기를 보낸다. 결과는 비동기(실패는 다음 view의 warn_failed)
+  const warn = useCallback(async (target: string) => {
+    const current = viewRef.current;
+    if (!current?.can_send) return false;
+    try {
+      await rpc('warn', { context: current.context, target });
+      void poll();
+      return true;
+    } catch (error) {
+      showError(error);
+      return false;
+    }
+  }, [poll, showError]);
+  const dismissWanted = useCallback((id: string) => setWantedQueue((queue) => queue.filter((w) => w.id !== id)), []);
+
   return {
     items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, resend, cooldown, openProfile, openTrade, setNickname, setBlocked, refresh, notify, saveSettings, saveDraft, sending, hasDraft,
+    warn, wanted: wantedQueue[0] ?? null, dismissWanted,
     blocksReady: shown?.blocks_ready ?? true,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),

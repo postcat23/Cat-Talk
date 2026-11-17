@@ -9,6 +9,7 @@ export interface Participant {
   base: string;    // 원본 Steam 이름. 닉네임 모달 placeholder
   color: string;   // 아바타 배경
   avatar?: string; // 실아바타 data URI(스킨+모자 합성 정지 PNG). 없으면 실루엣 폴백(Cat)
+  warns: number;   // 경고 총횟수(D-052, 로비 Cat Talk 사용자들이 준 경고 합). 이름 뒤 옐로카드 수
 }
 
 export interface ChatMessage {
@@ -43,6 +44,8 @@ export interface ViewProfile {
   hat?: number;   // 게임 아이템 번호(벗으면 -1). 렌더러는 쓰지 않는다(모자는 실아바타 합성 이미지에 포함)
   blocked?: boolean;       // participants 항목에만: 앱에서 차단한 멤버(D-033). 목록·참여자 수에서 숨긴다
 }
+
+export interface WantedEvent { id: string; target: string }   // id = 로비:대상:처형 시각(같은 처형은 한 번)
 
 export interface BlockedUser { steam_id: string; name: string }   // 차단 시점의 Steam 이름(모르면 '')
 
@@ -105,6 +108,11 @@ export interface ViewResponse {
   nicknames: Record<string, string>;   // 현재 계정의 표시 이름 덮어쓰기(steam_id → 이름, D-032). 사이드카가 항상 {} 이상 보낸다
   blocks_ready: boolean;               // 차단 목록을 읽었는지. false면 업스트림이 상대 대화를 보류한다(D-033)
   blocked_users: BlockedUser[];        // 앱 차단 목록(steam_id 순)
+  // 경고·공개수배(D-052, Cat-Talk 사이드카). warns = 대상별 경고 총횟수(0 제외), wanted = 새로 생긴 공개수배(한 번만 온다),
+  // warn_failed = 지난 view 뒤 실패한 경고 쓰기 수. 사이드카가 못 읽은 회차·검색 응답에는 없을 수 있다
+  warns?: Record<string, number>;
+  wanted?: WantedEvent[];
+  warn_failed?: number;
 }
 
 // 표시 이름: 닉네임 덮어쓰기가 있으면 그 값, 없거나 비었으면 base(Steam 이름)
@@ -123,11 +131,12 @@ function paletteColor(uid: string) {
 export type AvatarLookup = (avatarId: string | undefined) => string | undefined;
 
 export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string, avatarOf?: AvatarLookup,
-  nicks?: Record<string, string>): Participant {
+  nicks?: Record<string, string>, warns?: Record<string, number>): Participant {
   const base = profile?.name || fallbackName;
   return {
     id: uid, name: displayName(uid, base, nicks), base, color: profile?.color ?? paletteColor(uid),
     avatar: avatarOf?.(profile?.avatar_id),
+    warns: warns?.[uid] ?? 0,
   };
 }
 
@@ -157,7 +166,7 @@ export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatIt
     return {
       kind: 'msg', id: m.id, seq: m.seq, sender: m.sender, own, text: m.body, time: clock(m.received),
       // 나간 참여자는 profiles에 없어도 메시지에 남은 이름으로 표시한다
-      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf, view.nicknames),
+      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf, view.nicknames, view.warns),
       status: m.unsaved ? UNSAVED_LABEL : STATUS_LABEL[m.status],
       resendable: own && m.status === 'failed' && !m.unsaved,
     };

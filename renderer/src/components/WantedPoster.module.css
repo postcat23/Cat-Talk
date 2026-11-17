@@ -1,0 +1,67 @@
+/* 공개수배 전단(D-052). 대화 영역 가운데, 반응 카드(z 4) 위·스크림(z 6)과 드로어 아래. 클릭은 통과한다.
+   타임라인(총 4.6초 = WantedPoster.tsx DURATION_MS): 0~0.6s 벽에 붙이기(0.27s 쾅 → 되튐 → 정착) → 0.55~0.8s 조준선이 사진으로
+   → 1.0·1.16·1.32s 세 발(번쩍임·탄흔·흔들림·조준선 반동) → 1.75s 조준선 사라짐 → 3.8~4.6s 전단 사라짐 */
+/* 어둡게는 배경색만 바꾼다(opacity로 하면 전단까지 반투명해져 붙이는 순간이 약해진다). 전단은 제 애니메이션(slap·out)으로 나타나고 사라진다 */
+.stage{position:absolute;inset:0;z-index:5;display:grid;place-items:center;pointer-events:none;
+  background:rgba(0,0,0,.28);animation:dim 4.6s linear forwards}
+@keyframes dim{0%{background-color:rgba(0,0,0,0)}6%{background-color:rgba(0,0,0,.28)}83%{background-color:rgba(0,0,0,.28)}100%{background-color:rgba(0,0,0,0)}}
+/* 전단 원본 1199×1312. 사진틀(투명 구멍) = 왼쪽 14.93%·위 24.09%·너비 70.06%·높이 39.25%(실측) */
+.poster{position:relative;width:min(78%,320px);aspect-ratio:1199/1312;
+  animation:slap .6s both,jolt .1s linear 1s,jolt .1s linear 1.16s,jolt .1s linear 1.32s,out .8s ease-in 3.8s forwards}
+/* 붙이기: 크고 기운 채 날아와(가속) 0.27s에 벽에 쾅 → 살짝 되튐 → -2° 정착 */
+@keyframes slap{
+  0%{opacity:0;transform:translate(10px,-22px) scale(1.5) rotate(-11deg);animation-timing-function:cubic-bezier(.5,0,.9,.4)}
+  12%{opacity:1}
+  45%{transform:scale(.94) rotate(-1deg);animation-timing-function:ease-out}
+  63%{transform:scale(1.035) rotate(-2.6deg);animation-timing-function:ease-in-out}
+  80%{transform:scale(.99) rotate(-1.8deg);animation-timing-function:ease-in-out}
+  100%{opacity:1;transform:rotate(-2deg)}
+}
+@keyframes jolt{0%,100%{transform:rotate(-2deg)}30%{transform:translate(-6px,3px) rotate(-3.5deg)}65%{transform:translate(4px,-2px) rotate(-.8deg)}}
+@keyframes out{to{opacity:0;transform:rotate(-2deg) scale(.94)}}
+/* 쾅 순간의 충격: 전단 뒤에서 먼지빛이 확 퍼졌다 사라진다 */
+.poster::before{content:'';position:absolute;inset:-14%;z-index:-1;opacity:0;
+  background:radial-gradient(closest-side,rgba(255,236,200,.6),rgba(255,236,200,.22) 70%,transparent);animation:impact .45s ease-out .27s}
+@keyframes impact{from{opacity:1;transform:scale(.8)}to{opacity:0;transform:scale(1.25)}}
+/* 그림자: 떠 있을 땐 멀고 옅게 → 붙는 순간 바짝 → 평소 */
+.paper{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;filter:drop-shadow(0 8px 18px rgba(0,0,0,.45));
+  animation:lift .6s both}
+@keyframes lift{
+  0%{filter:drop-shadow(0 34px 28px rgba(0,0,0,.18));animation-timing-function:cubic-bezier(.5,0,.9,.4)}
+  45%{filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));animation-timing-function:ease-out}
+  100%{filter:drop-shadow(0 8px 18px rgba(0,0,0,.45))}
+}
+/* 사진: 전단 뒤에 두어 투명 사진틀로만 보인다. 낡은 사진 느낌으로 옅은 세피아 */
+.photo{position:absolute;left:14.93%;top:24.09%;width:70.06%;height:39.25%;overflow:hidden;background:#d9c39a;filter:sepia(.3);
+  display:flex;align-items:flex-end;justify-content:center;--sprite-w:60%}
+/* 아바타는 채팅과 같은 콘텐츠 bbox 박스(Cat sprite): 그림 가로폭을 사진틀의 60%로, 바닥에 서게. 모자가 아주 큰 조합은 위가 잘릴 수 있다 */
+.photo > *{flex:none}
+/* 한 발 = 번쩍임(::before) + 탄흔(::after, bullet-hole.svg). 시각은 인라인 animation-delay, 회전은 인라인 --rot를 두 의사요소가 상속 */
+.shot{position:absolute;width:0;height:0}
+.shot::before,.shot::after{content:'';position:absolute;left:0;top:0;transform:translate(-50%,-50%) scale(0);
+  animation-delay:inherit;animation-fill-mode:forwards}
+.shot::before{width:110px;height:110px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,250,220,.95),rgba(255,190,70,.55) 40%,transparent 70%);animation-name:flash;animation-duration:.14s}
+.shot::after{width:60px;height:60px;background:url('../assets/bullet-hole.svg') center/contain no-repeat;
+  animation-name:hole;animation-duration:.14s;animation-timing-function:ease-out}
+@keyframes flash{0%{transform:translate(-50%,-50%) scale(.3);opacity:1}100%{transform:translate(-50%,-50%) scale(1.2);opacity:0}}
+@keyframes hole{
+  0%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(0)}
+  40%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1.3)}
+  100%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1)}
+}
+/* 조준선: 사진 가운데(전단 높이 43.7%)로 빠르게 들어와 발사마다 튀었다가 마지막 발 뒤 사라진다 */
+.crosshair{position:absolute;left:50%;top:43.7%;width:46px;height:46px;margin:-23px 0 0 -23px;border:2px solid #e53935;border-radius:50%;
+  opacity:0;animation:aim 1.2s ease-out .55s forwards,kick .1s ease-out 1s,kick .1s ease-out 1.16s,kick .1s ease-out 1.32s}
+.crosshair::before,.crosshair::after{content:'';position:absolute;background:#e53935}
+.crosshair::before{left:50%;top:-8px;bottom:-8px;width:2px;margin-left:-1px}
+.crosshair::after{top:50%;left:-8px;right:-8px;height:2px;margin-top:-1px}
+@keyframes aim{0%{opacity:0;transform:translate(70px,-50px) scale(1.3)}22%{opacity:1;transform:none}80%{opacity:1;transform:none}100%{opacity:0;transform:scale(.8)}}
+@keyframes kick{from{transform:translateY(-4px) scale(1.3)}to{transform:none}}
+/* 움직임 줄이기: 붙이기·흔들림·조준선 없이 탄흔만 남긴 전단을 보여 주고 사라진다 */
+@media (prefers-reduced-motion:reduce){
+  .poster{animation:out .6s ease-in 3.8s forwards}
+  .poster::before,.crosshair,.shot::before{display:none}
+  .paper{animation:none}
+  .shot::after{animation:none;transform:translate(-50%,-50%) rotate(var(--rot)) scale(1)}
+}

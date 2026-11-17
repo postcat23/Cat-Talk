@@ -5,6 +5,7 @@ import { progressText, reapplyNotice, REINSTALL_NOTICE, RESTORE_NOTICE } from '.
 import { updateReadyNotice, useUpdate, UPDATE_DRAFT_NOTICE } from '../hooks/useAppUpdate';
 import { displayName } from '../chat/model';
 import Cat from './Cat';
+import YellowCards from './YellowCards';
 import NoticeCard from './NoticeCard';
 import styles from './ReactionStack.module.css';
 
@@ -54,7 +55,7 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
             <span className={avatar ? `${styles.rcat} ${styles.stand}` : styles.rcat}><Cat src={avatar} framing="sprite" /></span>
             <span className={styles.rtxt}>
               {/* 참여자 이름은 닉네임 덮어쓰기가 반영돼 있다(D-032). 목록에 없는 발신자도 닉네임이 있으면 그 이름 */}
-              <b>{p?.name ?? displayName(c.sender, c.sender, nicknames)}</b>
+              <b>{p?.name ?? displayName(c.sender, c.sender, nicknames)}</b>{p && <YellowCards count={p.warns} />}
               {c.kind === 'meow' ? <span className={styles.act}>{c.content || MEOW_FALLBACK}</span> : c.content && <span className={styles.act}>{c.content}</span>}
             </span>
             {c.kind === 'emote' && c.image && <img className={styles.emote} src={c.image} alt="" draggable={false} />}

@@ -51,6 +51,7 @@
 | `open_steam_profile` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_profile_failed` | 네이티브 `QDesktopServices.openUrl` → Electron `shell.openExternal`. 사이드카는 검증 후 `{uri}`를 main에 주고, main이 열어 렌더러에는 `{ok:true}`만 돌려준다 |
 | `open_steam_trade` | `steam_id,context` | `{ok:true}` | `invalid_steam_id`·`steam_profile_unavailable`·`steam_trade_failed` | Cat-Talk 추가(upstream 없음). 사이드카가 `open_steam_profile`과 같은 순서로 검증(형식·64비트·기준값 `76561197960265728` 미만 → `invalid_steam_id`, context 변경·현재 참여자 아님 → `steam_profile_unavailable`)한 뒤 `steam://openurl/https://steamcommunity.com/tradeoffer/new/?partner=<steamID64 − 기준값>`을 `{uri}`로 main에 준다(교환은 전용 딥링크가 없어 https 페이지를 `steam://openurl/`로 감싼다). main은 형식을 재확인해 `shell.openExternal`로 Steam 클라이언트에서 열고 렌더러에는 `{ok:true}`만 돌려준다 |
 | `set_nickname` | `account,steam_id,name` | `{ok:true}` | `account_changed`·`invalid_steam_id`·`invalid_nickname` | Cat-Talk 추가(upstream 없음, D-032). 참여자 표시 이름 덮어쓰기를 업스트림 범용 KV `settings`의 `nicknames:<account>` 키에 `{steam_id: name}` JSON으로 영속한다(계정별, 재실행·로비 이동 유지). `account`가 현재 계정이 아니면 `account_changed`, `steam_id`는 `open_steam_profile`과 같은 정규 uint64 검증, `name`은 문자열이고 앞뒤 공백 제거 후 15자(코드 포인트) 이하가 아니면 `invalid_nickname`. 빈 값이면 그 항목을 지워 기본 Steam 닉네임으로 돌아간다 |
+| `warn` | `context,target` | `{ok:true}` | `warn_unavailable` | Cat-Talk 추가(D-052 경고·공개수배). 내 로비 멤버 데이터 `cattalk.warns`의 대상 +1 쓰기를 worker로 보낸다(채팅이 아니다 — 1초 제한·echo 없음). `context`가 현재 연결과 다르거나, 로비 확인 전이거나, `target`이 지금 로비 멤버가 아니면(자기 자신은 허용) `warn_unavailable`. 결과는 비동기: 쓰기가 실패하면 다음 view의 `warn_failed`로 알린다. `send`에 `@이름 경고!` 모양이 오면 채팅으로 보내지 않고 `warn_command`로 거절한다(렌더러가 먼저 `warn`으로 가로챈다) |
 | `check_updates` | — | `{ok:true}` | — | |
 | `restart_update` | — | `{ok:true}` / `{ok:false,reason}` | — | reason: `auto_merge`·`unavailable`·`storage`·`sending` |
 | `update_permission` | `allowed` | `{ok:true}` / `{error:update_permission_failed}` | — | |
@@ -93,6 +94,7 @@
 - `storage_error`,`revision`(변경 감지용 단조 증가)
 - `ui_settings{chat_opacity,presence_notices,clear_cats,auto_open_chest}` — Cat-Talk 추가. 읽기 실패 회차에는 키가 없다
 - `nicknames{steam_id: name}` — Cat-Talk 추가(D-032). 현재 계정의 표시 이름 덮어쓰기(`set_nickname`). 항상 있다 — 계정이 없거나 비었으면 `{}`, 읽기 실패 회차는 `{}` + `storage_error`. 렌더러는 참여자 목록·채팅 작성자·입퇴장 문구·반응 카드의 이름을 이 값으로 바꾸고, 없으면 Steam 이름을 쓴다
+- `warns{steam_id: n}`, `wanted[{id,target}]`, `warn_failed` — Cat-Talk 추가(D-052). `warns` = 대상별 경고 총횟수(로비 전원의 `cattalk.warns` 중 처형 시각 이후 항목의 합, 보이는 멤버만, 0 제외). `wanted` = 총횟수가 3에 닿아 새로 생긴 공개수배(`id` = `로비:대상:처형 시각`, 같은 처형은 한 번, 받아 가면 비운다, 검색 응답에는 없다). `warn_failed` = 지난 view 뒤 실패한 `warn` 쓰기 수(받아 가면 0). 멤버 프로필의 `cattalk_warns`·`cattalk_wanted` 원문은 렌더러로 보내지 않는다
 - `translations`(요청 `language`가 현재와 다를 때만, `en`이면 사전)
 
 **추가분(dispatch)**
@@ -165,6 +167,9 @@
 | `steam_released` | 사이드카가 그 worker를 끝내고 새 worker를 띄운다(아래) | 없음 — Cat-Talk 글루(`sidecar/steam_release.py`)가 Steam을 잡았던 `Steam.close()`(SteamAPI_Shutdown) 직후 보낸다 |
 
 **commands(controller→worker)**: `{type:'send',id,text,context}`, `{type:'refresh'}`.
+Cat-Talk 경고(D-052): `{type:'send', id:'cattalk-…', cattalk:{op:'warn',target} | {op:'consume',target,when}, context, queued}` — worker 글루(`sidecar/steam_warns.py`)가 `LiveConnection.send`를 감싸 `cattalk` 필드가 있는 명령만 가로채 내 멤버 데이터를 쓴다(쓰기 직전 Steam에서 내 현재 값을 다시 읽어 고친다, 연결 대상이 명령과 다르거나 대상이 멤버가 아니면 `failed`). 결과는 같은 `result` 이벤트로 오고 사이드카가 id 접두로 채팅 결과와 가른다. 같은 글루가 멤버 프로필에 `cattalk_warns`·`cattalk_wanted` 원문(`GetLobbyMemberData`)을 싣는다.
+
+**경고 멤버 데이터(D-052)**: `cattalk.warns` = `{"<대상 SteamID64>": [내 경고 수, 마지막 경고의 Steam 서버 시각(초, ISteamUtils::GetServerRealTime)]}`, `cattalk.wanted` = `{"<대상>": 처형 시각}`(최근 64개). 각자 자기 데이터만 쓴다(SetLobbyMemberData). 처형 시각 = 로비 전원 `wanted[대상]`의 최댓값, 그보다 오래된 경고는 모두가 셈에서 뺀다. 총횟수가 3에 닿으면 처형 시각 T = 유효 경고의 최신 시각(데이터만으로 정해져 클라이언트마다 같다) — 기여자는 자기 항목을 지우고 `wanted[대상]=T`를 남긴다. 그때 Cat Talk을 꺼 둔 기여자의 항목은 T 이전이라 무시되고, 그 사람이 다시 켜면 자기 옛 항목을 정리한다. 바닐라 게임은 이 키를 읽지 않는다(멤버 데이터가 바뀌면 그 멤버 고양이 외형만 다시 적용 — `CatCosmeticsMultiplayer.OnLobbyDataUpdate`).
 **큐 사양**: commands `maxsize=64`, events `maxsize=2048`, `stop`은 Event(worker마다 새로). spawn 컨텍스트.
 
 **worker 교체·재시작(Cat-Talk)**: Steam은 앱(3419430)을 프로세스 단위로 추적해, worker가 SteamAPI_Shutdown을 불러도 그 프로세스가 살아 있는 한 Bongo Cat을 '실행 중'(`HKCU\Software\Valve\Steam\Apps\3419430\Running=1`)으로 유지한다 — 게임을 꺼도 Steam에서 다시 실행하면 '이미 실행 중'으로 막혔다(D-019 실측). 그래서 사이드카는 `steam_released`를 받으면 그 worker의 `stop`을 걸어 끝내고(5초 안에 안 끝나면 terminate + 큐 교체) 새 worker를 띄운다. 새 worker는 게임을 찾기 전에는 Steam을 초기화하지 않아, 게임이 꺼져 있는 동안 Steam 등록이 없다. 사이드카·store는 그대로라 대화 기록이 남는다. 업스트림은 연결 끊김 `state`를 먼저 보내고(보내던 메시지는 거기서 `unknown`으로 정리) 그 뒤 Steam을 놓는다. 교체가 아닌 worker 종료(크래시·강제 종료)는 지금처럼 `worker_stopped`를 알리고 3초 뒤 새 worker를 띄운다(업스트림은 앱 재시작이 필요했다).

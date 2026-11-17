@@ -16,6 +16,7 @@ import sqlite3
 import sys
 import threading
 import time
+from uuid import uuid4
 
 # spawn 자식도 이 모듈을 재import하므로 경로 설정은 모듈 최상단에 둔다.
 # PyInstaller 번들(prod)은 bongo_chat을 번들 안에 넣으므로 소스 트리의 src/를 쓰지 않는다(D-036).
@@ -28,9 +29,14 @@ from bongo_chat.service import ChatService, NOTIFICATION_KEYS
 from bongo_chat.worker import unavailable
 from default_avatar import run_worker_with_default
 from volatile_store import VolatileStore
+import warns as warn_model
 from diag import enable_faulthandler, mark
 
 MAX_REQUEST = 32768
+# 렌더러로 보내지 않는 worker 프로필 키: Steam 차단 판정(D-033), 경고 멤버 데이터 원문(D-052 — 집계값 warns만 보낸다)
+INTERNAL_PROFILE_KEYS = {"steam_blocked", "cattalk_warns", "cattalk_wanted"}
+CATTALK_ID = "cattalk-"     # 경고 멤버 데이터 쓰기 명령 id 접두(채팅 send 명령과 결과를 가른다)
+WARN_OP_RETRY = 5.0          # 같은 정리 쓰기를 다시 보내기 전 기다리는 시간(프로필에 반영되기 전 중복 방지)
 # worker 교체(steam_release 글루): Steam을 놓은 worker가 스스로 끝나기를 기다리는 상한. 그 worker는 재시도 대기 중이라 stop을 걸면
 # discovery·avatars 정리(join 각 1초) 뒤 끝난다. 넘기면 terminate한다.
 WORKER_RETIRE_GRACE = 5.0
@@ -47,7 +53,7 @@ LANGUAGES = ("system", "ko", "en")
 ALLOWED_ERRORS = {
     "connection_changed", "development_limit_50", "control_character", "storage_failed_before_send",
     "legal_unavailable", "invalid_steam_id", "steam_profile_unavailable", "steam_profile_failed",
-    "block_unavailable",
+    "block_unavailable", "warn_unavailable", "warn_command",
 }
 # Cat-Talk 드로어 전용 설정(upstream 화이트리스트 밖): key -> (기본값, 검증). 창 배치는 window-state.json이 맡는다.
 UI_SETTINGS = {
@@ -126,6 +132,13 @@ class Sidecar:
         self.read_only = read_only
         self.retire_by = None   # Steam을 놓은 worker를 끝내는 중이면 강제 종료 기한(monotonic). 끝나면 새 worker를 띄운다
         self.respawn_at = None   # worker가 예기치 않게 끝났으면 다시 띄울 시각(monotonic)
+        # 경고·공개수배(D-052): 로비 멤버 데이터 집계. 원문은 worker가 멤버 프로필(cattalk_warns·cattalk_wanted)에 싣는다
+        self.warn_counts = {}      # 대상 → 경고 총횟수(현재 로비 멤버, 0 제외)
+        self.wanted_events = []    # 렌더러가 다음 view에서 한 번 받아 갈 공개수배 [{id, target}]
+        self.wanted_fired = OrderedDict()   # 이미 띄운 공개수배(로비:대상:처형 시각) — 같은 처형을 두 번 띄우지 않는다
+        self.warn_ops = {}         # 진행 중인 cattalk 쓰기: 명령 id → (op 키, 보낸 시각, op)
+        self.warn_failed = 0       # 렌더러에 알릴 경고 쓰기 실패 수(다음 view에서 받아 간다)
+        self.warn_diag_last = None  # 진단 표식: 마지막으로 남긴 경고 데이터 수신 요약(바뀔 때만 남긴다)
         self.closed = False
         self.last_prune = time.monotonic()
         self.context = mp.get_context("spawn")
@@ -195,6 +208,96 @@ class Sidecar:
             mark("worker_spawn_failed", error=type(exc).__name__)
             self.respawn_at = time.monotonic() + WORKER_RESPAWN_DELAY
 
+    def update_warns(self):
+        """경고·공개수배 집계(D-052). 로비 전원의 cattalk 멤버 데이터로 대상별 경고 총횟수를 세고, THRESHOLD에 닿은 대상은
+        공개수배를 한 번 띄운다. 내가 기여한 대상이면 내 항목을 정리하고 처형 표식을 남기는 쓰기를 worker로 보낸다.
+        내가 꺼져 있던 동안 처형된 내 옛 항목(다른 사람의 표식보다 오래됨)도 같은 쓰기로 정리한다."""
+        state = self.service.state
+        account, lobby = state.get("account", ""), state.get("lobby", "")
+        members = set(state.get("members") or [])
+        if not (account and lobby and state.get("lobby_verified")):
+            self.warn_counts = {}
+            return
+        data = {}
+        for uid, profile in (state.get("profiles") or {}).items():
+            if uid in members and isinstance(profile, dict) and "cattalk_warns" in profile:
+                data[uid] = (warn_model.parse_warns(profile.get("cattalk_warns")), warn_model.parse_wanted(profile.get("cattalk_wanted")))
+        tally = warn_model.tally(data)
+        self.warn_counts = {target: row["count"] for target, row in tally.items() if target in members}
+        self.warn_diag(account, members, state.get("profiles") or {}, data, tally)
+        context = self.service.context()
+        mine = data.get(account)
+        for target, row in tally.items():
+            if row["count"] < warn_model.THRESHOLD:
+                continue
+            key = f"{lobby}:{target}:{row['last']}"
+            if key in self.wanted_fired:
+                continue
+            mark("wanted_fire", count=row["count"], shown=target in members, mine=bool(mine and target in mine[0]),
+                 self_target=target == account,
+                 contributors=sum(1 for warns, _ in data.values() if target in warns and warns[target][1] > row["cut"]))
+            self.wanted_fired[key] = True
+            while len(self.wanted_fired) > 256:
+                self.wanted_fired.popitem(last=False)
+            if target in members:
+                self.wanted_events.append({"id": key, "target": target})
+                del self.wanted_events[:-16]
+            if mine and target in mine[0]:
+                self.queue_cattalk({"op": "consume", "target": target, "when": row["last"]}, context)
+        if mine:
+            for target, when in warn_model.stale(mine[0], warn_model.cuts(data)).items():
+                if target in members:
+                    self.queue_cattalk({"op": "consume", "target": target, "when": when}, context)
+
+    def warn_diag(self, account, members, profiles, data, tally):
+        """진단 표식(D-050·D-052): 경고 멤버 데이터 수신 상태를 개수로만, 바뀔 때만 남긴다(ID·이름·값은 넣지 않는다).
+        others_with_data가 0에서 늘면 다른 클라이언트가 쓴 값이 Steam을 거쳐 여기 도착한 것이다."""
+        unread = sum(1 for uid in members if not isinstance(profiles.get(uid), dict) or "cattalk_warns" not in profiles[uid])
+        malformed = sum(1 for uid, (warns, wanted) in data.items()
+                        if ((profiles[uid].get("cattalk_warns") or "").strip() not in ("", "{}") and not warns)
+                        or ((profiles[uid].get("cattalk_wanted") or "").strip() not in ("", "{}") and not wanted))
+        others = [uid for uid, (warns, wanted) in data.items() if uid != account and (warns or wanted)]
+        summary = {
+            "members": len(members), "unread": unread, "malformed": malformed,
+            "own_entries": len(data.get(account, ({}, {}))[0]),
+            "others_with_data": len(others), "others_entries": sum(len(data[uid][0]) for uid in others),
+            "wanted_markers": sum(len(wanted) for _, wanted in data.values()),
+            "targets": len(tally), "max_count": max((row["count"] for row in tally.values()), default=0),
+        }
+        if summary != self.warn_diag_last:
+            self.warn_diag_last = summary
+            mark("warn_data", **summary)
+
+    def queue_cattalk(self, op, context):
+        """경고 멤버 데이터 쓰기를 worker로 보낸다(채팅 send와 같은 큐, cattalk 필드로 구분). 같은 정리 쓰기는 반영될 때까지 다시 보내지 않는다.
+        보냈으면 True. 큐가 가득 차면 False(경고는 다시 누르면 되고, 정리는 다음 집계에서 다시 시도한다)."""
+        key = None if op["op"] == "warn" else f"{op['op']}:{op['target']}:{op.get('when')}"
+        now = time.monotonic()
+        if key and any(k == key and now - sent < WARN_OP_RETRY for k, sent, _ in self.warn_ops.values()):
+            return True
+        command = {"type": "send", "id": CATTALK_ID + uuid4().hex, "cattalk": op, "context": context, "queued": now}
+        try:
+            self.commands.put_nowait(command)
+        except queue.Full:
+            mark("warn_queue_full", op=op["op"])
+            return False
+        self.warn_ops[command["id"]] = (key, now, op)
+        mark("warn_queued", op=op["op"])
+        return True
+
+    def warn_result(self, event):
+        entry = self.warn_ops.pop(event.get("id"), None)
+        status = event.get("status")
+        mark("warn_result", op=entry[2].get("op") if entry else "unknown",
+             status=status if isinstance(status, str) and status.isascii() and len(status) <= 40 else type(status).__name__,
+             seconds=round(time.monotonic() - entry[1], 3) if entry else None)
+        if entry and entry[2].get("op") == "warn" and event.get("status") != "accepted":
+            self.warn_failed += 1   # 렌더러가 다음 view에서 '경고하지 못했습니다' 안내
+        # 정리 쓰기가 실패하면 기록만 지운다 — 다음 집계가 아직 남은 항목을 보고 다시 보낸다
+        now = time.monotonic()
+        for cid in [cid for cid, (_, sent, _) in self.warn_ops.items() if now - sent > 30]:
+            del self.warn_ops[cid]   # 결과가 오지 않은 쓰기(worker 교체 등)는 30초 뒤 잊는다
+
     def replace_queues(self):
         for pipe in (self.commands, self.events):
             pipe.cancel_join_thread()
@@ -229,10 +332,14 @@ class Sidecar:
                 elif event.get("type") == "steam_ignored":
                     self.update_steam_ignored(event)
                 elif event.get("type") == "result":
-                    self.service.result(event["id"], event["status"])
+                    if str(event.get("id", "")).startswith(CATTALK_ID):
+                        self.warn_result(event)   # 경고 멤버 데이터 쓰기 결과(채팅 전송 결과가 아니다)
+                    else:
+                        self.service.result(event["id"], event["status"])
                 elif event.get("type") == "steam_released":
                     # 업스트림은 연결 끊김 상태를 먼저 보내고(보내던 메시지는 거기서 '알 수 없음'으로 정리) 그 뒤 Steam을 놓는다
                     self.retire_worker()
+            self.update_warns()
             if time.monotonic()-self.last_prune > 60:
                 self.service.write(self.store.prune)
                 self.last_prune = time.monotonic()
@@ -333,7 +440,7 @@ class Sidecar:
             if "reactions" in result:
                 result["reactions"] = [r for r in result["reactions"] if r.get("sender") not in hidden]
         for group in ("profiles", "participants"):
-            result[group] = {uid: {k: v for k, v in profile.items() if k != "steam_blocked"}
+            result[group] = {uid: {k: v for k, v in profile.items() if k not in INTERNAL_PROFILE_KEYS}
                              for uid, profile in result[group].items() if uid not in hidden}
 
     def update_steam_ignored(self, event):
@@ -428,6 +535,13 @@ class Sidecar:
             # TODO(2c): update/auto_merge/notification/language 서브시스템 배선
             self.publish_avatars(result)
             result["incoming_count"] = self.incoming_count
+            # 경고·공개수배(D-052): 대상별 경고 총횟수(보이는 멤버만)와, 검색이 아닐 때 새로 생긴 공개수배(한 번만 받아 간다)
+            visible = set(result["participants"])
+            result["warns"] = {uid: n for uid, n in self.warn_counts.items() if uid in visible}
+            if not query:
+                result["wanted"] = [w for w in self.wanted_events if w["target"] in visible]
+                self.wanted_events = []
+                result["warn_failed"], self.warn_failed = self.warn_failed, 0
             settings = self.ui_settings()
             if settings is not None:
                 result["ui_settings"] = settings
@@ -454,6 +568,9 @@ class Sidecar:
             return {"images": images}
         if action == "send":
             # 사용자가 명시적으로 보낸 요청만 worker로 넘긴다. 자동 송신 경로는 없다.
+            # 경고 명령(@이름 경고!)은 채팅으로 보내지 않는다(D-052 — 렌더러가 warn으로 가로채고, 놓쳐도 여기서 막는다)
+            if isinstance(args.get("text"), str) and warn_model.COMMAND.match(args["text"]):
+                raise ValueError("warn_command")
             command = self.service.prepare(args["context"], args["text"])
             command["queued"] = time.monotonic()
             try:
@@ -534,6 +651,20 @@ class Sidecar:
             else:
                 nicknames.pop(steam_id, None)
             self.store.setting(nickname_key(account), nicknames)
+        elif action == "warn":
+            # 경고·공개수배(D-052): 내 cattalk.warns의 대상 +1(로비 멤버 데이터 쓰기, worker가 Steam에서 다시 읽어 고친다).
+            # 대상은 지금 로비 멤버여야 한다(자기 자신 포함 — 사용자 결정). 결과는 비동기: 실패는 다음 view의 warn_failed로 알린다
+            context, target = args.get("context"), args.get("target")
+            state = self.service.state
+            reason = ("closed" if self.closed else "context" if context != self.service.context()
+                      else "unverified" if not state.get("lobby_verified")
+                      else "target" if not isinstance(target, str) or target not in (state.get("members") or [])
+                      else None)
+            if reason is None and not self.queue_cattalk({"op": "warn", "target": target}, context):
+                reason = "queue_full"
+            mark("warn_request", ok=reason is None, reason=reason, self_target=target == state.get("account"))   # 진단: 거절 사유 코드만
+            if reason:
+                raise ValueError("warn_unavailable")
         elif action == "block_user":
             # D-033: 업스트림 차단 파이프라인 재활성화(desktop.py Controller와 같은 배선). 계정 일치·자기 자신 제외·
             # bool 검사는 service.set_blocked가 한다(아니면 block_unavailable, 형식이 틀리면 invalid_steam_id).

@@ -15,6 +15,9 @@ const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clea
 const drafts = new Map<string, string>();
 const nicknames: Record<string, string> = { ...INITIAL_NICKNAMES };
 const blocked: Record<string, string> = {};   // 앱 차단(D-033): id → 차단 시점 이름
+// 경고·공개수배(D-052) 대역: 실제는 로비 멤버 데이터 합산. 목업은 내 경고만 세고 3이면 공개수배 1건 + 0으로
+const warnCounts: Record<string, number> = {};
+let wantedQueue: { id: string; target: string }[] = [];
 const NICKNAME_MAX = 15;   // 사이드카와 같은 상한(코드 포인트)
 
 const CONTEXT = { account: ME_ID, lobby: 'mock-lobby', generation: 'mock' };
@@ -44,6 +47,8 @@ function view({ query = '', before, start, limit = 100 }: ViewArgs): ViewRespons
     theme, notifications: { ...notifications }, reactions_enabled: reactionsEnabled, ui_settings: { ...uiSettings }, reactions: [],
     draft: drafts.get(CONTEXT.lobby) ?? '',
     nicknames: { ...nicknames },
+    warns: { ...warnCounts },
+    ...(!needle && { wanted: takeWanted() }),
   };
 }
 
@@ -101,6 +106,23 @@ function setting(key: string, value: unknown) {
   return { ok: true };
 }
 
+function takeWanted() {
+  const taken = wantedQueue;
+  wantedQueue = [];
+  return taken;
+}
+
+function warn({ target }: Record<string, unknown>) {
+  if (typeof target !== 'string' || !(target in PROFILES) || target in blocked) return { error: 'warn_unavailable' };
+  const count = (warnCounts[target] ?? 0) + 1;
+  if (count >= 3) {
+    delete warnCounts[target];
+    wantedQueue.push({ id: `mock:${target}:${Date.now()}`, target });
+  } else warnCounts[target] = count;
+  revision++;
+  return { ok: true };
+}
+
 function dispatch(args: Record<string, unknown>) {
   switch (args.action) {
     case 'view': return view(args as ViewArgs);
@@ -113,6 +135,7 @@ function dispatch(args: Record<string, unknown>) {
     case 'open_steam_trade': return { ok: true };
     case 'set_nickname': return setNickname(args);
     case 'block_user': return setBlocked(args);
+    case 'warn': return warn(args);
     default: return { error: 'not_wired' };
   }
 }
