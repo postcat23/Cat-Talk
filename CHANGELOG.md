@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-17
+
 ### Added
 
 - `warn` — 채팅창을 접어 두었거나 드로어·참여자 목록이 열려 있거나 창이 최소화·트레이로 숨은 동안 발동한 공개수배는 다시 보일 때 띄움(1분이 지나면 생략)
