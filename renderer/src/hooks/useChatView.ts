@@ -5,12 +5,15 @@ import { errorText, noticeText, PROFILE_OPENING, TRADE_OPENING, VIEW_UNAVAILABLE
 import {
   accountStatus, connState, displayName, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
   type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
-  type WantedEvent,
+  type WantedEvent, type WantedResult,
 } from '../chat/model';
 import type { ReactionStack } from './useReactionStack';
 
 const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 재구성한다
 const WARN_FAILED = '경고를 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.';   // 경고 쓰기 실패 안내(D-052)
+// 같은 대상 공개수배 전단 취합(사용자 명세): 그 대상 전단이 재생 중·대기 중이거나 끝난 뒤 이 시간 안이면 새 전단은 띄우지 않는다.
+// 대상마다 따로 센다. 발동(경고 누적·합계 3·리셋)은 사이드카 그대로이고 화면 표시만 묶는다
+const WANTED_COALESCE_MS = 10_000;
 const MAX_SEEN_REACTIONS = 256;
 const MAX_AVATAR_REQUEST = 32;   // 사이드카 상한(64) 안에서 나눠 받는다. 남은 건 다음 폴링에
 const DRAFT_SAVE_MS = 300;
@@ -72,13 +75,16 @@ export interface Chat {
   refresh(): Promise<void>;
   notify(text: string): void;   // 안내 토스트(에러 토스트와 같은 자리). 신고 등록 결과 등
   warn(target: string): Promise<boolean>;   // 경고(D-052): 내 cattalk.warns의 대상 +1. 채팅으로 보내지 않는다
-  wanted: WantedEvent | null;                // 띄울 공개수배(차례대로 하나씩)
-  dismissWanted(id: string): void;           // 전단·모션이 끝나면 다음 것으로
+  wanted: WantedEvent | null;                // 띄울 공개수배(차례대로 하나씩, 대상별로 묶임)
+  dismissWanted(id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>): void;   // 끝났거나 버리면 다음 것으로
   saveSettings(patch: Partial<Settings>): void;
   saveDraft(text: string, now?: boolean): void;
   sending: boolean;      // 보낸 메시지의 응답을 기다리는 중. 그동안 앱 업데이트(재시작)를 막는다(D-030)
   hasDraft(): boolean;   // 입력창에 쓰던 글이 있는지(복원된 초안 포함). 업데이트 재시작 전 확인용
 }
+
+// 공개수배 전단 처리 결과를 사이드카 진단 로그에 남긴다(결과 코드만, 대상·로비는 보내지 않는다). 실패는 무시
+const reportWanted = (result: WantedResult) => { rpc('wanted_display', { result }).catch(() => {}); };
 
 export function useChatView(pushReaction: ReactionStack['push'], reactionsEnabled: boolean): Chat {
   const { dispatch } = useUi();
@@ -96,6 +102,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState<Cooldown>({ active: false, key: 0 });
   const [wantedQueue, setWantedQueue] = useState<WantedEvent[]>([]);
+  const wantedRef = useRef<WantedEvent[]>([]);             // 대기열과 같은 값. 판정·진단 기록을 상태 갱신 함수 밖에서 하려고 둔다
+  const wantedEnded = useRef(new Map<string, number>());   // 대상 → 그 대상 전단이 끝까지 재생된 시각(Date.now). 취합 판정용
   const cooldownUntil = useRef(0);   // performance.now() 기준. 판정은 이 값으로 하고 cooldown 상태는 표시용이다
   const cooldownTimer = useRef(0);
 
@@ -146,13 +154,34 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, []);
 
-  // 경고·공개수배(D-052): 새 공개수배는 대기열 뒤에(같은 처형은 한 번), 경고 쓰기 실패는 안내 토스트
+  const setWanted = useCallback((next: WantedEvent[]) => {
+    wantedRef.current = next;
+    setWantedQueue(next);
+  }, []);
+
+  // 경고·공개수배(D-052): 새 공개수배는 대기열 뒤에(같은 처형은 한 번), 경고 쓰기 실패는 안내 토스트.
+  // 같은 대상 취합: 그 대상 전단이 이미 대기열에 있거나(재생 중·화면이 가려져 보류 중 포함) 끝난 지 10초가 안 됐으면 새 전단은 생략한다.
+  // 대기열에 있던 것은 보류 기한(1분)을 이번에 받은 시각부터 다시 센다 — 가려진 동안 같은 대상이 거듭 처형되면 보일 때 최근 것 하나만 뜬다
   const takeWanted = useCallback((data: ViewResponse) => {
     const fresh = data.wanted ?? [];
-    const at = Date.now();
-    if (fresh.length) setWantedQueue((queue) => [...queue, ...fresh.filter((w) => !queue.some((q) => q.id === w.id)).map((w) => ({ ...w, at }))]);
+    if (fresh.length) {
+      const at = Date.now();
+      let queue = wantedRef.current;
+      for (const w of fresh) {
+        if (queue.some((q) => q.id === w.id)) continue;
+        const same = queue.find((q) => q.target === w.target);
+        const ended = wantedEnded.current.get(w.target);
+        if (same || (ended !== undefined && at - ended < WANTED_COALESCE_MS)) {
+          reportWanted('coalesce');
+          if (same) queue = queue.map((q) => (q === same ? { ...q, at } : q));
+          continue;
+        }
+        queue = [...queue, { ...w, at }];
+      }
+      if (queue !== wantedRef.current) setWanted(queue);
+    }
     if (data.warn_failed) setToast({ id: nextToast.current++, text: WARN_FAILED });
-  }, []);
+  }, [setWanted]);
 
   // view에는 id만 온다. 처음 보는 이미지만 받아 메모리에 둔다(디스크·localStorage에 쓰지 않는다).
   const fetchAvatars = useCallback((data: ViewResponse) => {
@@ -516,7 +545,18 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       return false;
     }
   }, [poll, showError]);
-  const dismissWanted = useCallback((id: string) => setWantedQueue((queue) => queue.filter((w) => w.id !== id)), []);
+  // 끝까지 재생한 대상은 끝난 시각을 적어 둔다(그 뒤 10초 안의 같은 대상 처형은 취합). 오래된 기록은 그때 지운다
+  const dismissWanted = useCallback((id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>) => {
+    const done = wantedRef.current.find((w) => w.id === id);
+    if (!done) return;
+    if (result === 'shown') {
+      const now = Date.now(), ended = wantedEnded.current;
+      for (const [target, at] of ended) if (now - at >= WANTED_COALESCE_MS) ended.delete(target);
+      ended.set(done.target, now);
+    }
+    reportWanted(result);
+    setWanted(wantedRef.current.filter((w) => w.id !== id));
+  }, [setWanted]);
 
   return {
     items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, resend, cooldown, openProfile, openTrade, setNickname, setBlocked, refresh, notify, saveSettings, saveDraft, sending, hasDraft,

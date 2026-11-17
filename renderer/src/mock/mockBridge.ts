@@ -136,6 +136,7 @@ function dispatch(args: Record<string, unknown>) {
     case 'set_nickname': return setNickname(args);
     case 'block_user': return setBlocked(args);
     case 'warn': return warn(args);
+    case 'wanted_display': return { ok: true };   // 진단 로그 전용(사이드카가 결과 코드만 남긴다)
     default: return { error: 'not_wired' };
   }
 }

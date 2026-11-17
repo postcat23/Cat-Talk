@@ -63,6 +63,9 @@ UI_SETTINGS = {
     "clear_cats": (False, lambda value: type(value) is bool),
     "auto_open_chest": (False, lambda value: type(value) is bool),
 }
+# 렌더러가 알리는 공개수배 전단 처리 결과(진단 로그 전용, 결과 코드만): 끝까지 재생 / 같은 대상과 묶여 생략 /
+# 가려진 채 1분 지남 / 대상이 목록에 없음
+WANTED_DISPLAY = ("shown", "coalesce", "expired", "absent")
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",
     "legal", "check_updates", "restart_update", "update_permission",
@@ -700,6 +703,15 @@ class Sidecar:
             mark("warn_request", ok=reason is None, reason=reason, self_target=target == state.get("account"))   # 진단: 거절 사유 코드만
             if reason:
                 raise ValueError("warn_unavailable")
+        elif action == "wanted_display":
+            # Cat-Talk 추가(진단 전용): 렌더러가 공개수배 전단을 어떻게 처리했는지. 대상·로비는 받지도 남기지도 않는다
+            result = args.get("result")
+            if result not in WANTED_DISPLAY:
+                raise ValueError("invalid_query")
+            if result == "shown":
+                mark("wanted_shown")
+            else:
+                mark("wanted_suppressed", reason=result)
         elif action == "block_user":
             # D-033: 업스트림 차단 파이프라인 재활성화(desktop.py Controller와 같은 배선). 계정 일치·자기 자신 제외·
             # bool 검사는 service.set_blocked가 한다(아니면 block_unavailable, 형식이 틀리면 invalid_steam_id).
