@@ -45,7 +45,12 @@ export interface ViewProfile {
   blocked?: boolean;       // participants 항목에만: 앱에서 차단한 멤버(D-033). 목록·참여자 수에서 숨긴다
 }
 
-export interface WantedEvent { id: string; target: string }   // id = 로비:대상:처형 시각(같은 처형은 한 번)
+// id = 로비:대상:처형 시각(같은 처형은 한 번). at = 렌더러가 받은 시각(Date.now) — 화면이 가려져 보류할 때 기한 판정용.
+// 같은 대상의 처형이 더 와서 하나로 묶이면 at은 가장 최근에 받은 시각이 된다
+export interface WantedEvent { id: string; target: string; at?: number }
+// 전단 처리 결과(진단 로그 wanted_display, 결과 코드만): 끝까지 재생 / 같은 대상과 묶여 생략 / 플레이 > 경고 꺼짐 /
+// 가려진 채 1분 지남 / 대상이 목록에 없음
+export type WantedResult = 'shown' | 'coalesce' | 'off' | 'expired' | 'absent';
 
 export interface BlockedUser { steam_id: string; name: string }   // 차단 시점의 Steam 이름(모르면 '')
 
@@ -77,6 +82,7 @@ export interface UiSettings {
   presence_notices: boolean;
   clear_cats: boolean;
   auto_open_chest: boolean;
+  play_warn: boolean;   // 드로어 '플레이 > 경고'
 }
 
 export interface ViewResponse {
@@ -195,6 +201,7 @@ export const SETTING_KEYS: Partial<Record<keyof Settings, string>> = {
   presence: 'presence_notices',
   clearCats: 'clear_cats',
   autoOpenChest: 'auto_open_chest',
+  playWarn: 'play_warn',
 };
 
 export function settingsFromView(view: ViewResponse): Partial<Settings> {
@@ -204,6 +211,7 @@ export function settingsFromView(view: ViewResponse): Partial<Settings> {
     taskbarAlert: view.notifications.notification_flash,
     toastAlert: view.notifications.notification_toast,
     catInteraction: view.reactions_enabled,
-    ...(ui && { opacity: ui.chat_opacity, presence: ui.presence_notices, clearCats: ui.clear_cats, autoOpenChest: ui.auto_open_chest }),
+    ...(ui && { opacity: ui.chat_opacity, presence: ui.presence_notices, clearCats: ui.clear_cats, autoOpenChest: ui.auto_open_chest,
+      playWarn: ui.play_warn }),
   };
 }

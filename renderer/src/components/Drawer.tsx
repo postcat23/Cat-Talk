@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { OVERLAY_HEIGHT, useUi, type ChatHeight, type Settings, type Side, type Theme } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
 import { updateStatusText, useUpdate, type UpdateState } from '../hooks/useAppUpdate';
 import { gameStateLabel, STATE_LABEL } from '../chat/autoChest';
 import { BLOCKS_UNAVAILABLE, NO_BLOCKED_USERS } from '../chat/messages';
+import { PLAY_FEATURES } from '../chat/play';
 import Cat from './Cat';
 import YellowCards from './YellowCards';
 import styles from './Drawer.module.css';
@@ -100,9 +101,23 @@ export default function Drawer() {
   }, [overlays.drawerOpen, refreshGame]);
   const gameRunning = chest?.game?.running === true;
   const gameBlocked = !chest?.game?.found || chestBusy || !!chest?.progress;
+  // 드로어가 대화 영역(입력창 제외) 바닥까지 꽉 차면 하단 둥근 모서리를 없앤다 — 뒤 패널이 모서리로 비치지 않게(70%·50%의 .full과 같은 규칙).
+  // 꽉 차는지는 모니터 세로 길이·내용(차단 목록 등)에 따라 달라 크기가 바뀔 때마다 다시 본다(사용자 결정, 2026-11-17)
+  const aside = useRef<HTMLElement>(null);
+  const [filled, setFilled] = useState(false);
+  useEffect(() => {
+    const el = aside.current, area = el?.parentElement;
+    if (!el || !area) return;
+    const check = () => setFilled(el.offsetHeight >= area.clientHeight - 1);
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <aside className={['thin-scroll', styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' ? styles.full : styles.tall].filter(Boolean).join(' ')} aria-label="메뉴">
+    <aside ref={aside} className={['thin-scroll', styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' ? styles.full : styles.tall,
+      filled && styles.flat].filter(Boolean).join(' ')} aria-label="메뉴">
       {/* 헤더 한 줄: 유저 프로필 … 닫기. 실아바타는 배경 없이 아래 구분선 위에 서 있다 */}
       <div className={me?.avatar ? `${styles.dhead} ${styles.standing}` : styles.dhead}>
         <div className={styles.acct}>
@@ -158,6 +173,25 @@ export default function Drawer() {
           <button className={chestOn ? styles.cbtn : `${styles.cbtn} ${styles.active}`} aria-pressed={!chestOn} disabled={chestBusy}
             onClick={() => void turnChest(false)}>끄기</button>
         </div>
+      </div>
+      {/* 플레이(사용자 명세, 2026-11-17): 재미 기능 켜기/끄기. 헤더 아래 기능마다 한 줄(chat/play.ts PLAY_FEATURES에 행을 더한다).
+          내 화면·내 입력에만 적용되고 남의 화면은 그대로다. 상자 카드와 같은 모양·버튼 */}
+      <div className={`${styles.chest} ${styles.play}`}>
+        <div className={styles.phead}>
+          <span className={styles.cicon}>🎉</span>
+          <span className={styles.ctitle}>플레이</span>
+        </div>
+        {PLAY_FEATURES.map(({ key, label }) => (
+          <div key={key} className={styles.prow}>
+            <span>{label}</span>
+            <div className={styles.cbtns} role="group" aria-label={label}>
+              <button className={settings[key] ? `${styles.cbtn} ${styles.active}` : styles.cbtn} aria-pressed={settings[key]}
+                onClick={() => set({ [key]: true })}>켜기</button>
+              <button className={settings[key] ? styles.cbtn : `${styles.cbtn} ${styles.active}`} aria-pressed={!settings[key]}
+                onClick={() => set({ [key]: false })}>끄기</button>
+            </div>
+          </div>
+        ))}
       </div>
       <div className={styles.divider} />
       {/* 차단 목록(D-033): 앱에서 차단한 사람(이름은 닉네임 반영). 해제하면 목록·대화에 다시 보인다 */}

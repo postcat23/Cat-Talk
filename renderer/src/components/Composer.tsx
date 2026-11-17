@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { SEND_COOLDOWN_MS, type Cooldown, type RestoredDraft } from '../hooks/useChatView';
 import type { Participant } from '../chat/model';
 import { filterParticipants, mentionAt, parseWarnCommand, resolveTarget, type Mention } from '../chat/warns';
+import { WARN_OFF } from '../chat/messages';
 import Cat from './Cat';
 import YellowCards from './YellowCards';
 import styles from './Composer.module.css';
@@ -17,7 +18,10 @@ const MAX_SUGGEST = 20;   // @ 자동완성 목록 최대 줄 수(로비 인원�
 // 경고(D-052): '@'를 치면 참여자 자동완성(입력한 글자가 든 사람을 입력 상자 위 목록으로, 사용자 명세). '@이름 경고!'는 채팅으로 보내지 않고
 // onWarn으로 가로챈다(채팅 쿨다운과 무관). 목록에서 고른 사람은 id로 묶어 이름이 같은 사람이 있어도 정확히 지목한다.
 // 직접 친 이름을 찾지 못하거나 여러 명이면 안내만 하고 글은 입력창에 남긴다.
-export default function Composer({ disabled, hidden = false, restored, cooldown, participants, meId, onSend, onWarn, onNotify, onDraft }: {
+// 드로어 '플레이': warnEnabled가 꺼져 있으면 '@이름 경고!'를 보내지 않고 안내만 한다(글은 남긴다). '@' 자동완성은
+// '@' 단축어를 쓰는 플레이 기능이 하나라도 켜져 있을 때만 뜬다(mention, chat/play.ts) — 모두 꺼져 있으면 '@'는 일반 글자다.
+export default function Composer({ disabled, hidden = false, restored, cooldown, participants, meId, onSend, onWarn, onNotify, onDraft,
+  warnEnabled, mention: mentionOn }: {
   disabled: boolean;
   hidden?: boolean;
   restored: RestoredDraft | null;
@@ -28,6 +32,8 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
   onWarn: (target: string) => Promise<boolean>;
   onNotify: (text: string) => void;
   onDraft: (text: string, now?: boolean) => void;
+  warnEnabled: boolean;
+  mention: boolean;
 }) {
   const [value, setValue] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
@@ -40,7 +46,7 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
   const bound = useRef<Mention | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const candidates = useMemo(() => (mention ? filterParticipants(mention.query, participants).slice(0, MAX_SUGGEST) : []), [mention, participants]);
-  const suggesting = !!mention && !dismissed && !disabled && candidates.length > 0;
+  const suggesting = mentionOn && !!mention && !dismissed && !disabled && candidates.length > 0;
   const command = parseWarnCommand(value) !== null;
 
   function show(text: string) {
@@ -89,6 +95,7 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
 
   // '@이름 경고!': 채팅이 아니라 경고. 대상을 못 찾거나 여러 명이면 안내하고 글은 남긴다
   async function warn(name: string) {
+    if (!warnEnabled) { onNotify(WARN_OFF); return; }
     const target = resolveTarget(name, participants, bound.current);
     if (target === 'none') { onNotify(`'${name}'님을 로비에서 찾지 못했습니다. @를 입력해 목록에서 골라 주세요.`); return; }
     if (target === 'ambiguous') { onNotify(`'${name}' 이름이 여러 명입니다. @를 입력해 목록에서 골라 주세요.`); return; }

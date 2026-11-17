@@ -11,7 +11,7 @@ let revision = 1;
 let theme: Theme = 'system';
 const notifications = { notification_flash: true, notification_toast: true };
 let reactionsEnabled = true;
-const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clear_cats: false, auto_open_chest: false };
+const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clear_cats: false, auto_open_chest: false, play_warn: true };
 const drafts = new Map<string, string>();
 const nicknames: Record<string, string> = { ...INITIAL_NICKNAMES };
 const blocked: Record<string, string> = {};   // 앱 차단(D-033): id → 차단 시점 이름
@@ -136,6 +136,7 @@ function dispatch(args: Record<string, unknown>) {
     case 'set_nickname': return setNickname(args);
     case 'block_user': return setBlocked(args);
     case 'warn': return warn(args);
+    case 'wanted_display': return { ok: true };   // 진단 로그 전용(사이드카가 결과 코드만 남긴다)
     default: return { error: 'not_wired' };
   }
 }

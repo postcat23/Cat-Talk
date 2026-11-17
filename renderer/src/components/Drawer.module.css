@@ -8,6 +8,8 @@
 .tall{max-height:100%}
 /* 창이 작은 70%·50%: 내용 길이와 무관하게 창 전체를 덮는다. 둥근 모서리는 뒤 패널이 비쳐 없앤다 */
 .full{height:100%;border-radius:0}
+/* 채팅 높이 100%(.tall)에서 내용이 대화 영역 바닥까지 꽉 차면 위와 같은 이유로 둥근 모서리를 없앤다(Drawer.tsx가 높이를 재서 붙인다) */
+.flat{border-radius:0}
 .drawer h3{margin:0;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
 .dhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
 /* 실아바타: 헤더 바닥을 바로 아래 구분선에 붙인다(드로어 gap 13px 상쇄). 아바타가 선 위에 서고,
@@ -60,6 +62,12 @@
 .cbtns{display:flex;align-items:center;gap:6px;margin-left:auto}
 .cbtn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:none;color:var(--muted);border-radius:8px;padding:5px 11px;cursor:pointer}
 .cbtn.active{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+/* 플레이 카드: 상자 카드와 같은 배경·아이콘·버튼, 헤더(아이콘+제목) 아래로 기능 행이 쌓인다.
+   [아이콘 | 이름 | 버튼] 3칸 격자 — 기능 이름이 제목 글자와 같은 세로줄에 선다(아이콘 칸은 이모지 실제 폭) */
+.play{display:grid;grid-template-columns:auto 1fr auto;align-items:center;column-gap:10px;row-gap:8px}
+.phead,.prow{display:contents}
+.phead .ctitle{grid-column:2 / -1}
+.prow > span{grid-column:2}
 .sub{font-size:11px;color:var(--muted)}
 /* 드로어가 max-height로 넘치면 내용 없는 구분선이 flex-shrink로 0px이 되어 사라지므로 줄지 않게 한다 */
 .divider{height:1px;flex:none;background:var(--line)}
