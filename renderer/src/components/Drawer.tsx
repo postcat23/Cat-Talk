@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { OVERLAY_HEIGHT, useUi, type ChatHeight, type Settings, type Side, type Theme } from '../state/UiContext';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
@@ -101,9 +101,23 @@ export default function Drawer() {
   }, [overlays.drawerOpen, refreshGame]);
   const gameRunning = chest?.game?.running === true;
   const gameBlocked = !chest?.game?.found || chestBusy || !!chest?.progress;
+  // 드로어가 대화 영역(입력창 제외) 바닥까지 꽉 차면 하단 둥근 모서리를 없앤다 — 뒤 패널이 모서리로 비치지 않게(70%·50%의 .full과 같은 규칙).
+  // 꽉 차는지는 모니터 세로 길이·내용(차단 목록 등)에 따라 달라 크기가 바뀔 때마다 다시 본다(사용자 결정, 2026-11-17)
+  const aside = useRef<HTMLElement>(null);
+  const [filled, setFilled] = useState(false);
+  useEffect(() => {
+    const el = aside.current, area = el?.parentElement;
+    if (!el || !area) return;
+    const check = () => setFilled(el.offsetHeight >= area.clientHeight - 1);
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <aside className={['thin-scroll', styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' ? styles.full : styles.tall].filter(Boolean).join(' ')} aria-label="메뉴">
+    <aside ref={aside} className={['thin-scroll', styles.drawer, overlays.drawerOpen && styles.show, OVERLAY_HEIGHT[settings.height] === '100%' ? styles.full : styles.tall,
+      filled && styles.flat].filter(Boolean).join(' ')} aria-label="메뉴">
       {/* 헤더 한 줄: 유저 프로필 … 닫기. 실아바타는 배경 없이 아래 구분선 위에 서 있다 */}
       <div className={me?.avatar ? `${styles.dhead} ${styles.standing}` : styles.dhead}>
         <div className={styles.acct}>
