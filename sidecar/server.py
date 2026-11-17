@@ -138,6 +138,7 @@ class Sidecar:
         self.wanted_fired = OrderedDict()   # 이미 띄운 공개수배(로비:대상:처형 시각) — 같은 처형을 두 번 띄우지 않는다
         self.warn_ops = {}         # 진행 중인 cattalk 쓰기: 명령 id → (op 키, 보낸 시각, op)
         self.warn_failed = 0       # 렌더러에 알릴 경고 쓰기 실패 수(다음 view에서 받아 간다)
+        self.warn_diag_last = None  # 진단 표식: 마지막으로 남긴 경고 데이터 수신 요약(바뀔 때만 남긴다)
         self.closed = False
         self.last_prune = time.monotonic()
         self.context = mp.get_context("spawn")
@@ -223,6 +224,7 @@ class Sidecar:
                 data[uid] = (warn_model.parse_warns(profile.get("cattalk_warns")), warn_model.parse_wanted(profile.get("cattalk_wanted")))
         tally = warn_model.tally(data)
         self.warn_counts = {target: row["count"] for target, row in tally.items() if target in members}
+        self.warn_diag(account, members, state.get("profiles") or {}, data, tally)
         context = self.service.context()
         mine = data.get(account)
         for target, row in tally.items():
@@ -231,6 +233,9 @@ class Sidecar:
             key = f"{lobby}:{target}:{row['last']}"
             if key in self.wanted_fired:
                 continue
+            mark("wanted_fire", count=row["count"], shown=target in members, mine=bool(mine and target in mine[0]),
+                 self_target=target == account,
+                 contributors=sum(1 for warns, _ in data.values() if target in warns and warns[target][1] > row["cut"]))
             self.wanted_fired[key] = True
             while len(self.wanted_fired) > 256:
                 self.wanted_fired.popitem(last=False)
@@ -244,6 +249,25 @@ class Sidecar:
                 if target in members:
                     self.queue_cattalk({"op": "consume", "target": target, "when": when}, context)
 
+    def warn_diag(self, account, members, profiles, data, tally):
+        """진단 표식(D-050·D-052): 경고 멤버 데이터 수신 상태를 개수로만, 바뀔 때만 남긴다(ID·이름·값은 넣지 않는다).
+        others_with_data가 0에서 늘면 다른 클라이언트가 쓴 값이 Steam을 거쳐 여기 도착한 것이다."""
+        unread = sum(1 for uid in members if not isinstance(profiles.get(uid), dict) or "cattalk_warns" not in profiles[uid])
+        malformed = sum(1 for uid, (warns, wanted) in data.items()
+                        if ((profiles[uid].get("cattalk_warns") or "").strip() not in ("", "{}") and not warns)
+                        or ((profiles[uid].get("cattalk_wanted") or "").strip() not in ("", "{}") and not wanted))
+        others = [uid for uid, (warns, wanted) in data.items() if uid != account and (warns or wanted)]
+        summary = {
+            "members": len(members), "unread": unread, "malformed": malformed,
+            "own_entries": len(data.get(account, ({}, {}))[0]),
+            "others_with_data": len(others), "others_entries": sum(len(data[uid][0]) for uid in others),
+            "wanted_markers": sum(len(wanted) for _, wanted in data.values()),
+            "targets": len(tally), "max_count": max((row["count"] for row in tally.values()), default=0),
+        }
+        if summary != self.warn_diag_last:
+            self.warn_diag_last = summary
+            mark("warn_data", **summary)
+
     def queue_cattalk(self, op, context):
         """경고 멤버 데이터 쓰기를 worker로 보낸다(채팅 send와 같은 큐, cattalk 필드로 구분). 같은 정리 쓰기는 반영될 때까지 다시 보내지 않는다.
         보냈으면 True. 큐가 가득 차면 False(경고는 다시 누르면 되고, 정리는 다음 집계에서 다시 시도한다)."""
@@ -255,12 +279,18 @@ class Sidecar:
         try:
             self.commands.put_nowait(command)
         except queue.Full:
+            mark("warn_queue_full", op=op["op"])
             return False
         self.warn_ops[command["id"]] = (key, now, op)
+        mark("warn_queued", op=op["op"])
         return True
 
     def warn_result(self, event):
         entry = self.warn_ops.pop(event.get("id"), None)
+        status = event.get("status")
+        mark("warn_result", op=entry[2].get("op") if entry else "unknown",
+             status=status if isinstance(status, str) and status.isascii() and len(status) <= 40 else type(status).__name__,
+             seconds=round(time.monotonic() - entry[1], 3) if entry else None)
         if entry and entry[2].get("op") == "warn" and event.get("status") != "accepted":
             self.warn_failed += 1   # 렌더러가 다음 view에서 '경고하지 못했습니다' 안내
         # 정리 쓰기가 실패하면 기록만 지운다 — 다음 집계가 아직 남은 항목을 보고 다시 보낸다
@@ -626,9 +656,14 @@ class Sidecar:
             # 대상은 지금 로비 멤버여야 한다(자기 자신 포함 — 사용자 결정). 결과는 비동기: 실패는 다음 view의 warn_failed로 알린다
             context, target = args.get("context"), args.get("target")
             state = self.service.state
-            if (self.closed or context != self.service.context() or not state.get("lobby_verified")
-                    or not isinstance(target, str) or target not in (state.get("members") or [])
-                    or not self.queue_cattalk({"op": "warn", "target": target}, context)):
+            reason = ("closed" if self.closed else "context" if context != self.service.context()
+                      else "unverified" if not state.get("lobby_verified")
+                      else "target" if not isinstance(target, str) or target not in (state.get("members") or [])
+                      else None)
+            if reason is None and not self.queue_cattalk({"op": "warn", "target": target}, context):
+                reason = "queue_full"
+            mark("warn_request", ok=reason is None, reason=reason, self_target=target == state.get("account"))   # 진단: 거절 사유 코드만
+            if reason:
                 raise ValueError("warn_unavailable")
         elif action == "block_user":
             # D-033: 업스트림 차단 파이프라인 재활성화(desktop.py Controller와 같은 배선). 계정 일치·자기 자신 제외·
