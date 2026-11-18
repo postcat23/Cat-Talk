@@ -21,6 +21,12 @@ interface Window {
       submit(args: { kind: 'bug' | 'request'; title: string; body: string; conn: string }): Promise<{ ok: boolean; reason?: string }>;
     };
     onExpand(cb: () => void): () => void;
+    display: {
+      info(): Promise<import('./hooks/useDisplays').DisplayInfo>;
+      select(n: number): void;
+      identify(): void;
+      onChange(cb: (info: import('./hooks/useDisplays').DisplayInfo) => void): () => void;
+    };
     setDockSide(side: 'left' | 'right'): void;
     setChatHeight(pct: 100 | 70 | 50): void;
     setSkipTaskbar(hide: boolean): void;

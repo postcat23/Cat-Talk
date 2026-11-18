@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFile, spawn } = require('child_process');
 const windowState = require('./window-state');
+const displays = require('./displays');
 const { createAutoChest, defaultSys } = require('./auto-chest');
 const { countBadge, dotIcon } = require('./badge');
 const { attachImeMemory } = require('./ime-memory');
@@ -24,6 +25,8 @@ const WINDOW_APP_ID = 'CatTalk.Window';   // 작업표시줄용. 레지스트리
 // 옮긴다(native_window_views.cc MoveBehindTaskBarIfNeeded). 주 작업표시줄이 일반 창보다 아래에 놓인 상태(다중 모니터 등)에서는
 // 열기(OPEN) 클릭 한 번에 Cat Talk가 일반 창 밑으로 내려갔다(실측 2026-11-16). 'pop-up-menu' 이상은 이 이동을 하지 않는다.
 const TOPMOST_LEVEL = 'pop-up-menu';
+// 디스플레이 [식별] 오버레이는 Cat Talk 창보다도 위(좌측 하단이라 왼쪽에 붙인 채팅 창과 겹칠 수 있다).
+const IDENTIFY_LEVEL = 'screen-saver';
 
 let win = null, tray = null, sidecar = null, nextId = 1, stdoutBuf = '';
 const pending = new Map();   // id -> {resolve, reject, timer}
@@ -31,7 +34,7 @@ const pending = new Map();   // id -> {resolve, reject, timer}
 // 끝 도크 창: 패널 390 + 접기 탭 거터 34 + 탭 drop-shadow 여유 8(거터 쪽). 높이는 작업영역 비율.
 const WIN_WIDTH = 432;
 const MOVE_SETTLE_MS = 200;
-// side·heightPct·hideTaskbar·display({id,bounds}). 시작 시 디스크에서 읽고 바뀔 때마다 저장한다.
+// side·heightPct·hideTaskbar·displayIndex(디스플레이 번호, displays.js). 시작 시 디스크에서 읽고 바뀔 때마다 저장한다.
 const state = windowState.load();
 
 // dev(electron .)와 설치본이 같은 사용자 폴더를 쓰게 해 단일 실행 잠금을 공유한다. 기본값은 dev = package name('cat-talk'),
@@ -152,14 +155,17 @@ function sidecarRequest(payloadString) {
 }
 
 // ── 도크 ──
-// 저장된 디스플레이를 id로, 없으면 같은 bounds로 찾는다(id는 재부팅·드라이버 변경에 바뀔 수 있다).
-// 둘 다 없으면(분리·최초 실행) 주 모니터로 폴백한다.
+// 저장된 디스플레이 번호(사용자 명세, 2026-11-18). 그 번호 디스플레이가 없으면(분리·최초 실행) 주 모니터로 폴백하되 저장값은 그대로 둔다.
+// 번호가 아직 없고 이전 버전이 남긴 {id,bounds}가 있으면 첫 실행 1회만 그걸로 찾아 그 번호를 저장한다(이어받기, 사용자 결정 2026-11-18):
+// id로, 없으면 같은 bounds로(id는 재부팅·드라이버 변경에 바뀔 수 있다). 못 찾으면 주 모니터이고 저장하지 않는다.
 function savedDisplay() {
+  if (state.displayIndex) return displays.byNumber(screen, state.displayIndex) || screen.getPrimaryDisplay();
+  const legacy = state.legacyDisplay;
+  if (!legacy) return screen.getPrimaryDisplay();
   const all = screen.getAllDisplays();
-  const saved = state.display;
-  if (!saved) return screen.getPrimaryDisplay();
-  const same = (a, b) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
-  return all.find((d) => d.id === saved.id) || all.find((d) => same(d.bounds, saved.bounds)) || screen.getPrimaryDisplay();
+  const found = all.find((d) => d.id === legacy.id) || all.find((d) => sameBounds(d.bounds, legacy.bounds));
+  if (found) chooseDisplay(found);
+  return found || screen.getPrimaryDisplay();
 }
 
 // 상단 기준: y = 작업영역 위, 높이만 비율로. 가로는 도크 쪽 작업영역 끝에 밀착.
@@ -172,33 +178,82 @@ function dockBounds(display) {
 
 const sameBounds = (a, b) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
-function rememberDisplay(display) {
-  state.display = { id: display.id, bounds: display.bounds };
+// 저장(사용자 결정, 2026-11-18): displayIndex는 사용자가 고른 디스플레이만 쓴다 — 드로어 버튼과 창을 직접 옮긴 경우(Win+Shift+방향키 등),
+// 그리고 이전 버전 저장값 이어받기 1회. 창 위치로 다시 판정하는 재도크(우리 setBounds 뒤 이동 알림, 디스플레이 추가/제거/배치 변경,
+// 채팅 위치·높이 변경)는 저장하지 않는다. 전에는 모든 재도크가 getDisplayMatching 결과로 저장값을 덮어써,
+// 버튼으로 고른 번호도 200ms 뒤 이동 알림 재도크가 다시 썼고 종료 때 마지막 재판정 값이 남았다(2026-11-18 조사).
+function chooseDisplay(display) {
+  const n = displays.numberOf(screen, display);
+  if (!n) return;
+  state.displayIndex = n;
   windowState.save(state);
 }
 
-// 지정 디스플레이 끝에 도크한다. 배율이 다른 모니터로 넘어갈 때 첫 setBounds가 이전 배율로
+// 창이 도크된 디스플레이 id(display-removed에서 창이 있던 곳인지 가린다)와 도크 직후 실제 bounds(직접 이동 판정).
+let dockedId = null, dockedBounds = null;
+// 이 시각 전의 이동은 직접 이동으로 보지 않는다: 우리 setBounds 뒤 늦게 오는 배율 보정(WM_DPICHANGED)·디스플레이 변경 때 OS의 창 재배치.
+let autoMoveUntil = 0;
+const AUTO_MOVE_GRACE_MS = 1000;
+function autoMove() { autoMoveUntil = Date.now() + AUTO_MOVE_GRACE_MS; }
+
+// 지정 디스플레이 끝에 도크한다(저장은 하지 않는다 — chooseDisplay). 배율이 다른 모니터로 넘어갈 때 첫 setBounds가 이전 배율로
 // 환산돼 어긋날 수 있어, 결과가 다르면 한 번 더 맞춘다.
 function dockTo(display) {
   if (!win || win.isDestroyed()) return;
   const target = dockBounds(display);
   if (!sameBounds(win.getBounds(), target)) {
+    autoMove();
     win.setBounds(target);
     if (!sameBounds(win.getBounds(), target)) win.setBounds(target);
   }
-  rememberDisplay(display);
+  dockedId = display.id;
+  dockedBounds = win.getBounds();
+  publishDisplays();
 }
 
 // 창이 지금 올라가 있는 디스플레이. 배율·해상도·작업표시줄이 바뀌어도 주 모니터로 끌고 오지 않는다.
 const currentDisplay = () => screen.getDisplayMatching(win.getBounds());
 
-// 사용자가 창을 다른 모니터로 옮기면(Win+Shift+방향키 등) 그 모니터 끝으로 재도크하고 저장한다.
+// 드로어 '디스플레이 선택'(사용자 명세, 2026-11-18): 디스플레이 수와 지금 창이 있는 디스플레이의 번호.
+// 도크할 때마다(선택·창 이동·디스플레이 추가/제거/배치 변경) 렌더러에 다시 알린다 — 버튼 수·하이라이트가 따라온다.
+function displayInfo() {
+  const count = screen.getAllDisplays().length;
+  const current = win && !win.isDestroyed() ? displays.numberOf(screen, currentDisplay()) : 0;
+  return { count, current };
+}
+function publishDisplays() {
+  if (win && !win.isDestroyed()) win.webContents.send('display:changed', displayInfo());
+}
+
+// 항상 위 레벨은 TOPMOST_LEVEL. 생성 옵션 alwaysOnTop: true는 기본 레벨 'floating'이라 바로 덮어쓴다.
+// 작업표시줄로 최소화했다 복원한 뒤 최상위가 풀린다는 보고가 있어 복원·표시 때마다, 디스플레이를 옮긴 뒤에도 다시 건다.
+function keepOnTop() { if (win && !win.isDestroyed()) win.setAlwaysOnTop(true, TOPMOST_LEVEL); }
+
+const identifier = displays.createIdentifier({ BrowserWindow, screen, level: IDENTIFY_LEVEL });
+
+// 사용자가 창을 다른 모니터로 옮기면(Win+Shift+방향키 등) 그 모니터 끝으로 재도크하고 저장한다(사용자 결정, 2026-11-18).
 // 우리 setBounds도 move를 내므로, 이동이 멈춘 뒤 목표 bounds와 다를 때만 다시 맞춘다.
-let moveTimer = null;
+// 직접 이동 = 도크 직후 bounds에서 벗어났고 자동 이동 유예(autoMoveUntil) 밖. 저장은 유예만큼 미뤄, 그사이 디스플레이 변경
+// 알림이 오면(OS가 창을 먼저 옮기고 알림이 늦게 온 경우) 취소한다(displayChanged). 미룬 저장은 그때 창이 있는 디스플레이를 쓴다
+// (Win+Shift+방향키를 빠르게 두 번 눌러 모니터를 건너뛰면 두 번째 이동은 재도크 유예 안이라 따로 잡히지 않지만, 마지막 모니터가 저장된다).
+let moveTimer = null, manualSaveTimer = null;
 function onMove() {
   clearTimeout(moveTimer);
-  moveTimer = setTimeout(() => { if (win && !win.isDestroyed()) dockTo(currentDisplay()); }, MOVE_SETTLE_MS);
+  moveTimer = setTimeout(() => {
+    if (!win || win.isDestroyed()) return;
+    const manual = Date.now() >= autoMoveUntil && dockedBounds && !sameBounds(win.getBounds(), dockedBounds);
+    dockTo(currentDisplay());
+    if (!manual) return;
+    clearTimeout(manualSaveTimer);
+    manualSaveTimer = setTimeout(() => {
+      if (!win || win.isDestroyed()) return;
+      chooseDisplay(currentDisplay());
+      log.main('display_moved', { number: state.displayIndex, count: screen.getAllDisplays().length });
+    }, AUTO_MOVE_GRACE_MS);
+  }, MOVE_SETTLE_MS);
 }
+// 디스플레이 추가·제거·배치 변경: 이 무렵의 이동은 OS·재도크 몫이라 직접 이동으로 저장하지 않는다.
+function displayChanged() { autoMove(); clearTimeout(manualSaveTimer); }
 
 // ── 트레이(작업표시줄 숨김 연동) ──
 function openAndExpand() {
@@ -288,14 +343,13 @@ function createWindow() {
   win.webContents.on('did-fail-load', (_e, code, desc) => log.main('renderer_load_failed', { code, desc }));
   win.on('unresponsive', () => log.main('window_unresponsive'));
   win.on('responsive', () => log.main('window_responsive'));
-  // 생성 직후에도 한 번 맞춘다(혼합 배율에서 생성 좌표가 어긋날 수 있다).
+  // 생성 직후에도 한 번 맞춘다(혼합 배율에서 생성 좌표가 어긋날 수 있다). 생성 직후의 배율 보정 이동은 직접 이동이 아니다.
+  autoMove();
   dockTo(display);
-  // 항상 위 레벨은 TOPMOST_LEVEL. 생성 옵션 alwaysOnTop: true는 기본 레벨 'floating'이라 바로 덮어쓴다.
-  // 작업표시줄로 최소화했다 복원한 뒤 최상위가 풀린다는 보고가 있어 복원·표시 때마다 다시 건다.
-  const keepOnTop = () => { if (win && !win.isDestroyed()) win.setAlwaysOnTop(true, TOPMOST_LEVEL); };
   keepOnTop();
   win.on('restore', keepOnTop);
   win.on('show', keepOnTop);
+  win.on('closed', identifier.close);   // 식별 오버레이가 떠 있는 채로 끄면 같이 닫는다(남은 창이 종료를 늦추지 않게)
   attachImeMemory(win);
   setTaskbarHidden(state.hideTaskbar);
   win.on('move', onMove);
@@ -396,6 +450,20 @@ ipcMain.on('window:set-chat-height', (_e, pct) => {
 ipcMain.on('window:set-skip-taskbar', (_e, hide) => {
   if (typeof hide === 'boolean') setTaskbarHidden(hide);
 });
+// 드로어 '디스플레이 선택'(사용자 명세, 2026-11-18). 번호는 displays.js 순번(1부터)이고, 없는 번호는 무시한다.
+// 옮길 때 채팅 위치(좌/우)·높이 비율은 그대로(dockBounds: 대상 작업영역 그쪽 끝·맨 위). 옮긴 뒤 항상 위를 다시 건다.
+// 저장은 고른 번호 그대로(창 위치로 다시 판정하지 않는다). 직전 직접 이동의 미뤄 둔 저장은 버린다.
+ipcMain.handle('display:info', () => displayInfo());
+ipcMain.on('display:select', (_e, n) => {
+  const target = displays.byNumber(screen, n);
+  if (!target || !win || win.isDestroyed()) return;
+  clearTimeout(manualSaveTimer);
+  dockTo(target);
+  chooseDisplay(target);
+  keepOnTop();
+  log.main('display_selected', { number: n, count: screen.getAllDisplays().length, scale: target.scaleFactor });
+});
+ipcMain.on('display:identify', () => identifier.show());
 ipcMain.on('alert:unread', (_e, alert) => {
   if (!Number.isInteger(alert?.count) || alert.count < 0) return;
   const grew = alert.count > unread;
@@ -419,10 +487,21 @@ app.whenReady().then(() => {
   setInterval(logMetrics, METRICS_MS).unref?.();
   startSidecar(); createWindow();
   updater.start();
-  // 해상도·배율·작업표시줄 변화: 현재 디스플레이 기준으로 재도크. 그 디스플레이가 빠지면 남은 쪽으로.
-  const redock = () => { if (win && !win.isDestroyed()) dockTo(currentDisplay()); };
+  // 해상도·배율·작업표시줄·배치 변화와 디스플레이 추가: 현재 디스플레이 기준으로 재도크(창은 그 자리)하고 드로어 버튼을 갱신한다.
+  // 번호가 밀려도 저장값은 고른 번호 그대로다(사용자 결정, 2026-11-18).
+  const redock = () => { displayChanged(); if (win && !win.isDestroyed()) dockTo(currentDisplay()); };
   screen.on('display-metrics-changed', redock);
-  screen.on('display-removed', redock);
+  screen.on('display-added', () => { log.main('display_added', { count: screen.getAllDisplays().length }); redock(); });
+  // 창이 있던 디스플레이가 빠지면 주 디스플레이로 옮긴다(사용자 명세). 다른 디스플레이가 빠지면 그 자리에서 버튼만 갱신한다.
+  // 어느 쪽이든 저장값은 고른 번호 그대로라, 그 모니터를 다시 연결하고 재실행하면 원래 모니터로 돌아간다(사용자 결정, 2026-11-18).
+  screen.on('display-removed', (_e, old) => {
+    displayChanged();
+    if (!win || win.isDestroyed()) return;
+    const active = old.id === dockedId;
+    log.main('display_removed', { count: screen.getAllDisplays().length, active });
+    dockTo(active ? screen.getPrimaryDisplay() : currentDisplay());
+    if (active) keepOnTop();
+  });
 });
 app.on('window-all-closed', () => {
   windowState.flush(state);
