@@ -6,10 +6,10 @@ export const MAX_ENTRIES = 10;          // 사용자당 최대 곡 수(사용자
 export const COMMAND_MAX_LEN = 500;     // '/플리' 명령은 채팅 50자 제한을 받지 않는다(사용자 명세). 대신 이 길이까지(사용자 결정)
 export const CARD_MS = 5000;            // 추가 알림·랜덤 카드 유지 시간(사용자 명세·결정)
 
-// 문구: 앞 다섯은 사용자 명세 그대로, 나머지는 사용자 결정(2026-11-18 권장안)
-export const PL_ONLY_VIDEO = '단일 영상만 추가 가능';
-export const PL_ONLY_YOUTUBE = '유튜브 링크만 추가 가능';
-export const PL_FULL = '최대 10개';
+// 문구: 앞 다섯은 사용자 명세 그대로(앞 셋은 beta.5에서 앱 톤으로 수정), 나머지는 사용자 결정(2026-11-18 권장안)
+export const PL_ONLY_VIDEO = '단일 영상만 추가 가능합니다.';
+export const PL_ONLY_YOUTUBE = '유튜브 링크만 추가 가능합니다.';
+export const PL_FULL = '최대 10개까지 등록 가능합니다.';
 export const PL_EXISTS = '이미 플리에 존재하는 url입니다';
 export const PL_EMPTY = '등록된 곡이 없습니다';
 export const PL_MINE_EMPTY = '내가 등록한 곡이 없습니다';
@@ -45,7 +45,8 @@ const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com'
 const SHORT_HOSTS = new Set(['youtu.be', 'www.youtu.be']);
 
 // 단일 영상 링크만(사용자 명세): youtube.com/watch · youtu.be · m.youtube.com · /shorts/ · music.youtube.com/watch.
-// 재생목록·앨범(list= 가 붙은 링크, /playlist, /browse/MPREb_…)과 그 밖의 유튜브 주소(채널 등)는 not_video, 유튜브가 아니면 not_youtube
+// 영상 ID가 있으면 list=·si=·t= 같은 부가 파라미터는 무시하고 그 영상으로 받는다(beta.5 사용자 명세 — YT Music 주소창 복사 등).
+// 순수 재생목록·앨범(v= 없는 /watch?list=…, /playlist, /browse/MPREb_…)과 그 밖의 유튜브 주소(채널 등)는 not_video, 유튜브가 아니면 not_youtube
 export function classifyLink(raw: string): LinkKind {
   let url: URL;
   try {
@@ -56,7 +57,7 @@ export function classifyLink(raw: string): LinkKind {
   const host = url.hostname.toLowerCase();
   const short = SHORT_HOSTS.has(host);
   if ((url.protocol !== 'https:' && url.protocol !== 'http:') || (!short && !YOUTUBE_HOSTS.has(host))) return { kind: 'not_youtube' };
-  if (url.searchParams.has('list') || /^\/(playlist|browse)(\/|$)/.test(url.pathname)) return { kind: 'not_video' };
+  if (/^\/(playlist|browse)(\/|$)/.test(url.pathname)) return { kind: 'not_video' };
   const parts = url.pathname.split('/').filter(Boolean);
   const id = short ? parts[0]
     : url.pathname === '/watch' ? url.searchParams.get('v')
@@ -68,7 +69,20 @@ export function classifyLink(raw: string): LinkKind {
 // 제목을 아직 모르거나 찾지 못했을 때 보이는 짧은 링크(사용자 결정)
 export const shortLink = (id: string) => `youtu.be/${id}`;
 
-// 외부 브라우저로 연다(1개 = 단일, 여러 개 = 등록순 임시 재생목록). 브라우저 dev에는 main이 없어 새 탭으로 연다. 못 열면 false
+// 연속재생 곡 고르기(beta.5 사용자 명세·결정): 50곡 이하면 전체를 등록순, 넘으면 누를 때마다 랜덤 50곡을 뽑은 순서(무작위)대로.
+// main(electron/playlist.js listIds)과 같은 규칙 — 여기 것은 브라우저 dev의 새 탭 열기에만 쓴다
+export const LIST_MAX = 50;
+export function listIds(ids: string[], random: () => number = Math.random): string[] {
+  const unique = [...new Set(ids)];
+  if (unique.length <= LIST_MAX) return unique;
+  for (let i = unique.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [unique[i], unique[j]] = [unique[j], unique[i]];
+  }
+  return unique.slice(0, LIST_MAX);
+}
+
+// 외부 브라우저로 연다(1개 = 단일, 여러 개 = 임시 재생목록 — listIds 규칙은 main이 적용). 브라우저 dev에는 main이 없어 새 탭으로 연다. 못 열면 false
 export async function openVideos(ids: string[]): Promise<boolean> {
   const valid = ids.filter((id) => VIDEO_ID.test(id));
   if (valid.length === 0) return false;
@@ -76,6 +90,6 @@ export async function openVideos(ids: string[]): Promise<boolean> {
   if (shell) {
     try { return (await shell.open(valid)).ok; } catch { return false; }
   }
-  const url = valid.length === 1 ? `https://www.youtube.com/watch?v=${valid[0]}` : `https://www.youtube.com/watch_videos?video_ids=${valid.slice(0, 50).join(',')}`;
+  const url = valid.length === 1 ? `https://www.youtube.com/watch?v=${valid[0]}` : `https://www.youtube.com/watch_videos?video_ids=${listIds(valid).join(',')}`;
   return window.open(url, '_blank') !== null;
 }
