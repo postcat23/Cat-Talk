@@ -5,8 +5,8 @@ import { progressText, reapplyNotice, REINSTALL_NOTICE, RESTORE_NOTICE } from '.
 import { updateReadyNotice, useUpdate, UPDATE_DRAFT_NOTICE } from '../hooks/useAppUpdate';
 import { displayName } from '../chat/model';
 import Cat from './Cat';
-import YellowCards from './YellowCards';
 import NoticeCard from './NoticeCard';
+import PlaylistCard from './PlaylistCard';
 import styles from './ReactionStack.module.css';
 
 const DEV_NOTICE = '앱이 켜져 있는 동안의 대화만 보관하고, 종료하면 지웁니다.';
@@ -18,7 +18,7 @@ const TOAST_MS = 4000;         // upstream 토스트와 같은 시간
 // 대화 영역 위에 뜨는 카드 스택: 안내 카드(항상 맨 위) + 반응 카드(최신이 위).
 // key로 문구·회차가 바뀌면 카드를 새로 만들어, 닫았던 안내도 새 상태면 다시 보이게 한다.
 export default function ReactionStack({ stack }: { stack: Stack }) {
-  const { byId, notice, toast, sending, hasDraft, nicknames } = useChat();
+  const { byId, notice, toast, sending, hasDraft, nicknames, playlistCards } = useChat();
   const chest = useChest();
   const update = useUpdate();
   const install = chest?.progress;
@@ -46,6 +46,8 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
         action={{ label: '업데이트', onClick: () => { if (!sending) update.confirm(); } }} onClose={update.cancel} />}
       {toast && <NoticeCard key={toast.id} text={toast.text} showMs={TOAST_MS} />}
       {notice && <NoticeCard key={notice} text={notice} />}
+      {/* 플리(D-053): 추가 알림(로비 전원)·랜덤 결과(본인) 카드. 5초 뒤 useChatView가 뺀다 */}
+      {playlistCards.map((c) => <PlaylistCard key={c.key} card={c} />)}
       <NoticeCard text={DEV_NOTICE} showMs={DEV_NOTICE_MS} />
       {stack.cards.map((c) => {
         const p = byId(c.sender);
@@ -55,7 +57,7 @@ export default function ReactionStack({ stack }: { stack: Stack }) {
             <span className={avatar ? `${styles.rcat} ${styles.stand}` : styles.rcat}><Cat src={avatar} framing="sprite" /></span>
             <span className={styles.rtxt}>
               {/* 참여자 이름은 닉네임 덮어쓰기가 반영돼 있다(D-032). 목록에 없는 발신자도 닉네임이 있으면 그 이름 */}
-              <b>{p?.name ?? displayName(c.sender, c.sender, nicknames)}</b>{p && <YellowCards count={p.warns} />}
+              <b>{p?.name ?? displayName(c.sender, c.sender, nicknames)}</b>
               {c.kind === 'meow' ? <span className={styles.act}>{c.content || MEOW_FALLBACK}</span> : c.content && <span className={styles.act}>{c.content}</span>}
             </span>
             {c.kind === 'emote' && c.image && <img className={styles.emote} src={c.image} alt="" draggable={false} />}

@@ -27,6 +27,10 @@ interface Window {
       identify(): void;
       onChange(cb: (info: import('./hooks/useDisplays').DisplayInfo) => void): () => void;
     };
+    playlist: {
+      title(id: string): Promise<string | null>;
+      open(ids: string[]): Promise<{ ok: boolean; mode?: 'single' | 'list' | 'fallback'; reason?: string }>;
+    };
     setDockSide(side: 'left' | 'right'): void;
     setChatHeight(pct: 100 | 70 | 50): void;
     setSkipTaskbar(hide: boolean): void;

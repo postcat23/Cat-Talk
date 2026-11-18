@@ -1,5 +1,6 @@
 // 에러 코드·연결 안내 문구. 코드 체계는 원본 ui/app.js를 따르고, 문구는 Cat Talk 기준(문장은 합니다체, D-020)이다.
 import type { ViewResponse } from './model';
+import { PL_ADD_FAILED, PL_EXISTS, PL_FULL, PL_REMOVE_FAILED } from './playlist';
 
 const REQUEST_FAILED = '요청을 완료하지 못했습니다. 연결·저장 상태를 확인해 주세요.';
 
@@ -20,6 +21,12 @@ const ERROR_TEXT: Record<string, string> = {
   // 경고(D-052): 대상이 지금 로비에 없거나 연결이 바뀌었으면 warn_unavailable. warn_command는 경고 명령이 채팅 경로로 갔을 때(정상이면 안 옴)
   warn_unavailable: '경고하지 못했습니다. 대상이 지금 로비에 있는지 확인해 주세요.',
   warn_command: '경고 명령은 채팅으로 보내지 않습니다.',
+  // 플리(D-053): 보낼 수 없음(연결·로비 확인 전)·삭제 실패·이미 있음·10개. playlist_command는 '/플리'가 채팅 경로로 갔을 때(정상이면 안 옴)
+  playlist_unavailable: PL_ADD_FAILED,
+  playlist_remove_unavailable: PL_REMOVE_FAILED,
+  playlist_exists: PL_EXISTS,
+  playlist_full: PL_FULL,
+  playlist_command: '플리 명령은 채팅으로 보내지 않습니다.',
   not_wired: '아직 지원하지 않는 기능입니다.',
   bridge_down: '채팅 기능에 연결하지 못했습니다.',
   request_failed: REQUEST_FAILED,

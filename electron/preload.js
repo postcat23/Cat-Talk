@@ -49,6 +49,12 @@ contextBridge.exposeInMainWorld('catTalk', {
       return () => ipcRenderer.removeListener('display:changed', listener);
     },
   },
+  // 플레이리스트 공유(D-053, /플리). title(id)는 영상 제목(못 찾으면 null), open(ids)는 등록순 영상 ID를 외부 브라우저로 연다
+  // (1개 = 단일, 여러 개 = 임시 재생목록, 안 되면 첫 곡). URL은 main이 ID로 만든다.
+  playlist: {
+    title: (id) => ipcRenderer.invoke('playlist:title', id),
+    open: (ids) => ipcRenderer.invoke('playlist:open', ids),
+  },
   setDockSide: (side) => ipcRenderer.send('window:set-dock-side', side),
   setChatHeight: (pct) => ipcRenderer.send('window:set-chat-height', pct),
   setSkipTaskbar: (hide) => ipcRenderer.send('window:set-skip-taskbar', hide),

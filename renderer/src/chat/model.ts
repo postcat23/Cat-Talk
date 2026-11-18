@@ -54,6 +54,10 @@ export type WantedResult = 'shown' | 'coalesce' | 'off' | 'expired' | 'absent';
 
 export interface BlockedUser { steam_id: string; name: string }   // 차단 시점의 Steam 이름(모르면 '')
 
+// 플리 공유(D-053). 항목 = 영상 ID·넣은 사람·추가한 Steam 서버 시각. 추가 알림 id = 로비:사람:영상:시각(한 번만 온다)
+export interface PlaylistEntry { id: string; by: string; t: number }
+export interface PlaylistAdded { id: string; video: string; by: string }
+
 export interface ViewMessage {
   seq?: number;
   id: string;
@@ -119,6 +123,12 @@ export interface ViewResponse {
   warns?: Record<string, number>;
   wanted?: WantedEvent[];
   warn_failed?: number;
+  // 플리 공유(D-053, Cat-Talk 사이드카). playlist = 보이는 멤버(차단 제외) 곡의 합집합(등록순), playlist_mine = 내 곡(내가 넣은 순),
+  // playlist_added = 새 추가 알림, playlist_failed = 지난 view 뒤 실패한 쓰기의 오류 코드(둘 다 검색이 아닐 때 한 번만 온다)
+  playlist?: PlaylistEntry[];
+  playlist_mine?: string[];
+  playlist_added?: PlaylistAdded[];
+  playlist_failed?: string[];
 }
 
 // 표시 이름: 닉네임 덮어쓰기가 있으면 그 값, 없거나 비었으면 base(Steam 이름)

@@ -30,12 +30,21 @@ from bongo_chat.worker import unavailable
 from default_avatar import run_worker_with_default
 from volatile_store import VolatileStore
 import warns as warn_model
+import playlist as pl_model
 from diag import enable_faulthandler, mark
 
 MAX_REQUEST = 32768
-# 렌더러로 보내지 않는 worker 프로필 키: Steam 차단 판정(D-033), 경고 멤버 데이터 원문(D-052 — 집계값 warns만 보낸다)
-INTERNAL_PROFILE_KEYS = {"steam_blocked", "cattalk_warns", "cattalk_wanted"}
-CATTALK_ID = "cattalk-"     # 경고 멤버 데이터 쓰기 명령 id 접두(채팅 send 명령과 결과를 가른다)
+# 렌더러로 보내지 않는 worker 프로필 키: Steam 차단 판정(D-033), 경고 멤버 데이터 원문(D-052 — 집계값 warns만 보낸다),
+# 플리 원문(D-053 — 검증한 합집합 playlist만 보낸다)
+INTERNAL_PROFILE_KEYS = {"steam_blocked", "cattalk_warns", "cattalk_wanted", "cattalk_pl"}
+CATTALK_ID = "cattalk-"     # 경고·플리 멤버 데이터 쓰기 명령 id 접두(채팅 send 명령과 결과를 가른다)
+PLAYLIST_OPS = ("pl_add", "pl_remove")
+MAX_PLAYLIST_EVENTS = 32     # 렌더러가 아직 받아 가지 않은 추가 알림 상한
+# 플리 재입장 복원(사용자 명세, 2026-11-18): 멤버가 로비에 (다시) 보인 뒤 이 시간 안에 생긴 곡은 알리지 않는다 — 재입장 복원으로
+# 다시 올라온 곡과 입장 직후 동기화. 복원은 입장 뒤 1~3초 안에 끝난다(입장 직후 이 시간 안에 새로 넣은 곡도 알림 없이 목록에만 들어간다)
+PL_SETTLE = 10.0
+PL_RESTORE_TRIES = 3        # 한 번 입장에서 복원 쓰기를 다시 보내는 상한(연결이 바뀌는 중 실패 등)
+PL_MEMORY_LOBBIES = 32      # 기억해 두는 로비 수 상한(오래된 것부터 잊는다)
 WARN_OP_RETRY = 5.0          # 같은 정리 쓰기를 다시 보내기 전 기다리는 시간(프로필에 반영되기 전 중복 방지)
 WANTED_MARKER_GRACE = 5.0    # 합계 3으로 띄운 뒤 이 시간 안에 오는 같은 대상의 처형 표식은 같은 처형으로 본다(기여자마다 표식을 따로 씀)
 # worker 교체(steam_release 글루): Steam을 놓은 worker가 스스로 끝나기를 기다리는 상한. 그 worker는 재시도 대기 중이라 stop을 걸면
@@ -55,6 +64,8 @@ ALLOWED_ERRORS = {
     "connection_changed", "development_limit_50", "control_character", "storage_failed_before_send",
     "legal_unavailable", "invalid_steam_id", "steam_profile_unavailable", "steam_profile_failed",
     "block_unavailable", "warn_unavailable", "warn_command",
+    # 플리(D-053): 추가·삭제를 보낼 수 없음 / 보이는 로비 목록에 이미 있음 / 내 목록이 10개 / '/플리'가 채팅 경로로 옴(정상이면 안 옴)
+    "playlist_unavailable", "playlist_remove_unavailable", "playlist_exists", "playlist_full", "playlist_command",
 }
 # Cat-Talk 드로어 전용 설정(upstream 화이트리스트 밖): key -> (기본값, 검증). 창 배치는 window-state.json이 맡는다.
 UI_SETTINGS = {
@@ -151,6 +162,23 @@ class Sidecar:
         self.wanted_base_members = set()
         self.wanted_seen_cut = {}
         self.wanted_last = {}      # 대상 → (마지막으로 띄운 처형 시각, 띄운 때 monotonic) — 두 경로가 같은 처형을 두 번 띄우지 않게
+        # 플리 공유(D-053): 지금 로비 멤버의 cattalk.pl(검증한 [(영상, 시각)]), 렌더러가 다음 view에서 한 번 받아 갈 추가 알림,
+        # 추가 알림 기준(로비별, 멤버마다 마지막으로 본 영상 집합 — 처음 보는 멤버의 기존 곡은 알리지 않는다), 쓰기 실패 코드
+        self.pl_members = {}
+        self.pl_events = []
+        self.pl_base_lobby = None
+        self.pl_known = {}
+        self.pl_failed = []
+        # 재입장 복원(사용자 명세, 2026-11-18): 계정:로비 ID → 그 로비의 내 곡 [(영상, 시각)]. 앱 실행 중 메모리에만 둔다(디스크에 안 씀).
+        # 지금 있는 로비(계정:로비, 로비 밖이면 None), 이번 입장에서 복원 판정이 남았는지, 복원이 필요했던 입장의 키(내 목록이 채워지기 전까지
+        # 기억을 빈 값으로 덮지 않는다 — 복원이 늦거나 실패해도 다음 재입장에 다시 복원), 이번 입장의 복원 시도 수,
+        # 멤버를 이번에 처음 본 때(monotonic — PL_SETTLE 판정)
+        self.pl_memory = OrderedDict()
+        self.pl_present = None
+        self.pl_entry = False
+        self.pl_hold = None
+        self.pl_restore_tries = 0
+        self.pl_seen_at = {}
         self.closed = False
         self.last_prune = time.monotonic()
         self.context = mp.get_context("spawn")
@@ -253,6 +281,86 @@ class Sidecar:
                 if target in members:
                     self.queue_cattalk({"op": "consume", "target": target, "when": when}, context)
 
+    def update_playlist(self):
+        """플리 공유(D-053). 로비 전원의 cattalk.pl을 검증해 두고, 이미 본 멤버의 목록에 새 영상이 생기면 추가 알림을 쌓는다.
+        켜질 때·로비를 옮길 때·멤버를 처음 볼 때 이미 있던 곡은 기준으로만 삼는다(지각 입장자도 지금 목록은 받되 알림은 없다).
+        멤버가 나가면 Steam이 그 값을 지우므로 기준에서도 뺀다(다시 들어오면 그때 값이 새 기준).
+        멤버가 로비에 (다시) 보인 뒤 PL_SETTLE 안에 생긴 곡도 알리지 않는다(재입장 복원으로 다시 올라온 곡 — 내 화면·남의 화면 모두).
+        내 곡은 로비별로 기억해 두고, 같은 로비에 다시 들어왔는데 Steam이 내 목록을 비워 주면 기억한 곡을 다시 쓴다(remember_playlist)."""
+        state = self.service.state
+        account, lobby = state.get("account", ""), state.get("lobby", "")
+        members = set(state.get("members") or [])
+        if not (account and lobby and state.get("lobby_verified")):
+            self.pl_members = {}
+            self.pl_present = None   # 로비 밖: 다음 입장 때 모두를 다시 처음 보는 것으로 하고 복원을 판정한다
+            self.pl_seen_at = {}
+            return
+        now = time.monotonic()
+        if self.pl_base_lobby != lobby:
+            self.pl_base_lobby, self.pl_known, self.pl_events = lobby, {}, []
+        key = f"{account}:{lobby}"
+        if self.pl_present != key:
+            self.pl_present, self.pl_entry, self.pl_restore_tries = key, True, 0
+        for uid in members:
+            self.pl_seen_at.setdefault(uid, now)
+        for uid in [uid for uid in self.pl_seen_at if uid not in members]:
+            del self.pl_seen_at[uid]
+        current = {}
+        for uid, profile in (state.get("profiles") or {}).items():
+            if uid in members and isinstance(profile, dict) and "cattalk_pl" in profile:
+                current[uid] = pl_model.parse(profile.get("cattalk_pl"))
+        for uid, entries in current.items():
+            known = self.pl_known.get(uid)
+            if known is not None and now - self.pl_seen_at.get(uid, now) >= PL_SETTLE:
+                for video, t in entries:
+                    if video not in known:
+                        self.pl_events.append({"id": f"{lobby}:{uid}:{video}:{t}", "video": video, "by": uid})
+                del self.pl_events[:-MAX_PLAYLIST_EVENTS]
+            self.pl_known[uid] = {video for video, _ in entries}
+        for uid in [uid for uid in self.pl_known if uid not in members]:
+            del self.pl_known[uid]
+        self.pl_members = current
+        self.remember_playlist(key, current.get(account))
+
+    def remember_playlist(self, key, mine):
+        """재입장 복원(사용자 명세, 2026-11-18). mine = Steam이 준 이 로비의 내 곡(아직 못 읽었으면 None).
+        입장 직후 한 번: 내 목록이 비었고 이 로비에서 기억한 곡이 있으면 원래 등록 시각 그대로 다시 쓰는 명령을 보낸다(worker도 비었을 때만 쓴다).
+        그 밖에는 지금 내 목록을 기억한다(지운 곡은 기억에서도 빠진다). 복원이 필요했던 입장에서는 내 목록이 채워지기 전까지 기억을
+        빈 값으로 덮지 않는다(복원이 늦거나 PL_RESTORE_TRIES번 모두 실패해도 다음 재입장에 다시 복원한다)."""
+        if mine is None:
+            return
+        if self.pl_entry:
+            self.pl_entry = False
+            saved = self.pl_memory.get(key)
+            if not mine and saved:
+                self.pl_hold = key
+                if self.pl_restore_tries < PL_RESTORE_TRIES:
+                    self.pl_restore_tries += 1
+                    if self.queue_cattalk({"op": "pl_restore", "entries": [[video, t] for video, t in saved]}, self.service.context()):
+                        mark("playlist_restore", entries=len(saved), attempt=self.pl_restore_tries)   # 개수만(영상 ID·로비는 남기지 않는다)
+                    else:
+                        self.pl_entry = True   # 큐가 가득 찼으면 다음 틱에 다시
+                return
+        if self.pl_hold == key and not mine:
+            return
+        self.pl_hold = None
+        self.pl_memory[key] = list(mine)
+        self.pl_memory.move_to_end(key)
+        while len(self.pl_memory) > PL_MEMORY_LOBBIES:
+            self.pl_memory.popitem(last=False)
+
+    def playlist_visible(self):
+        """플리를 보여 줄 멤버(D-053, 사용자 결정 — 차단한 사람의 곡은 내 화면에서 뺀다): 지금 로비 멤버 − 앱 차단 − Steam 차단.
+        앱 차단 목록을 아직 못 읽었으면 나만(업스트림이 상대 대화를 보류하는 것과 같은 단계)."""
+        state = self.service.state
+        members = set(state.get("members") or [])
+        if not state.get("lobby_verified"):
+            return set()
+        blocked = self.service.blocked
+        if blocked is None:
+            return members & {state.get("account", "")}
+        return members - set(blocked) - self.steam_hidden
+
     def fire_wanted(self, lobby, target, when, members, via, **diag):
         """공개수배를 한 번 띄운다(같은 처형 = 로비·대상·처형 시각은 한 번만). 새로 띄웠으면 True.
         via: count = 합계가 3인 순간을 직접 봄, marker = 그 순간을 놓쳤지만 새 처형 표식을 봄."""
@@ -312,7 +420,7 @@ class Sidecar:
     def queue_cattalk(self, op, context):
         """경고 멤버 데이터 쓰기를 worker로 보낸다(채팅 send와 같은 큐, cattalk 필드로 구분). 같은 정리 쓰기는 반영될 때까지 다시 보내지 않는다.
         보냈으면 True. 큐가 가득 차면 False(경고는 다시 누르면 되고, 정리는 다음 집계에서 다시 시도한다)."""
-        key = None if op["op"] == "warn" else f"{op['op']}:{op['target']}:{op.get('when')}"
+        key = f"consume:{op['target']}:{op.get('when')}" if op["op"] == "consume" else None
         now = time.monotonic()
         if key and any(k == key and now - sent < WARN_OP_RETRY for k, sent, _ in self.warn_ops.values()):
             return True
@@ -334,6 +442,14 @@ class Sidecar:
              seconds=round(time.monotonic() - entry[1], 3) if entry else None)
         if entry and entry[2].get("op") == "warn" and event.get("status") != "accepted":
             self.warn_failed += 1   # 렌더러가 다음 view에서 '경고하지 못했습니다' 안내
+        if entry and entry[2].get("op") in PLAYLIST_OPS and status != "accepted":
+            # 플리(D-053): 사이드카 사전 검사를 지난 뒤 worker가 거절 — 다른 창·동시 추가로 꽉 찼거나 이미 있음, 또는 연결이 바뀜
+            fallback = "playlist_unavailable" if entry[2]["op"] == "pl_add" else "playlist_remove_unavailable"
+            self.pl_failed.append({"pl_full": "playlist_full", "pl_exists": "playlist_exists"}.get(status, fallback))
+            del self.pl_failed[:-8]
+        if entry and entry[2].get("op") == "pl_restore" and status != "accepted":
+            # 재입장 복원 실패(연결이 바뀌는 중 등): 기억은 그대로 두고 다음 틱에 다시 판정한다(PL_RESTORE_TRIES까지, 안내 없음)
+            self.pl_entry = True
         # 정리 쓰기가 실패하면 기록만 지운다 — 다음 집계가 아직 남은 항목을 보고 다시 보낸다
         now = time.monotonic()
         for cid in [cid for cid, (_, sent, _) in self.warn_ops.items() if now - sent > 30]:
@@ -381,6 +497,7 @@ class Sidecar:
                     # 업스트림은 연결 끊김 상태를 먼저 보내고(보내던 메시지는 거기서 '알 수 없음'으로 정리) 그 뒤 Steam을 놓는다
                     self.retire_worker()
             self.update_warns()
+            self.update_playlist()
             if time.monotonic()-self.last_prune > 60:
                 self.service.write(self.store.prune)
                 self.last_prune = time.monotonic()
@@ -583,6 +700,18 @@ class Sidecar:
                 result["wanted"] = [w for w in self.wanted_events if w["target"] in visible]
                 self.wanted_events = []
                 result["warn_failed"], self.warn_failed = self.warn_failed, 0
+            # 플리 공유(D-053): 보이는 멤버(차단 제외) 곡의 합집합(등록순)과, 검색이 아닐 때 새 추가 알림·쓰기 실패 코드(한 번만 받아 간다).
+            # 알림은 받아 가는 순간에도 그 사람 목록에 남아 있는 곡만(추가하자마자 지운 곡은 띄우지 않는다)
+            visible_pl = self.playlist_visible()
+            shown_pl = {uid: entries for uid, entries in self.pl_members.items() if uid in visible_pl}
+            result["playlist"] = pl_model.merge(shown_pl)
+            # 내 곡(내 순서). 합집합은 같은 영상을 가장 먼저 넣은 사람 하나로 묶으므로 /플리 삭제 목록은 이것으로 만든다
+            result["playlist_mine"] = [video for video, _ in self.pl_members.get(account, [])] if account in visible_pl else []
+            if not query:
+                present = {(uid, video) for uid, entries in shown_pl.items() for video, _ in entries}
+                result["playlist_added"] = [e for e in self.pl_events if (e["by"], e["video"]) in present]
+                self.pl_events = []
+                result["playlist_failed"], self.pl_failed = self.pl_failed, []
             settings = self.ui_settings()
             if settings is not None:
                 result["ui_settings"] = settings
@@ -612,6 +741,9 @@ class Sidecar:
             # 경고 명령(@이름 경고!)은 채팅으로 보내지 않는다(D-052 — 렌더러가 warn으로 가로채고, 놓쳐도 여기서 막는다)
             if isinstance(args.get("text"), str) and warn_model.COMMAND.match(args["text"]):
                 raise ValueError("warn_command")
+            # 플리 명령('/플리 …')도 채팅으로 보내지 않는다(D-053 — 렌더러가 가로채고, 놓쳐도 여기서 막는다)
+            if isinstance(args.get("text"), str) and pl_model.COMMAND.match(args["text"]):
+                raise ValueError("playlist_command")
             command = self.service.prepare(args["context"], args["text"])
             command["queued"] = time.monotonic()
             try:
@@ -706,6 +838,28 @@ class Sidecar:
             mark("warn_request", ok=reason is None, reason=reason, self_target=target == state.get("account"))   # 진단: 거절 사유 코드만
             if reason:
                 raise ValueError("warn_unavailable")
+        elif action in ("playlist_add", "playlist_remove"):
+            # 플리 공유(D-053): 내 cattalk.pl에 영상 ID 하나 추가·삭제(로비 멤버 데이터 쓰기, worker가 Steam에서 다시 읽어 고친다).
+            # 추가는 보이는 로비 목록(차단 제외)에 이미 있거나 내 목록이 10개면 바로 거절한다. 그 뒤의 실패는 다음 view의 playlist_failed
+            context, video = args.get("context"), args.get("id")
+            state = self.service.state
+            adding = action == "playlist_add"
+            reason = ("closed" if self.closed else "context" if context != self.service.context()
+                      else "unverified" if not state.get("lobby_verified")
+                      else "bad_id" if not pl_model.valid_id(video) else None)
+            if reason is None and adding:
+                visible = self.playlist_visible()
+                if any(v == video for uid, entries in self.pl_members.items() if uid in visible for v, _ in entries):
+                    reason = "exists"
+                elif len(self.pl_members.get(state.get("account", ""), [])) >= pl_model.MAX_ENTRIES:
+                    reason = "full"
+            op = {"op": "pl_add" if adding else "pl_remove", "id": video}
+            if reason is None and not self.queue_cattalk(op, context):
+                reason = "queue_full"
+            mark("playlist_request", op=op["op"], ok=reason is None, reason=reason)   # 진단: 거절 사유 코드만(영상 ID는 남기지 않는다)
+            if reason:
+                raise ValueError({"exists": "playlist_exists", "full": "playlist_full"}.get(
+                    reason, "playlist_unavailable" if adding else "playlist_remove_unavailable"))
         elif action == "wanted_display":
             # Cat-Talk 추가(진단 전용): 렌더러가 공개수배 전단을 어떻게 처리했는지. 대상·로비는 받지도 남기지도 않는다
             result = args.get("result")

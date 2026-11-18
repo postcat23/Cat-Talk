@@ -20,6 +20,8 @@ export interface Settings {
 }
 
 export type ReportKind = 'bug' | 'request';
+// 플리(D-053) 모달: 로비 전체 목록([재생]·[연속재생]) / 내 곡 삭제
+export type PlaylistMode = 'list' | 'delete';
 
 export interface Overlays {
   collapsed: boolean;
@@ -27,6 +29,7 @@ export interface Overlays {
   modalOpen: boolean;
   searchOpen: boolean;
   nicknameFor: string | null;
+  playlist: PlaylistMode | null;   // 플리 모달(D-053). 드로어·참여자 모달과 같은 자리에 뜨고 한 번에 하나만 열린다
   reportKind: ReportKind | null;   // 버그 신고·요청 사항 모달(D-050). 앱 가운데에 뜬다   // 닉네임 변경 모달 대상 참여자 id(D-032). 참여자 모달 위 앱 가운데에 뜬다
 }
 
@@ -42,6 +45,7 @@ export type UiAction =
   | { type: 'toggleSearch' }
   | { type: 'openNickname'; id: string }
   | { type: 'closeNickname' }
+  | { type: 'openPlaylist'; mode: PlaylistMode }
   | { type: 'openReport'; kind: ReportKind }
   | { type: 'closeReport' };
 
@@ -61,7 +65,7 @@ const initialState: UiState = {
     taskbarAlert: true, toastAlert: true, catInteraction: true, clearCats: false, presence: true,
     hideTaskbarIcon: saved?.hideTaskbar ?? false, autoOpenChest: false, playWarn: true,
   },
-  overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false, nicknameFor: null, reportKind: null },
+  overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false, nicknameFor: null, playlist: null, reportKind: null },
 };
 
 function reducer(state: UiState, action: UiAction): UiState {
@@ -71,9 +75,10 @@ function reducer(state: UiState, action: UiAction): UiState {
     case 'toggleCollapsed': return { ...state, overlays: { ...o, collapsed: !o.collapsed } };
     case 'expand': return o.collapsed ? { ...state, overlays: { ...o, collapsed: false } } : state;
     // 드로어·모달은 한쪽만 열린다. 열린 쪽 버튼을 다시 누르면 닫힘, 다른 쪽을 누르면 전환.
-    case 'toggleDrawer': return { ...state, overlays: { ...o, drawerOpen: !o.drawerOpen, modalOpen: false } };
-    case 'toggleModal': return { ...state, overlays: { ...o, modalOpen: !o.modalOpen, drawerOpen: false } };
-    case 'closeOverlays': return { ...state, overlays: { ...o, drawerOpen: false, modalOpen: false, nicknameFor: null } };
+    case 'toggleDrawer': return { ...state, overlays: { ...o, drawerOpen: !o.drawerOpen, modalOpen: false, playlist: null } };
+    case 'toggleModal': return { ...state, overlays: { ...o, modalOpen: !o.modalOpen, drawerOpen: false, playlist: null } };
+    case 'closeOverlays': return { ...state, overlays: { ...o, drawerOpen: false, modalOpen: false, nicknameFor: null, playlist: null } };
+    case 'openPlaylist': return { ...state, overlays: { ...o, playlist: action.mode, drawerOpen: false, modalOpen: false } };
     case 'toggleSearch': return { ...state, overlays: { ...o, searchOpen: !o.searchOpen } };
     // 닉네임 모달은 참여자 모달을 닫지 않고 그 위에 뜬다(저장 뒤 바뀐 이름을 목록에서 바로 본다)
     case 'openNickname': return { ...state, overlays: { ...o, nicknameFor: action.id } };

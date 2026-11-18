@@ -5,8 +5,9 @@ import { errorText, noticeText, PROFILE_OPENING, TRADE_OPENING, VIEW_UNAVAILABLE
 import {
   accountStatus, connState, displayName, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
   type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
-  type WantedEvent, type WantedResult,
+  type PlaylistEntry, type WantedEvent, type WantedResult,
 } from '../chat/model';
+import { CARD_MS, MAX_ENTRIES, PL_EXISTS, PL_FULL } from '../chat/playlist';
 import type { ReactionStack } from './useReactionStack';
 
 const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 재구성한다
@@ -40,6 +41,8 @@ export interface Focus { id: string }   // 점프 대상. 점프마다 새 객�
 export interface RestoredDraft { text: string }   // 같은 글이어도 복원마다 새 객체라 입력창이 다시 받는다
 // 전송 쿨다운 표시용. key는 쿨다운을 시작할 때마다 올라 진행 링 애니메이션을 처음부터 다시 그린다
 export interface Cooldown { active: boolean; key: number }
+// 플리(D-053) 상단 카드: 추가 알림(로비 누군가 넣음, 본인 포함) / 랜덤 결과(본인만). CARD_MS 뒤 사라진다
+export interface PlaylistCard { key: string; kind: 'added' | 'random'; video: string; by?: string }
 
 export interface Chat {
   items: ChatItem[];
@@ -77,6 +80,14 @@ export interface Chat {
   warn(target: string): Promise<boolean>;   // 경고(D-052): 내 cattalk.warns의 대상 +1. 채팅으로 보내지 않는다
   wanted: WantedEvent | null;                // 띄울 공개수배(차례대로 하나씩, 대상별로 묶임)
   dismissWanted(id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>): void;   // 끝났거나 버리면 다음 것으로
+  // 플리 공유(D-053). playlist = 보이는 로비 목록(등록순, 차단 제외), playlistMine = 내 곡. add·remove는 내 cattalk.pl 쓰기를 보낸다
+  // (성공 = 접수, 실패는 안내 후 false). showRandom은 랜덤 결과 카드를 띄운다
+  playlist: PlaylistEntry[];
+  playlistMine: string[];
+  playlistCards: PlaylistCard[];
+  playlistAdd(id: string): Promise<boolean>;
+  playlistRemove(id: string): Promise<boolean>;
+  showRandom(id: string): void;
   saveSettings(patch: Partial<Settings>): void;
   saveDraft(text: string, now?: boolean): void;
   sending: boolean;      // 보낸 메시지의 응답을 기다리는 중. 그동안 앱 업데이트(재시작)를 막는다(D-030)
@@ -106,6 +117,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const wantedRef = useRef<WantedEvent[]>([]);             // 대기열과 같은 값. 판정·진단 기록을 상태 갱신 함수 밖에서 하려고 둔다
   const wantedEnded = useRef(new Map<string, number>());   // 대상 → 그 대상 전단이 끝까지 재생된 시각(Date.now). 취합 판정용
   const warnOn = useRef(warnEnabled);
+  const [playlistCards, setPlaylistCards] = useState<PlaylistCard[]>([]);
+  const seenPlaylist = useRef(new Set<string>());   // 이미 띄운 추가 알림 id(사이드카가 한 번만 주지만 응답을 버린 회차 대비)
   const cooldownUntil = useRef(0);   // performance.now() 기준. 판정은 이 값으로 하고 cooldown 상태는 표시용이다
   const cooldownTimer = useRef(0);
 
@@ -186,6 +199,24 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     if (data.warn_failed) setToast({ id: nextToast.current++, text: WARN_FAILED });
   }, [setWanted]);
 
+  // 플리(D-053) 상단 카드는 CARD_MS 뒤 스스로 빠진다
+  const pushPlaylistCard = useCallback((card: PlaylistCard) => {
+    setPlaylistCards((cards) => [...cards.filter((c) => c.key !== card.key), card]);
+    window.setTimeout(() => setPlaylistCards((cards) => cards.filter((c) => c.key !== card.key)), CARD_MS);
+  }, []);
+
+  // 플리 추가 알림(로비 전원, 본인 포함)과 쓰기 실패 안내. 사이드카가 한 번만 준다
+  const takePlaylist = useCallback((data: ViewResponse) => {
+    const seen = seenPlaylist.current;
+    for (const added of data.playlist_added ?? []) {
+      if (seen.has(added.id)) continue;
+      seen.add(added.id);
+      if (seen.size > MAX_SEEN_REACTIONS) seen.delete(seen.values().next().value as string);
+      pushPlaylistCard({ key: added.id, kind: 'added', video: added.video, by: added.by });
+    }
+    for (const code of data.playlist_failed ?? []) setToast({ id: nextToast.current++, text: errorText(new Error(code)) });
+  }, [pushPlaylistCard]);
+
   // 플레이 > 경고를 끄면 대기 중이던 전단도 버린다(다시 켜도 꺼져 있던 동안의 것은 띄우지 않는다)
   useEffect(() => {
     warnOn.current = warnEnabled;
@@ -249,6 +280,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       });
       takeReactions(data, requestedAt);   // 사이드카는 준 반응을 지우므로 응답을 버려도 받아 둔다
       takeWanted(data);                    // 공개수배·경고 실패도 사이드카가 한 번만 준다(D-052)
+      takePlaylist(data);                  // 플리 추가 알림·쓰기 실패도 한 번만 준다(D-053)
       if (sent !== version.current) return;
       setFailed(false);
       fetchAvatars(data);
@@ -283,7 +315,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       busy.current = false;
       if (again.current) { again.current = false; void poll(); }
     }
-  }, [applyTimeline, dispatch, fetchAvatars, takeDraft, takeReactions, takeWanted]);
+  }, [applyTimeline, dispatch, fetchAvatars, takeDraft, takeReactions, takePlaylist, takeWanted]);
 
   useEffect(() => {
     void poll();
@@ -556,6 +588,31 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       return false;
     }
   }, [poll, showError]);
+  // 플리(D-053): 추가는 보이는 로비 목록에 이미 있거나 내 곡이 10개면 바로 안내한다(사이드카도 같은 검사를 한 번 더 한다).
+  // 접수되면 true — 추가 알림은 내 멤버 데이터가 바뀐 뒤 다른 사람과 같은 길(view의 playlist_added)로 온다
+  const playlist = useMemo(() => shown?.playlist ?? [], [shown]);
+  const playlistMine = useMemo(() => shown?.playlist_mine ?? [], [shown]);
+  const playlistWrite = useCallback(async (action: 'playlist_add' | 'playlist_remove', id: string) => {
+    const current = viewRef.current;
+    if (!current) return false;
+    try {
+      await rpc(action, { context: current.context, id });
+      void poll();
+      return true;
+    } catch (error) {
+      showError(error);
+      return false;
+    }
+  }, [poll, showError]);
+  const playlistAdd = useCallback(async (id: string) => {
+    const current = viewRef.current;
+    if (current?.playlist?.some((e) => e.id === id)) { notify(PL_EXISTS); return false; }
+    if ((current?.playlist_mine?.length ?? 0) >= MAX_ENTRIES) { notify(PL_FULL); return false; }
+    return playlistWrite('playlist_add', id);
+  }, [notify, playlistWrite]);
+  const playlistRemove = useCallback((id: string) => playlistWrite('playlist_remove', id), [playlistWrite]);
+  const showRandom = useCallback((id: string) => pushPlaylistCard({ key: `random:${Date.now()}:${id}`, kind: 'random', video: id }), [pushPlaylistCard]);
+
   // 끝까지 재생한 대상은 끝난 시각을 적어 둔다(그 뒤 10초 안의 같은 대상 처형은 취합). 오래된 기록은 그때 지운다
   const dismissWanted = useCallback((id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>) => {
     const done = wantedRef.current.find((w) => w.id === id);
@@ -572,6 +629,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   return {
     items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, resend, cooldown, openProfile, openTrade, setNickname, setBlocked, refresh, notify, saveSettings, saveDraft, sending, hasDraft,
     warn, wanted: wantedQueue[0] ?? null, dismissWanted,
+    playlist, playlistMine, playlistCards, playlistAdd, playlistRemove, showRandom,
     blocksReady: shown?.blocks_ready ?? true,
     conn: failed ? 'off' : connState(view),
     accountStatus: accountStatus(shown),
