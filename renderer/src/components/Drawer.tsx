@@ -3,6 +3,7 @@ import { OVERLAY_HEIGHT, useUi, type ChatHeight, type Settings, type Side, type 
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
 import { updateStatusText, useUpdate, type UpdateState } from '../hooks/useAppUpdate';
+import { useDisplays } from '../hooks/useDisplays';
 import { gameStateLabel, STATE_LABEL } from '../chat/autoChest';
 import { BLOCKS_UNAVAILABLE, NO_BLOCKED_USERS } from '../chat/messages';
 import { PLAY_FEATURES } from '../chat/play';
@@ -25,6 +26,8 @@ type Option<T> = { value: T; label: string };
 const THEMES: Option<Theme>[] = [{ value: 'light', label: '라이트' }, { value: 'dark', label: '다크' }, { value: 'system', label: '시스템' }];
 const SIDES: Option<Side>[] = [{ value: 'left', label: '왼쪽' }, { value: 'right', label: '오른쪽' }];
 const HEIGHTS: Option<ChatHeight>[] = [{ value: '100%', label: '100%' }, { value: '70%', label: '70%' }, { value: '50%', label: '50%' }];
+// 디스플레이 버튼: 1..count(main이 왼쪽부터 센 번호 = [식별] 오버레이 번호)
+const displayOptions = (count: number): Option<string>[] => Array.from({ length: count }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }));
 
 type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
 const SWITCHES: { key: BoolKey; label: string }[] = [
@@ -56,6 +59,7 @@ export default function Drawer() {
   const apply = (patch: Partial<Settings>) => dispatch({ type: 'setSettings', patch });
   const set = (patch: Partial<Settings>) => { apply(patch); saveSettings(patch); };
   const chest = useChest();
+  const displays = useDisplays();
   // Electron: 실제 상태(패치+플래그)가 버튼을 정한다. 브라우저 dev: 설정값만.
   const chestOn = chest ? chest.state === 'on' : settings.autoOpenChest;
   const chestBusy = !!chest && (chest.busy || chest.state === 'installing' || chest.state === 'restoring');
@@ -129,6 +133,17 @@ export default function Drawer() {
       <div className={styles.divider} />
       <h3>설정</h3>
       <div className={styles.set}><span>테마</span><Seg options={THEMES} value={settings.theme} onChange={(theme) => set({ theme })} /></div>
+      {/* 디스플레이 선택(사용자 명세, 2026-11-18): 모니터가 2개 이상일 때만. 지금 창이 있는 모니터가 켜져 있고, 누르면 그 모니터로
+          옮긴다(채팅 위치·높이 유지). [식별]은 각 모니터 가운데에 번호를 잠깐 띄운다. 저장은 main(window-state.json)이 한다 */}
+      {displays && displays.count > 1 && (
+        <div className={styles.set}>
+          <span>디스플레이 선택</span>
+          <div className={styles.dsel}>
+            <Seg options={displayOptions(displays.count)} value={String(displays.current)} onChange={(n) => window.catTalk?.display.select(Number(n))} />
+            <button className={styles.bbtn} onClick={() => window.catTalk?.display.identify()}>식별</button>
+          </div>
+        </div>
+      )}
       <div className={styles.set}><span>채팅 위치</span><Seg options={SIDES} value={settings.side} onChange={(side) => set({ side })} /></div>
       <div className={styles.set}><span>채팅 높이</span><Seg options={HEIGHTS} value={settings.height} onChange={(height) => set({ height })} /></div>
       <div className={styles.set}>

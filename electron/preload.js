@@ -37,6 +37,18 @@ contextBridge.exposeInMainWorld('catTalk', {
     ipcRenderer.on('window:expand', listener);
     return () => ipcRenderer.removeListener('window:expand', listener);
   },
+  // 드로어 '디스플레이 선택'(사용자 명세, 2026-11-18). info·onChange는 {count, current}(디스플레이 수, 지금 창이 있는 디스플레이 번호 1부터).
+  // 번호는 왼쪽부터(bounds.x, 같으면 y) 센 순번이고 식별 오버레이 번호와 같다. select(n)는 그 디스플레이로 창을 옮기고, identify는 번호를 띄운다.
+  display: {
+    info: () => ipcRenderer.invoke('display:info'),
+    select: (n) => ipcRenderer.send('display:select', n),
+    identify: () => ipcRenderer.send('display:identify'),
+    onChange: (cb) => {
+      const listener = (_e, info) => cb(info);
+      ipcRenderer.on('display:changed', listener);
+      return () => ipcRenderer.removeListener('display:changed', listener);
+    },
+  },
   setDockSide: (side) => ipcRenderer.send('window:set-dock-side', side),
   setChatHeight: (pct) => ipcRenderer.send('window:set-chat-height', pct),
   setSkipTaskbar: (hide) => ipcRenderer.send('window:set-skip-taskbar', hide),
