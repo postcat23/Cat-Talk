@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent } from 'react';
 import { SEND_COOLDOWN_MS, type Cooldown, type RestoredDraft } from '../hooks/useChatView';
 import type { Participant } from '../chat/model';
 import { filterParticipants, mentionAt, parseWarnCommand, resolveTarget, type Mention } from '../chat/warns';
 import { WARN_OFF } from '../chat/messages';
+import { COMMAND_MAX_LEN, isPlaylistCommand } from '../chat/playlist';
 import Cat from './Cat';
 import YellowCards from './YellowCards';
 import styles from './Composer.module.css';
@@ -20,7 +21,9 @@ const MAX_SUGGEST = 20;   // @ 자동완성 목록 최대 줄 수(로비 인원�
 // 직접 친 이름을 찾지 못하거나 여러 명이면 안내만 하고 글은 입력창에 남긴다.
 // 드로어 '플레이': warnEnabled가 꺼져 있으면 '@이름 경고!'를 보내지 않고 안내만 한다(글은 남긴다). '@' 자동완성은
 // '@' 단축어를 쓰는 플레이 기능이 하나라도 켜져 있을 때만 뜬다(mention, chat/play.ts) — 모두 꺼져 있으면 '@'는 일반 글자다.
-export default function Composer({ disabled, hidden = false, restored, cooldown, participants, meId, onSend, onWarn, onNotify, onDraft,
+// 플리(D-053): '/플리 …'도 채팅으로 보내지 않고 onPlaylist로 가로챈다(쿨다운과 무관). 명령은 50자 제한 대신 COMMAND_MAX_LEN까지
+// 받고(붙여넣기 포함, 사용자 명세) 글자 수 표시를 숨긴다(사용자 결정). 처리되면 입력창을 비우고, 링크 오류 등은 글을 남긴다.
+export default function Composer({ disabled, hidden = false, restored, cooldown, participants, meId, onSend, onWarn, onPlaylist, onNotify, onDraft,
   warnEnabled, mention: mentionOn }: {
   disabled: boolean;
   hidden?: boolean;
@@ -30,6 +33,7 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
   meId?: string;
   onSend: (text: string) => Promise<boolean>;
   onWarn: (target: string) => Promise<boolean>;
+  onPlaylist: (text: string) => Promise<boolean>;
   onNotify: (text: string) => void;
   onDraft: (text: string, now?: boolean) => void;
   warnEnabled: boolean;
@@ -47,7 +51,8 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
   const list = useRef<HTMLDivElement>(null);
   const candidates = useMemo(() => (mention ? filterParticipants(mention.query, participants).slice(0, MAX_SUGGEST) : []), [mention, participants]);
   const suggesting = mentionOn && !!mention && !dismissed && !disabled && candidates.length > 0;
-  const command = parseWarnCommand(value) !== null;
+  const playlistCommand = isPlaylistCommand(value);
+  const command = parseWarnCommand(value) !== null || playlistCommand;
 
   function show(text: string) {
     latest.current = text;
@@ -109,10 +114,38 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
     }
   }
 
+  // '/플리 …': 채팅이 아니라 플리 명령. 처리되면 비우고, 아니면(링크 오류·사용법) 글을 남긴다
+  async function playlist(text: string) {
+    sending.current = true;
+    const ok = await onPlaylist(text);
+    sending.current = false;
+    if (ok && latest.current === value) {
+      show('');
+      onDraft('', true);
+    }
+  }
+
+  // 일반 입력은 50자에서 막히므로, 붙여넣은 결과가 '/플리' 명령이 되면 직접 넣는다(이미 명령이면 maxLength가 풀려 있어 그대로 둔다)
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const el = e.currentTarget;
+    const pasted = e.clipboardData.getData('text');
+    const start = el.selectionStart ?? value.length, end = el.selectionEnd ?? value.length;
+    const next = value.slice(0, start) + pasted + value.slice(end);
+    if (playlistCommand || next.length <= MAX_LEN || !isPlaylistCommand(next)) return;
+    e.preventDefault();
+    const text = next.slice(0, COMMAND_MAX_LEN);
+    const caret = Math.min(start + pasted.length, text.length);
+    touched.current = true;
+    show(text);
+    onDraft(text);
+    requestAnimationFrame(() => el.setSelectionRange(caret, caret));
+  }
+
   // 전송이 거부되면 글을 남겨 다시 보낼 수 있게 한다. 응답을 기다리는 동안 이어 쓴 글도 지우지 않는다.
   async function send() {
     const text = value.trim();
     if (!text || disabled || sending.current) return;
+    if (isPlaylistCommand(text)) { await playlist(text); return; }
     const name = parseWarnCommand(text);
     if (name !== null) { await warn(name); return; }
     if (cooldown.active) return;
@@ -170,8 +203,8 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
         </div>
       )}
       <div className={styles.inrow}>
-        <textarea ref={input} rows={1} placeholder="메시지 입력" maxLength={MAX_LEN} disabled={disabled}
-          value={value} onKeyDown={onKeyDown}
+        <textarea ref={input} rows={1} placeholder="메시지 입력" maxLength={playlistCommand ? COMMAND_MAX_LEN : MAX_LEN} disabled={disabled}
+          value={value} onKeyDown={onKeyDown} onPaste={onPaste}
           onChange={(e) => { touched.current = true; show(e.target.value); onDraft(e.target.value); setDismissed(false); updateMention(e.target.value, e.target.selectionStart ?? e.target.value.length); }}
           onClick={(e) => updateMention(value, e.currentTarget.selectionStart ?? value.length)}
           onBlur={() => setMention(null)} />
@@ -189,7 +222,7 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
           </svg>
         </button>
       </div>
-      <div className={styles.help}><span>Enter 전송 · Shift+Enter 줄바꿈</span><span className={styles.c}>{value.length}/{MAX_LEN}</span></div>
+      <div className={styles.help}><span>Enter 전송 · Shift+Enter 줄바꿈</span>{!playlistCommand && <span className={styles.c}>{value.length}/{MAX_LEN}</span>}</div>
     </div>
   );
 }

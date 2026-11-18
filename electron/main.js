@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, nativeImage, Notification, screen, shell, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, net, Notification, screen, shell, Tray, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { execFile, spawn } = require('child_process');
@@ -10,6 +10,7 @@ const { attachImeMemory } = require('./ime-memory');
 const { createUpdater } = require('./updater');
 const { createLogger } = require('./logger');
 const { createReporter } = require('./report');
+const { createPlaylistLinks } = require('./playlist');
 const os = require('os');
 
 const REQUEST_TIMEOUT_MS = 5000;
@@ -429,6 +430,11 @@ ipcMain.on('report:available', (e) => { e.returnValue = reporter.available(); })
 ipcMain.handle('report:preview', () => reporter.preview());
 ipcMain.handle('report:open-preview', () => reporter.openPreview());
 ipcMain.handle('report:submit', (_e, args) => reporter.submit(args));
+
+// 플레이리스트 공유(D-053, /플리): 영상 제목 조회(oEmbed → og:title)와 외부 브라우저 재생. 렌더러는 영상 ID만 넘기고 URL은 main이 만든다
+const playlistLinks = createPlaylistLinks({ net, openExternal: (url) => shell.openExternal(url), log: (event, data) => log.main(event, data) });
+ipcMain.handle('playlist:title', (_e, id) => playlistLinks.title(id));
+ipcMain.handle('playlist:open', (_e, ids) => playlistLinks.open(ids));
 
 // 앱 버전(package.json의 version). 드로어 표시용이며, 업데이트를 붙이면 electron-updater도 이 값을 기준으로 비교한다.
 ipcMain.on('app:get-version', (e) => { e.returnValue = app.getVersion(); });

@@ -6,6 +6,7 @@ import { useMessageAlerts } from './hooks/useMessageAlerts';
 import { ChatContext, useChatView } from './hooks/useChatView';
 import { AutoChestContext, useAutoChest } from './hooks/useAutoChest';
 import { AppUpdateContext, useAppUpdate } from './hooks/useAppUpdate';
+import { usePlaylistCommand } from './hooks/usePlaylistCommand';
 import type { Feature } from './chat/autoChest';
 import { mentionEnabled } from './chat/play';
 import CollapseTab from './components/CollapseTab';
@@ -30,6 +31,7 @@ function Panel() {
   }, [dispatch, saveSettings]);
   const chest = useAutoChest(settings.autoOpenChest, settings.clearCats, chestOff);
   const update = useAppUpdate();
+  const playlistCommand = usePlaylistCommand(chat, dispatch);   // '/플리 …' 입력(D-053)
 
   // 도크 위치·채팅 높이·작업표시줄: Electron이면 창(BrowserWindow)이 맡고, 브라우저 dev면 패널 CSS로 시뮬레이션.
   // 패널·탭이 어느 쪽에 오는지는 두 모드 모두 data-side가 정한다. --ovh·반응 카드 최대 수는 설정값 기준 공통.
@@ -58,9 +60,9 @@ function Panel() {
             <SearchBar />
             <Conversation reactions={reactions} />
             {/* 창이 작은 70%·50%에서 오버레이를 열면 입력창을 숨겨 오버레이(--ovh 100%)가 창 전체를 덮게 한다 */}
-            <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen)}
+            <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen || overlays.playlist !== null)}
               restored={chat.restoredDraft} cooldown={chat.cooldown} onSend={chat.send} onDraft={chat.saveDraft}
-              participants={chat.participants} meId={chat.me?.id} onWarn={chat.warn} onNotify={chat.notify}
+              participants={chat.participants} meId={chat.me?.id} onWarn={chat.warn} onPlaylist={playlistCommand} onNotify={chat.notify}
               warnEnabled={settings.playWarn} mention={mentionEnabled(settings)} />
           </div>
           {/* 닉네임 변경(D-032): 패널 전체 기준 가운데. 대화 영역 오버레이와 달리 상단바·입력창까지 덮는다 */}

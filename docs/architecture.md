@@ -48,7 +48,7 @@ React 렌더러  ◀── IPC(contextBridge) ──▶  Electron main  ◀─�
 
 | 흐름 | 내용 |
 |---|---|
-| 렌더러 ↔ main | preload가 `window.bridge`(사이드카 요청 전달)와 `window.catTalk`(창·알림·업데이트·게임 패치)을 노출한다 |
+| 렌더러 ↔ main | preload가 `window.bridge`(사이드카 요청 전달)와 `window.catTalk`(창·알림·업데이트·게임 패치·플리 제목 조회·외부 재생)을 노출한다 |
 | main ↔ 사이드카 | 표준 입출력의 JSON 한 줄씩. 요청·응답은 id로 짝짓고, 요청이 아닌 알림 줄(예: 게임 고양이 숨김 목록)도 오간다 |
 | 사이드카 ↔ worker | 프로세스 큐. worker가 상태·메시지·반응·멤버 정보를 이벤트로 보내고, 사이드카는 보내기·새로고침 명령을 넣는다 |
 | 저장 | 대화·세션·입퇴장은 메모리 DB에만 둔다(앱을 끄면 사라짐). 설정 DB(`settings.sqlite3`)와 창 위치(`window-state.json`)는 데이터 폴더 `%LOCALAPPDATA%\CatTalk`에 둔다. main이 이 폴더를 정해 사이드카에 넘긴다 |

@@ -19,6 +19,10 @@ const blocked: Record<string, string> = {};   // 앱 차단(D-033): id → 차�
 const warnCounts: Record<string, number> = {};
 let wantedQueue: { id: string; target: string }[] = [];
 const NICKNAME_MAX = 15;   // 사이드카와 같은 상한(코드 포인트)
+// 플리 공유(D-053) 대역: 실제는 로비 멤버 데이터 cattalk.pl 합집합. 목업은 다른 참여자 곡 하나로 시작하고 내 추가·삭제만 다룬다
+const PL_MAX = 10;
+const playlist: { id: string; by: string; t: number }[] = [{ id: '09R8_2nJtjg', by: 'p2', t: 1 }];
+let playlistAdded: { id: string; video: string; by: string }[] = [];
 
 const CONTEXT = { account: ME_ID, lobby: 'mock-lobby', generation: 'mock' };
 
@@ -49,6 +53,9 @@ function view({ query = '', before, start, limit = 100 }: ViewArgs): ViewRespons
     nicknames: { ...nicknames },
     warns: { ...warnCounts },
     ...(!needle && { wanted: takeWanted() }),
+    playlist: playlist.filter((e) => !(e.by in blocked)).map((e) => ({ ...e })),
+    playlist_mine: playlist.filter((e) => e.by === ME_ID).map((e) => e.id),
+    ...(!needle && { playlist_added: takePlaylistAdded(), playlist_failed: [] }),
   };
 }
 
@@ -123,6 +130,29 @@ function warn({ target }: Record<string, unknown>) {
   return { ok: true };
 }
 
+function takePlaylistAdded() {
+  const taken = playlistAdded;
+  playlistAdded = [];
+  return taken;
+}
+
+// 사이드카 playlist_add·playlist_remove 대역: 보이는 목록 중복·내 10개 상한을 같은 코드로 거절한다
+function playlistWrite(add: boolean, { id }: Record<string, unknown>) {
+  if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(id)) return { error: add ? 'playlist_unavailable' : 'playlist_remove_unavailable' };
+  if (!add) {
+    const index = playlist.findIndex((e) => e.id === id && e.by === ME_ID);
+    if (index >= 0) playlist.splice(index, 1);
+  } else {
+    if (playlist.some((e) => e.id === id && !(e.by in blocked))) return { error: 'playlist_exists' };
+    if (playlist.filter((e) => e.by === ME_ID).length >= PL_MAX) return { error: 'playlist_full' };
+    const t = Math.floor(Date.now() / 1000);
+    playlist.push({ id, by: ME_ID, t });
+    playlistAdded.push({ id: `mock:${ME_ID}:${id}:${t}`, video: id, by: ME_ID });
+  }
+  revision++;
+  return { ok: true };
+}
+
 function dispatch(args: Record<string, unknown>) {
   switch (args.action) {
     case 'view': return view(args as ViewArgs);
@@ -137,6 +167,8 @@ function dispatch(args: Record<string, unknown>) {
     case 'block_user': return setBlocked(args);
     case 'warn': return warn(args);
     case 'wanted_display': return { ok: true };   // 진단 로그 전용(사이드카가 결과 코드만 남긴다)
+    case 'playlist_add': return playlistWrite(true, args);
+    case 'playlist_remove': return playlistWrite(false, args);
     default: return { error: 'not_wired' };
   }
 }
