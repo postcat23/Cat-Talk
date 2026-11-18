@@ -26,7 +26,7 @@
 .sw.on{background:var(--accent)}.sw.on::after{left:19px}
 .sw:disabled{opacity:.5;cursor:default}
 .range{flex:1;max-width:160px;accent-color:var(--accent);cursor:pointer}
-/* 디스플레이 선택: [번호 세그먼트][식별] 묶음. [식별]은 [차단 해제]와 같은 보조 버튼(.bbtn, 사용자 결정 2026-11-18) */
+/* 디스플레이 선택: [번호 세그먼트][식별] 묶음. [식별]은 게임 카드 [재시작]과 같은 강조 버튼(.cbtn.active, 사용자 결정 2026-11-18) */
 .dsel{display:flex;align-items:center;gap:6px}
 /* 차단 목록(D-033): 행은 .set과 같고, 긴 이름은 말줄임. [차단 해제]는 강조 없는 보조 버튼 */
 .bname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -25,7 +25,7 @@ const WINDOW_APP_ID = 'CatTalk.Window';   // 작업표시줄용. 레지스트리
 // 옮긴다(native_window_views.cc MoveBehindTaskBarIfNeeded). 주 작업표시줄이 일반 창보다 아래에 놓인 상태(다중 모니터 등)에서는
 // 열기(OPEN) 클릭 한 번에 Cat Talk가 일반 창 밑으로 내려갔다(실측 2026-11-16). 'pop-up-menu' 이상은 이 이동을 하지 않는다.
 const TOPMOST_LEVEL = 'pop-up-menu';
-// 디스플레이 [식별] 오버레이는 Cat Talk 창보다도 위(창이 좁은 세로 모니터 가운데까지 닿을 수 있다).
+// 디스플레이 [식별] 오버레이는 Cat Talk 창보다도 위(좌측 하단이라 왼쪽에 붙인 채팅 창과 겹칠 수 있다).
 const IDENTIFY_LEVEL = 'screen-saver';
 
 let win = null, tray = null, sidecar = null, nextId = 1, stdoutBuf = '';

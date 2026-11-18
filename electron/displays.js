@@ -16,15 +16,17 @@ function byNumber(screen, n) {
   return (Number.isInteger(n) && ordered(screen)[n - 1]) || null;
 }
 
-// 식별 오버레이: 각 디스플레이 중앙에 그 번호를 띄우고 IDENTIFY_MS 뒤 닫는다(Windows 디스플레이 설정의 '식별'과 같은 역할).
-// 모양은 사용자 결정(2026-11-18): 상자 220×220 DIP · 모서리 24 · 배경 검정 60% · 숫자 흰색 150px Bold.
+// 식별 오버레이: 각 디스플레이 좌측 하단에 그 번호를 띄우고 IDENTIFY_MS 뒤 닫는다(Windows 디스플레이 설정의 '식별'과 같은 역할).
+// 모양은 사용자 결정(2026-11-18): 상자 154×154 DIP · 모서리 18 · 배경 검정 60% · 숫자 흰색 105px Bold(처음 220·24·150에서 약 70%로 축소).
+// 위치도 사용자 결정(2026-11-18): 작업영역(작업표시줄 제외)의 왼쪽·아래 끝에서 각각 MARGIN 안쪽.
 const IDENTIFY_MS = 2500;
-const BOX = 220;
+const BOX = 154;
+const MARGIN = 24;
 // 숫자는 글꼴 위아래 여백을 잘라(text-box: cap ~ 기준선) 글자 자체가 상자 가운데 오게 한다(자르지 않으면 아래로 약 4% 치우친다).
 const page = (n) => 'data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
-div{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border-radius:24px;background:rgba(0,0,0,.6);
-  color:#fff;font:700 150px/1 "Segoe UI",sans-serif;user-select:none}
+div{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border-radius:18px;background:rgba(0,0,0,.6);
+  color:#fff;font:700 105px/1 "Segoe UI",sans-serif;user-select:none}
 span{text-box:trim-both cap alphabetic}
 </style><div><span>${n}</span></div>`);
 
@@ -43,8 +45,8 @@ function createIdentifier({ BrowserWindow, screen, level }) {
   function show() {
     close();
     ordered(screen).forEach((d, i) => {
-      const b = d.bounds;
-      const target = { x: Math.round(b.x + (b.width - BOX) / 2), y: Math.round(b.y + (b.height - BOX) / 2), width: BOX, height: BOX };
+      const wa = d.workArea;
+      const target = { x: wa.x + MARGIN, y: wa.y + wa.height - MARGIN - BOX, width: BOX, height: BOX };
       // 클릭 통과·포커스 안 뺏음(focusable:false — Windows에선 작업표시줄에서도 빠진다)·항상 위. 스크립트 없는 정적 페이지라 JS를 끈다.
       const w = new BrowserWindow({
         ...target, show: false, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,

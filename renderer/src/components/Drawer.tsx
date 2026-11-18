@@ -140,7 +140,7 @@ export default function Drawer() {
           <span>디스플레이 선택</span>
           <div className={styles.dsel}>
             <Seg options={displayOptions(displays.count)} value={String(displays.current)} onChange={(n) => window.catTalk?.display.select(Number(n))} />
-            <button className={styles.bbtn} onClick={() => window.catTalk?.display.identify()}>식별</button>
+            <button className={`${styles.cbtn} ${styles.active}`} onClick={() => window.catTalk?.display.identify()}>식별</button>
           </div>
         </div>
       )}
