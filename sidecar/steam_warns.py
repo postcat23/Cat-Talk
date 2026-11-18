@@ -13,8 +13,10 @@ upstream은 로비 쓰기를 하지 않는 원칙(worker.close 주석 'No LeaveL
 플레이리스트 공유(D-053, /플리)도 같은 길을 쓴다: 프로필에 cattalk_pl 원문을 싣고, {"op": "pl_add" | "pl_remove", "id"}로
 내 cattalk.pl을 고친다(쓰기 직전에 Steam에서 다시 읽음). 로비 전체 중복 검사는 차단을 아는 사이드카가 하고, 여기서는 내 목록의
 상한(10)·중복만 본다. 결과 상태: accepted / failed / pl_full / pl_exists.
+재입장 복원 {"op": "pl_restore", "entries": [[영상, 시각], …]}은 지금 내 cattalk.pl이 비었을 때만 그대로(원래 등록 시각) 쓴다.
 """
 import ctypes as C
+import json
 
 from bongo_chat import worker as worker_module
 
@@ -22,8 +24,8 @@ import playlist
 import warns as model
 from diag import mark
 
-CATTALK_OPS = ("warn", "consume", "pl_add", "pl_remove")
-PLAYLIST_OPS = ("pl_add", "pl_remove")
+CATTALK_OPS = ("warn", "consume", "pl_add", "pl_remove", "pl_restore")
+PLAYLIST_OPS = ("pl_add", "pl_remove", "pl_restore")
 
 
 def install():
@@ -85,7 +87,7 @@ def install():
                      reason="unverified" if not verified else "context" if command.get("context") != current else "target")
                 return "failed"
             if kind in PLAYLIST_OPS:
-                return self._playlist(lobby, account, kind, op.get("id"))
+                return self._playlist(lobby, account, kind, op)
             steam = self.steam
             own_warns = model.parse_warns(steam._member_data(lobby, account, model.WARNS_KEY))
             own_wanted = model.parse_wanted(steam._member_data(lobby, account, model.WANTED_KEY))
@@ -111,14 +113,23 @@ def install():
             self.profile_time = 0   # 다음 틱에 프로필을 다시 읽어 사이드카가 바뀐 값을 곧 본다
             return "accepted"
 
-        def _playlist(self, lobby, account, kind, video):
-            """내 cattalk.pl에 영상 하나 추가·삭제(D-053). 쓰기 직전 Steam의 내 값을 다시 읽어 고친다."""
-            if not playlist.valid_id(video):
-                mark("playlist_write_rejected", op=kind, reason="bad_id")
-                return "failed"
+        def _playlist(self, lobby, account, kind, op):
+            """내 cattalk.pl에 영상 하나 추가·삭제, 또는 재입장 복원(D-053). 쓰기 직전 Steam의 내 값을 다시 읽어 고친다."""
             steam = self.steam
             own = playlist.parse(steam._member_data(lobby, account, playlist.KEY))
-            if kind == "pl_add":
+            video = op.get("id")
+            if kind == "pl_restore":
+                updated = playlist.parse(json.dumps(op.get("entries"))) if isinstance(op.get("entries"), list) else []
+                if not updated:
+                    mark("playlist_write_rejected", op=kind, reason="bad_entries")
+                    return "failed"
+                if own:
+                    mark("playlist_write_rejected", op=kind, reason="not_empty")
+                    return "accepted"   # Steam이 내 목록을 지우지 않았다(잠깐 끊긴 것 등) — 덮어쓰지 않는다
+            elif not playlist.valid_id(video):
+                mark("playlist_write_rejected", op=kind, reason="bad_id")
+                return "failed"
+            elif kind == "pl_add":
                 updated, status = playlist.apply_add(own, video, steam.server_time())
                 if status != "ok":
                     mark("playlist_write_rejected", op=kind, reason=status)
