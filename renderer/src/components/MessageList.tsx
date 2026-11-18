@@ -2,7 +2,6 @@ import { useLayoutEffect, useRef } from 'react';
 import { useUi } from '../state/UiContext';
 import { useChat, type Focus } from '../hooks/useChatView';
 import Cat from './Cat';
-import YellowCards from './YellowCards';
 import Message from './Message';
 import styles from './MessageList.module.css';
 
@@ -83,7 +82,6 @@ export default function MessageList() {
         <button className={`${styles.toBottom} ${styles.preview}`} aria-label={`맨 아래로: ${newest.author.name} ${newest.text}`} onClick={() => setLive(true)}>
           <span className={newest.author.avatar ? `${styles.pcat} ${styles.stand}` : styles.pcat}><Cat src={newest.author.avatar} framing="sprite" /></span>
           <span className={styles.pname}>{newest.author.name}</span>
-          <YellowCards count={newest.author.warns} />
           <span className={styles.pbody}>{newest.text}</span>
         </button>
       ) : (

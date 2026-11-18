@@ -8,7 +8,6 @@ import { gameStateLabel, STATE_LABEL } from '../chat/autoChest';
 import { BLOCKS_UNAVAILABLE, NO_BLOCKED_USERS } from '../chat/messages';
 import { PLAY_FEATURES } from '../chat/play';
 import Cat from './Cat';
-import YellowCards from './YellowCards';
 import styles from './Drawer.module.css';
 
 // 앱 버전은 main의 app.getVersion()(package.json의 version)이다. '앱 업데이트' 배지로 늘 보인다(설치 버전).
@@ -126,7 +125,7 @@ export default function Drawer() {
       <div className={me?.avatar ? `${styles.dhead} ${styles.standing}` : styles.dhead}>
         <div className={styles.acct}>
           <span className={me?.avatar ? `${styles.av} ${styles.stand}` : styles.av}><Cat src={me?.avatar} framing="sprite" /></span>
-          <div><strong>{me?.name ?? '계정 확인 중'}</strong>{me && <YellowCards count={me.warns} />}<div className={styles.sub}>{accountStatus}</div></div>
+          <div><strong>{me?.name ?? '계정 확인 중'}</strong><div className={styles.sub}>{accountStatus}</div></div>
         </div>
         <button className={styles.dclose} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
       </div>
@@ -196,9 +195,9 @@ export default function Drawer() {
           <span className={styles.cicon}>🎉</span>
           <span className={styles.ctitle}>플레이</span>
         </div>
-        {PLAY_FEATURES.map(({ key, label }) => (
+        {PLAY_FEATURES.map(({ key, label, hint }) => (
           <div key={key} className={styles.prow}>
-            <span>{label}</span>
+            <span>{label}<span className={styles.cstate}>{hint}</span></span>
             <div className={styles.cbtns} role="group" aria-label={label}>
               <button className={settings[key] ? `${styles.cbtn} ${styles.active}` : styles.cbtn} aria-pressed={settings[key]}
                 onClick={() => set({ [key]: true })}>켜기</button>

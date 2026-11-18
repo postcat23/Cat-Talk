@@ -2,7 +2,8 @@ import { useUi } from '../state/UiContext';
 import styles from './YellowCards.module.css';
 
 // 경고 총횟수(D-052)만큼 이름 뒤에 붙는 옐로카드(축구 옐로카드 모양의 노란 직사각형, 사용자 결정). 0이면 그리지 않는다.
-// 3이 되면 공개수배되고 0으로 돌아가므로 보통 1~2장이다. 드로어 '플레이 > 경고'를 끄면 어디서도 그리지 않는다(내 화면만)
+// 3이 되면 공개수배되고 0으로 돌아가므로 보통 1~2장이다. 드로어 '플레이 > 경고'를 끄면 어디서도 그리지 않는다(내 화면만).
+// 붙이는 곳은 채팅창 메시지 이름·참여자 목록·'@' 자동완성 목록뿐이다(사용자 결정 2026-11-18 — 반응 카드·드로어 프로필·새 메시지 미리보기에는 붙이지 않는다)
 export default function YellowCards({ count }: { count: number }) {
   const { settings } = useUi();
   if (!settings.playWarn || !(count > 0)) return null;

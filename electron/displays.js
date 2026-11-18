@@ -17,7 +17,8 @@ function byNumber(screen, n) {
 }
 
 // 식별 오버레이: 각 디스플레이 좌측 하단에 그 번호를 띄우고 IDENTIFY_MS 뒤 닫는다(Windows 디스플레이 설정의 '식별'과 같은 역할).
-// 모양은 사용자 결정(2026-11-18): 상자 154×154 DIP · 모서리 18 · 배경 검정 60% · 숫자 흰색 105px Bold(처음 220·24·150에서 약 70%로 축소).
+// 모양은 사용자 결정(2026-11-18): 상자 154×154 DIP · 모서리 18 · 배경 검정 60% · 숫자 흰색 89.25px Bold
+// (처음 220·24·150에서 약 70%로 축소한 뒤, 숫자만 105px의 85%로 한 번 더 축소).
 // 위치도 사용자 결정(2026-11-18): 작업영역(작업표시줄 제외)의 왼쪽·아래 끝에서 각각 MARGIN 안쪽.
 const IDENTIFY_MS = 2500;
 const BOX = 154;
@@ -26,7 +27,7 @@ const MARGIN = 24;
 const page = (n) => 'data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
 div{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border-radius:18px;background:rgba(0,0,0,.6);
-  color:#fff;font:700 105px/1 "Segoe UI",sans-serif;user-select:none}
+  color:#fff;font:700 89.25px/1 "Segoe UI",sans-serif;user-select:none}
 span{text-box:trim-both cap alphabetic}
 </style><div><span>${n}</span></div>`);
 
