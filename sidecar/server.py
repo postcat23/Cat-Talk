@@ -507,11 +507,13 @@ class Sidecar:
 
     def mark_state(self, event):
         # worker 상태 전이(연결 단계·오류 코드·재시도)만 남긴다. 계정·로비·이름·멤버는 남기지 않는다
-        key = (event.get("state"), event.get("notice"), bool(event.get("lobby_verified")), bool(event.get("send_enabled")))
+        key = (event.get("state"), event.get("notice"), bool(event.get("lobby_verified")), bool(event.get("send_enabled")),
+               event.get("lobby_source", ""))
         if key != self.diag_state:
             self.diag_state = key
+            # lobby_source(1.0.8): presence/registry/callback/friends — 로비를 찾은 경로(값은 경로 이름뿐, ID는 남기지 않는다)
             mark("worker_state", state=key[0], notice=key[1], lobby_verified=key[2], send_enabled=key[3],
-                 members=len(event.get("members") or []))
+                 lobby_source=key[4], members=len(event.get("members") or []))
 
     def close(self):
         if self.closed:

@@ -170,7 +170,9 @@ def verify_compatibility(root, stop=None):
                 observed[relative] = hashlib.file_digest(stream, "sha256").hexdigest()
         except OSError:
             observed[relative] = "unavailable"
-    native_ok = all(observed[name] in hashes for name, hashes in catalog["native"].items())
+    # steam_api64.dll is not pinned by hash any more: Steam() requires its exports (steam.REQUIRED_EXPORTS) instead.
+    # The hash is still part of the diagnostic fingerprint below.
+    native_ok = all(observed[name] in hashes for name, hashes in catalog["native"].items() if name != BUILD_FILES[1])
     if native_ok and before is not None:
         try:
             observed["features"] = probe_features(root, stop)
