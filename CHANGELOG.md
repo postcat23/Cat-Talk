@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-19
+
 ### Fixed
 
 - `sidecar` — 봉고캣 빌드 26754239(2026-11-19 업데이트)에서 '지원하지 않는 버전'으로 연결이 멈추던 문제 수정: 새 빌드의 연결 호환성 지문을 실측해 지원 목록(`feature-contract.json`)에 세 번째 프로필로 추가. 바뀐 곳은 lobby(Heathen.Steamworks)·privacy(숨김 setter의 축소 애니메이션 등 게임 코드) 두 지문이며, 이전 빌드 지원·검사 방식은 그대로
