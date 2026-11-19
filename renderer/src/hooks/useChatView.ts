@@ -56,7 +56,7 @@ export interface Chat {
   notice: string;
   toast: Toast | null;
   canSend: boolean;
-  // 1.0.8 티어: 채팅 송신(T1)이 멈춰도 Cat Talk 명령(경고·플리, T0)은 쓸 수 있다 — 입력창은 이것으로 연다
+  // 1.0.8 티어: 채팅 송신(T1)이 멈춰도 Cat Talk 명령(경고·칭찬·플리, T0)은 쓸 수 있다 — 입력창은 이것으로 연다
   canCommand: boolean;
   degraded: string[];   // 멈춘 게이트(chat_send·avatars). 소프트 배너 문구의 재료
   incoming: number | undefined;
@@ -439,7 +439,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const send = useCallback(async (text: string) => {
     const current = viewRef.current;
     if (!current?.can_send) {
-      // 채팅 송신만 멈춘 상태(1.0.8 T1): 글은 입력창에 남기고 이유를 알린다. 경고·플리 명령은 이 경로로 오지 않는다
+      // 채팅 송신만 멈춘 상태(1.0.8 T1): 글은 입력창에 남기고 이유를 알린다. 경고·칭찬·플리 명령은 이 경로로 오지 않는다
       if (current?.can_command && current.degraded?.includes('chat_send')) notify(CHAT_SEND_PAUSED);
       return false;
     }

@@ -39,7 +39,7 @@ MAX_REQUEST = 32768
 # 렌더러로 보내지 않는 worker 프로필 키: Steam 차단 판정(D-033), 경고·칭찬 멤버 데이터 원문(D-052·1.0.8 — 집계값 warns·praises만
 # 보낸다), 플리 원문(D-053 — 검증한 합집합 playlist만 보낸다)
 INTERNAL_PROFILE_KEYS = {"steam_blocked", "cattalk_warns", "cattalk_wanted", "cattalk_praise", "cattalk_praised", "cattalk_pl"}
-CATTALK_ID = "cattalk-"     # 경고·플리 멤버 데이터 쓰기 명령 id 접두(채팅 send 명령과 결과를 가른다)
+CATTALK_ID = "cattalk-"     # 경고·칭찬·플리 멤버 데이터 쓰기 명령 id 접두(채팅 send 명령과 결과를 가른다)
 PLAYLIST_OPS = ("pl_add", "pl_remove")
 MAX_PLAYLIST_EVENTS = 32     # 렌더러가 아직 받아 가지 않은 추가 알림 상한
 # 플리 재입장 복원(사용자 명세, 2026-11-18): 멤버가 로비에 (다시) 보인 뒤 이 시간 안에 생긴 곡은 알리지 않는다 — 재입장 복원으로
@@ -515,7 +515,7 @@ class Sidecar:
         if key != self.diag_state:
             self.diag_state = key
             # lobby_source(1.0.8): presence/registry/callback/friends — 로비를 찾은 경로(값은 경로 이름뿐, ID는 남기지 않는다)
-            # degraded(1.0.8): 멈춘 게이트(chat_send·avatars). T0(로비·경고·플리)은 여기 없다
+            # degraded(1.0.8): 멈춘 게이트(chat_send·avatars). T0(로비·경고·칭찬·플리)은 여기 없다
             mark("worker_state", state=key[0], notice=key[1], lobby_verified=key[2], send_enabled=key[3],
                  lobby_source=key[4], degraded=list(key[5]), members=len(event.get("members") or []))
 

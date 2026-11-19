@@ -77,7 +77,7 @@ const DEGRADED_TEXT: Record<string, string> = {
   chat_send: '채팅 보내기',
   avatars: '모자와 스킨 표시',
 };
-export const CHAT_SEND_PAUSED = '봉고캣 업데이트로 잠시 채팅을 보낼 수 없습니다. 경고·플리는 그대로 사용할 수 있습니다.';
+export const CHAT_SEND_PAUSED = '봉고캣 업데이트로 잠시 채팅을 보낼 수 없습니다. 경고·칭찬·플리는 그대로 사용할 수 있습니다.';
 
 // 목적격 조사는 마지막 이름의 받침으로 고른다(autoChest.ts object()와 같은 규칙)
 function withObject(text: string) {
@@ -90,7 +90,7 @@ export function degradedNotice(degraded: string[]) {
   if (names.length === 0) return '';
   const target = withObject(names.join('·'));
   const avatars = degraded.includes('avatars') ? ' 고양이는 기본 모습으로 보입니다.' : '';
-  const kept = degraded.includes('chat_send') ? '받기·경고·플리' : '채팅·경고·플리';   // 보내기가 멈췄을 때만 '받기'(채팅 받기). 아니면 채팅 전체가 그대로다
+  const kept = degraded.includes('chat_send') ? '받기·경고·칭찬·플리' : '채팅·경고·칭찬·플리';   // 보내기가 멈췄을 때만 '받기'(채팅 받기). 아니면 채팅 전체가 그대로다
   // T1·T2는 원격 호환성 매니페스트(②)로 앱 업데이트 없이 돌아온다(T3 배너만 'Cat Talk 업데이트' 안내, autoChest.ts)
   return `봉고캣 업데이트로 ${target} 잠시 사용할 수 없습니다.${avatars} 곧 자동으로 복구됩니다. ${kept}는 그대로 사용할 수 있습니다.`;
 }
