@@ -313,7 +313,13 @@ function makeV3(legacy3, w) {   // 1.0.0 앱이 설치한 세트(상자 + 투명
   check('22d 백업은 원본(v2 아님)', sha(path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig')) === origSha);
 
   // ---- 이전 패치 세트(v3 = 1.0.0 앱이 설치한 세트) → v5(D-046·D-047): 같은 '재적용 필요' → 게임 한 번 재시작. 숨김 목록은 재적용 뒤 다시 쓴다 ----
+  // 게임 빌드 26754239부터 숨김 setter 모양이 바뀌어 v3 패처(69e21e9)는 그 빌드를 거부한다(member_setter_shape). 그 빌드에는 v3 설치본이
+  // 생길 수 없으므로(게임 업데이트가 DLL을 원본으로 바꾸고, v3 패처는 새 빌드를 패치하지 않는다) 이 묶음은 SKIP으로 표시하고 통과로 세지 않는다.
   const legacy3 = buildAt(v3Commit, 'legacy3');
+  let v3refusal = null;
+  try { execFileSync(legacy3, ['inspect', copy]); } catch (e) { try { v3refusal = JSON.parse(String(e.stdout)).reason; } catch { v3refusal = 'unreadable'; } }
+  if (v3refusal === 'member_setter_shape') console.log('SKIP 22e-22j v3 -> v5 재적용 (v3 패처가 이 빌드를 거부: member_setter_shape)');
+  else {
   w = world('v3t', { running: true });
   await w.chest.enable('transparent');   // 같은 세계에서 직접 설치한 v5 바이트(원본 백업도 여기서)
   const directV4b = sha(w.dll);
@@ -333,6 +339,7 @@ function makeV3(legacy3, w) {   // 1.0.0 앱이 설치한 세트(상자 + 투명
   check('22h 결과는 원본에서 직접 설치한 v5와 같은 바이트', sha(w.dll) === directV4b && directV4b !== v3bytes);
   check('22i 백업은 원본(v3 아님)', sha(path.join(w.data, 'auto_chest', 'backup', 'Assembly-CSharp.dll.orig')) === origSha);
   check('22j 재적용으로 v5가 되면 마지막 숨김 목록을 쓴다', fs.existsSync(w.hidden) && fs.readFileSync(w.hidden, 'ascii') === '76561198000000021\n');
+  }
 
   // ---- 차단 멤버 고양이 숨김 목록 파일(D-033 3단계): 현재 세트 설치 상태에서만 통째로 쓴다 ----
   const ID1 = '76561198000000011', ID2 = '76561198000000012';
