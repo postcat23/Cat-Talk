@@ -9,7 +9,8 @@ export interface Participant {
   base: string;    // 원본 Steam 이름. 닉네임 모달 placeholder
   color: string;   // 아바타 배경
   avatar?: string; // 실아바타 data URI(스킨+모자 합성 정지 PNG). 없으면 실루엣 폴백(Cat)
-  warns: number;   // 경고 총횟수(D-052, 로비 Cat Talk 사용자들이 준 경고 합). 이름 뒤 옐로카드 수
+  warns: number;   // 경고 총횟수(D-052, 로비 Cat Talk 사용자들이 준 경고 합). 이름 뒤 옐로카드 + 숫자
+  praises: number; // 칭찬 총횟수(1.0.8, 경고의 거울). 이름 뒤 별 + 숫자
 }
 
 export interface ChatMessage {
@@ -45,10 +46,10 @@ export interface ViewProfile {
   blocked?: boolean;       // participants 항목에만: 앱에서 차단한 멤버(D-033). 목록·참여자 수에서 숨긴다
 }
 
-// id = 로비:대상:처형 시각(같은 처형은 한 번). at = 렌더러가 받은 시각(Date.now) — 화면이 가려져 보류할 때 기한 판정용.
-// 같은 대상의 처형이 더 와서 하나로 묶이면 at은 가장 최근에 받은 시각이 된다
+// 발동 이벤트(공개수배 D-052·칭찬 도장 1.0.8). id = 로비:대상:발동 시각(칭찬은 앞에 'praise:' — 같은 발동은 한 번).
+// at = 렌더러가 받은 시각(Date.now) — 화면이 가려져 보류할 때 기한 판정용. 같은 대상의 발동이 더 와서 하나로 묶이면 at은 가장 최근에 받은 시각
 export interface WantedEvent { id: string; target: string; at?: number }
-// 전단 처리 결과(진단 로그 wanted_display, 결과 코드만): 끝까지 재생 / 같은 대상과 묶여 생략 / 플레이 > 경고 꺼짐 /
+// 처리 결과(진단 로그 wanted_display·praised_display, 결과 코드만): 끝까지 재생 / 같은 대상과 묶여 생략 / 플레이 > 경고(칭찬) 꺼짐 /
 // 가려진 채 1분 지남 / 대상이 목록에 없음
 export type WantedResult = 'shown' | 'coalesce' | 'off' | 'expired' | 'absent';
 
@@ -87,6 +88,7 @@ export interface UiSettings {
   clear_cats: boolean;
   auto_open_chest: boolean;
   play_warn: boolean;   // 드로어 '플레이 > 경고'
+  play_praise?: boolean;   // 드로어 '플레이 > 칭찬'(1.0.8). 이전 사이드카에는 없다
 }
 
 export interface ViewResponse {
@@ -126,6 +128,11 @@ export interface ViewResponse {
   warns?: Record<string, number>;
   wanted?: WantedEvent[];
   warn_failed?: number;
+  // 칭찬(1.0.8, 경고의 거울). praises = 대상별 칭찬 총횟수(0 제외), praised = 새로 생긴 칭찬 도장 발동(한 번만 온다),
+  // praise_failed = 지난 view 뒤 실패한 칭찬 쓰기 수
+  praises?: Record<string, number>;
+  praised?: WantedEvent[];
+  praise_failed?: number;
   // 플리 공유(D-053, Cat-Talk 사이드카). playlist = 보이는 멤버(차단 제외) 곡의 합집합(등록순), playlist_mine = 내 곡(내가 넣은 순),
   // playlist_added = 새 추가 알림, playlist_failed = 지난 view 뒤 실패한 쓰기의 오류 코드(둘 다 검색이 아닐 때 한 번만 온다)
   playlist?: PlaylistEntry[];
@@ -150,12 +157,13 @@ function paletteColor(uid: string) {
 export type AvatarLookup = (avatarId: string | undefined) => string | undefined;
 
 export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string, avatarOf?: AvatarLookup,
-  nicks?: Record<string, string>, warns?: Record<string, number>): Participant {
+  nicks?: Record<string, string>, warns?: Record<string, number>, praises?: Record<string, number>): Participant {
   const base = profile?.name || fallbackName;
   return {
     id: uid, name: displayName(uid, base, nicks), base, color: profile?.color ?? paletteColor(uid),
     avatar: avatarOf?.(profile?.avatar_id),
     warns: warns?.[uid] ?? 0,
+    praises: praises?.[uid] ?? 0,
   };
 }
 
@@ -185,7 +193,8 @@ export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatIt
     return {
       kind: 'msg', id: m.id, seq: m.seq, sender: m.sender, own, text: m.body, time: clock(m.received),
       // 나간 참여자는 profiles에 없어도 메시지에 남은 이름으로 표시한다
-      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf, view.nicknames, view.warns),
+      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf, view.nicknames, view.warns,
+        view.praises),
       status: m.unsaved ? UNSAVED_LABEL : STATUS_LABEL[m.status],
       resendable: own && m.status === 'failed' && !m.unsaved,
     };
@@ -215,6 +224,7 @@ export const SETTING_KEYS: Partial<Record<keyof Settings, string>> = {
   clearCats: 'clear_cats',
   autoOpenChest: 'auto_open_chest',
   playWarn: 'play_warn',
+  playPraise: 'play_praise',
 };
 
 export function settingsFromView(view: ViewResponse): Partial<Settings> {
@@ -225,6 +235,6 @@ export function settingsFromView(view: ViewResponse): Partial<Settings> {
     toastAlert: view.notifications.notification_toast,
     catInteraction: view.reactions_enabled,
     ...(ui && { opacity: ui.chat_opacity, presence: ui.presence_notices, clearCats: ui.clear_cats, autoOpenChest: ui.auto_open_chest,
-      playWarn: ui.play_warn }),
+      playWarn: ui.play_warn, ...(typeof ui.play_praise === 'boolean' && { playPraise: ui.play_praise }) }),
   };
 }

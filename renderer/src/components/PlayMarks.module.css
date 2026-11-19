@@ -1,0 +1,15 @@
+/* 이름 뒤 누적 표시(1.0.8): 아이콘 하나 + 숫자. 경고 = 옐로카드(이름 글자 높이에 맞춘 작은 세로 직사각형), 칭찬 = 빨강~분홍 별(PraiseStar).
+   숫자는 아이콘과 같은 색(사용자 지정). 색은 테마와 무관하게 같고, 아이콘·숫자 가장자리의 얇은 어두운 윤곽으로 라이트 테마에서도 보이게.
+   --praise는 PraiseStar.tsx PRAISE_STAR와 같은 값이어야 한다 */
+/* 세로 정렬(사용자 피드백 '숫자가 더 위에 위치함'): 가운데 정렬(align-items:center)로 두면 아이콘 상자와 숫자 글자가 따로 픽셀에
+   맞춰져, 줄 위치에 소수점이 끼면 숫자만 1px 위로 반올림됐다(채팅 이름 줄 실측). 그래서 모두 숫자 기준선 하나에 붙이고, 아이콘은 정수 px만
+   내려 숫자(11px 굵은 숫자 높이 약 7.9px)와 가운데를 맞춘다 — 카드(10px)는 기준선 아래 1px, 별(14px)은 3px. 같은 기준선을 따르므로
+   반올림돼도 함께 움직인다. 묶음의 기준선이 곧 숫자 기준선이라 숫자는 이름 글자와 같은 기준선에 앉는다 */
+.marks{--warn:#f7c600;--praise:#ff4f7b;display:inline-flex;align-items:baseline;gap:6px;margin-left:4px;flex:none}
+.mark{display:inline-flex;align-items:baseline;gap:2px}
+.card{display:block;position:relative;top:1px;width:7px;height:10px;border-radius:1.5px;background:var(--warn);box-shadow:inset 0 0 0 1px rgba(0,0,0,.22)}
+/* 별은 모양 경계에 맞춘 viewBox(PraiseStar)라 상자를 꽉 채운다. 꽉 찬 7×10 카드와 무게가 비슷하도록 14px(사용자 피드백 — 12px은 너무 작았다) */
+.star{display:block;position:relative;top:3px;width:14px;height:14px;overflow:visible}
+.num{font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;text-shadow:0 0 1px rgba(0,0,0,.35)}
+.warnNum{color:var(--warn)}
+.praiseNum{color:var(--praise)}

@@ -4,6 +4,9 @@
 - cattalk.warns  = {"<대상 SteamID64>": [내가 그 대상에게 준 경고 수, 마지막 경고의 Steam 서버 시각(초)]}
 - cattalk.wanted = {"<대상 SteamID64>": 처형 시각} — 내가 기여했던 대상이 공개수배되면 남기는 표식
 게임은 hat·skin 등 정해진 키만 읽어 바닐라 화면에는 나오지 않는다(바닐라는 멤버 데이터가 바뀌면 그 멤버 고양이 외형만 다시 적용).
+칭찬(1.0.8, 사용자 명세 2026-11-19 — 경고의 거울)도 같은 모양·같은 집계를 쓴다:
+- cattalk.praise  = {"<대상>": [내가 준 칭찬 수, 마지막 칭찬 시각]}, cattalk.praised = {"<대상>": 칭찬 도장 발동 시각}
+아래 함수는 키와 무관하게 (누적 항목, 발동 표식) 쌍을 다룬다 — 경고·칭찬 모두 같은 함수로 센다.
 
 집계(모든 Cat Talk 클라이언트가 같은 데이터로 같은 값을 얻는다):
 - 처형 시각 cut(X) = 로비 전원의 wanted[X] 중 최댓값(없으면 0)
@@ -17,7 +20,9 @@ import re
 
 WARNS_KEY = "cattalk.warns"
 WANTED_KEY = "cattalk.wanted"
-THRESHOLD = 3              # 경고 총횟수가 여기에 닿으면 공개수배(사용자 명세)
+PRAISE_KEY = "cattalk.praise"
+PRAISED_KEY = "cattalk.praised"
+THRESHOLD = 3              # 총횟수가 여기에 닿으면 발동 — 경고는 공개수배, 칭찬은 칭찬 도장(사용자 명세)
 MAX_VALUE_BYTES = 8000     # Steam 멤버 데이터 값 상한(k_cubChatMetadataMax 8192)보다 조금 아래
 MAX_WANTED_MARKERS = 64    # 처형 표식은 최근 것만 둔다(로비를 떠난 대상의 오래된 표식이 쌓이지 않게)
 STEAM_ID64 = re.compile(r"^[1-9][0-9]{16}$")
@@ -109,3 +114,5 @@ def stale(warns, cut):
 # 채팅 입력의 경고 명령: '@이름 경고!'(이름에 공백이 있을 수 있다). 렌더러(chat/warns.ts)와 같은 규칙.
 # 이 모양은 채팅(채널 3)으로 보내지 않는다 — 바닐라 말풍선에 나오지 않게(사이드카 send가 한 번 더 막는다).
 COMMAND = re.compile(r"^\s*@(.+?)\s*경고!\s*$")
+# 칭찬 명령 '@이름 칭찬!'(1.0.8). 렌더러(chat/warns.ts PRAISE_COMMAND)와 같은 규칙이고, 경고처럼 채팅으로 보내지 않는다
+PRAISE_COMMAND = re.compile(r"^\s*@(.+?)\s*칭찬!\s*$")

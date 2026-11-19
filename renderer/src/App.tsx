@@ -22,7 +22,7 @@ const HEIGHT_PCT: Record<ChatHeight, 100 | 70 | 50> = { '100%': 100, '70%': 70, 
 function Panel() {
   const { settings, overlays, dispatch } = useUi();
   const reactions = useReactionStack(MAX_CARDS[settings.height], settings.catInteraction);
-  const chat = useChatView(reactions.push, settings.catInteraction, settings.playWarn);
+  const chat = useChatView(reactions.push, settings.catInteraction, settings.playWarn, settings.playPraise);
   const { saveSettings } = chat;
   const chestOff = useCallback((features: Feature[]) => {
     const patch = { ...(features.includes('chest') && { autoOpenChest: false }), ...(features.includes('transparent') && { clearCats: false }) };
@@ -63,8 +63,8 @@ function Panel() {
                 입력창은 로비가 확인되면 연다(canCommand, 1.0.8): 채팅 송신이 멈춰도 경고·플리 명령은 쓸 수 있고, 일반 글은 send가 안내한다 */}
             <Composer disabled={!chat.canCommand} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen || overlays.playlist !== null)}
               restored={chat.restoredDraft} cooldown={chat.cooldown} onSend={chat.send} onDraft={chat.saveDraft}
-              participants={chat.participants} meId={chat.me?.id} onWarn={chat.warn} onPlaylist={playlistCommand} onNotify={chat.notify}
-              warnEnabled={settings.playWarn} mention={mentionEnabled(settings)} />
+              participants={chat.participants} meId={chat.me?.id} onWarn={chat.warn} onPraise={chat.praise} onPlaylist={playlistCommand}
+              onNotify={chat.notify} warnEnabled={settings.playWarn} praiseEnabled={settings.playPraise} mention={mentionEnabled(settings)} />
           </div>
           {/* 닉네임 변경(D-032): 패널 전체 기준 가운데. 대화 영역 오버레이와 달리 상단바·입력창까지 덮는다 */}
           <NicknameModal />

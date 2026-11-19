@@ -21,6 +21,10 @@ const ERROR_TEXT: Record<string, string> = {
   // 경고(D-052): 대상이 지금 로비에 없거나 연결이 바뀌었으면 warn_unavailable. warn_command는 경고 명령이 채팅 경로로 갔을 때(정상이면 안 옴)
   warn_unavailable: '경고하지 못했습니다. 대상이 지금 로비에 있는지 확인해 주세요.',
   warn_command: '경고 명령은 채팅으로 보내지 않습니다.',
+  // 칭찬(1.0.8, 경고의 거울). praise_self는 사이드카가 자기 칭찬을 한 번 더 막았을 때(정상이면 입력창이 먼저 막는다)
+  praise_unavailable: '칭찬하지 못했습니다. 대상이 지금 로비에 있는지 확인해 주세요.',
+  praise_command: '칭찬 명령은 채팅으로 보내지 않습니다.',
+  praise_self: '본인은 칭찬할 수 없습니다.',
   // 플리(D-053): 보낼 수 없음(연결·로비 확인 전)·삭제 실패·이미 있음·10개. playlist_command는 '/플리'가 채팅 경로로 갔을 때(정상이면 안 옴)
   playlist_unavailable: PL_ADD_FAILED,
   playlist_remove_unavailable: PL_REMOVE_FAILED,
@@ -38,6 +42,9 @@ export const BLOCKS_UNAVAILABLE = '차단 목록을 확인할 수 없어 상대 
 
 // 경고를 끈 채 '@이름 경고!'를 입력했을 때(사용자 결정: 보내지 않고 안내, 글은 입력창에 남긴다)
 export const WARN_OFF = '경고가 꺼져 있습니다. 드로어 > 플레이에서 켤 수 있습니다.';
+// 칭찬도 같다(1.0.8). 자기 자신을 칭찬하려 하면 쓰지 않고 안내만 한다(사용자 명세, 글은 입력창에 남긴다)
+export const PRAISE_OFF = '칭찬이 꺼져 있습니다. 드로어 > 플레이에서 켤 수 있습니다.';
+export const PRAISE_SELF = '본인은 칭찬할 수 없습니다.';
 
 export const PROFILE_OPENING = 'Steam 프로필을 여는 중입니다.';
 export const TRADE_OPENING = 'Steam 교환 페이지를 여는 중입니다.';

@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../chat/model';
 import CatBadge from './CatBadge';
-import YellowCards from './YellowCards';
+import PlayMarks from './PlayMarks';
 import styles from './Message.module.css';
 
 interface Props {
@@ -23,7 +23,7 @@ export default function Message({ message, lead, afterNotice, jumped, onJump, on
       {lead && (
         <div className={styles.head}>
           <CatBadge participant={sender} />
-          <span className={styles.nm}>{sender.name}<YellowCards count={sender.warns} /></span>
+          <span className={styles.nm}>{sender.name}<PlayMarks warns={sender.warns} praises={sender.praises} /></span>
         </div>
       )}
       <div className={styles.row}>

@@ -14,6 +14,9 @@ upstream은 로비 쓰기를 하지 않는 원칙(worker.close 주석 'No LeaveL
 내 cattalk.pl을 고친다(쓰기 직전에 Steam에서 다시 읽음). 로비 전체 중복 검사는 차단을 아는 사이드카가 하고, 여기서는 내 목록의
 상한(10)·중복만 본다. 결과 상태: accepted / failed / pl_full / pl_exists.
 재입장 복원 {"op": "pl_restore", "entries": [[영상, 시각], …]}은 지금 내 cattalk.pl이 비었을 때만 그대로(원래 등록 시각) 쓴다.
+
+칭찬(1.0.8, 경고의 거울)도 같은 길이다: 프로필에 cattalk_praise·cattalk_praised 원문을 싣고, {"op": "praise"} = 내 칭찬 +1,
+{"op": "praise_consume", "target", "when"} = 칭찬 도장 발동 시각까지의 내 항목 정리 + 표식. 경고와 키만 다르다(TALLY_KEYS).
 """
 import ctypes as C
 import json
@@ -24,8 +27,13 @@ import playlist
 import warns as model
 from diag import mark
 
-CATTALK_OPS = ("warn", "consume", "pl_add", "pl_remove", "pl_restore")
+CATTALK_OPS = ("warn", "consume", "praise", "praise_consume", "pl_add", "pl_remove", "pl_restore")
 PLAYLIST_OPS = ("pl_add", "pl_remove", "pl_restore")
+# 누적·발동 표식 명령 → (누적 키, 표식 키, 누적 +1인가). 경고와 칭찬은 키만 다르고 같은 함수로 고친다
+TALLY_KEYS = {
+    "warn": (model.WARNS_KEY, model.WANTED_KEY, True), "consume": (model.WARNS_KEY, model.WANTED_KEY, False),
+    "praise": (model.PRAISE_KEY, model.PRAISED_KEY, True), "praise_consume": (model.PRAISE_KEY, model.PRAISED_KEY, False),
+}
 
 
 def install():
@@ -53,9 +61,11 @@ def install():
             try:
                 row["cattalk_warns"] = self._member_data(lobby, uid, model.WARNS_KEY)
                 row["cattalk_wanted"] = self._member_data(lobby, uid, model.WANTED_KEY)
+                row["cattalk_praise"] = self._member_data(lobby, uid, model.PRAISE_KEY)
+                row["cattalk_praised"] = self._member_data(lobby, uid, model.PRAISED_KEY)
                 row["cattalk_pl"] = self._member_data(lobby, uid, playlist.KEY)
             except Exception:
-                pass   # 읽지 못하면 이 멤버의 경고·플리만 빠진다(채팅은 그대로)
+                pass   # 읽지 못하면 이 멤버의 경고·칭찬·플리만 빠진다(채팅은 그대로)
             return row
 
     worker_module.Steam = SteamWarnAware
@@ -89,19 +99,26 @@ def install():
             if kind in PLAYLIST_OPS:
                 return self._playlist(lobby, account, kind, op)
             steam = self.steam
-            own_warns = model.parse_warns(steam._member_data(lobby, account, model.WARNS_KEY))
-            own_wanted = model.parse_wanted(steam._member_data(lobby, account, model.WANTED_KEY))
+            if kind not in TALLY_KEYS:
+                mark("warn_write_rejected", op=kind, reason="bad_op")
+                return "failed"
+            if kind == "praise" and target == account:
+                mark("warn_write_rejected", op=kind, reason="self")   # 자기 칭찬 금지(사용자 명세) — 사이드카도 막지만 쓰기 직전 한 번 더
+                return "failed"
+            count_key, marker_key, adding = TALLY_KEYS[kind]
+            own_counts = model.parse_warns(steam._member_data(lobby, account, count_key))
+            own_markers = model.parse_wanted(steam._member_data(lobby, account, marker_key))
             written = {}
-            if op.get("op") == "warn":
-                cut = max((model.parse_wanted(steam._member_data(lobby, uid, model.WANTED_KEY)).get(target, 0) for uid in members), default=0)
-                updated = model.apply_warn(own_warns, target, steam.server_time(), cut)
-                written[model.WARNS_KEY] = model.dump_warns(updated)
-            elif op.get("op") == "consume" and type(op.get("when")) is int and op["when"] > 0:
-                warns, wanted = model.apply_consume(own_warns, own_wanted, target, op["when"])
-                if warns != own_warns:
-                    written[model.WARNS_KEY] = model.dump_warns(warns)
-                if wanted != own_wanted:
-                    written[model.WANTED_KEY] = model.dump_wanted(wanted)
+            if adding:
+                cut = max((model.parse_wanted(steam._member_data(lobby, uid, marker_key)).get(target, 0) for uid in members), default=0)
+                updated = model.apply_warn(own_counts, target, steam.server_time(), cut)
+                written[count_key] = model.dump_warns(updated)
+            elif type(op.get("when")) is int and op["when"] > 0:
+                counts, markers = model.apply_consume(own_counts, own_markers, target, op["when"])
+                if counts != own_counts:
+                    written[count_key] = model.dump_warns(counts)
+                if markers != own_markers:
+                    written[marker_key] = model.dump_wanted(markers)
             else:
                 mark("warn_write_rejected", op=kind, reason="bad_op")
                 return "failed"

@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent } from 'react';
 import { SEND_COOLDOWN_MS, type Cooldown, type RestoredDraft } from '../hooks/useChatView';
 import type { Participant } from '../chat/model';
-import { filterParticipants, mentionAt, parseWarnCommand, resolveTarget, type Mention } from '../chat/warns';
-import { WARN_OFF } from '../chat/messages';
+import { filterParticipants, mentionAt, parsePlayCommand, resolvePlayTarget, type Mention, type PlayCommand } from '../chat/warns';
+import { PRAISE_OFF, PRAISE_SELF, WARN_OFF } from '../chat/messages';
 import { COMMAND_MAX_LEN, isPlaylistCommand } from '../chat/playlist';
 import Cat from './Cat';
-import YellowCards from './YellowCards';
+import PlayMarks from './PlayMarks';
 import styles from './Composer.module.css';
 
 const MAX_LEN = 50;
@@ -19,12 +19,14 @@ const MAX_SUGGEST = 20;   // @ 자동완성 목록 최대 줄 수(로비 인원�
 // 경고(D-052): '@'를 치면 참여자 자동완성(입력한 글자가 든 사람을 입력 상자 위 목록으로, 사용자 명세). '@이름 경고!'는 채팅으로 보내지 않고
 // onWarn으로 가로챈다(채팅 쿨다운과 무관). 목록에서 고른 사람은 id로 묶어 이름이 같은 사람이 있어도 정확히 지목한다.
 // 직접 친 이름을 찾지 못하거나 여러 명이면 안내만 하고 글은 입력창에 남긴다.
-// 드로어 '플레이': warnEnabled가 꺼져 있으면 '@이름 경고!'를 보내지 않고 안내만 한다(글은 남긴다). '@' 자동완성은
+// 칭찬(1.0.8, 경고의 거울): '@이름 칭찬!'도 같은 자동완성·같은 가로채기로 onPraise에 넘긴다. 자기 자신은 칭찬할 수 없다(Steam ID 비교 —
+// 자동완성은 명령 종류를 모르므로 목록은 그대로 두고 실행 시점에 막는다, 사용자 명세).
+// 드로어 '플레이': warnEnabled·praiseEnabled가 꺼져 있으면 그 명령을 보내지 않고 안내만 한다(글은 남긴다, 서로 독립). '@' 자동완성은
 // '@' 단축어를 쓰는 플레이 기능이 하나라도 켜져 있을 때만 뜬다(mention, chat/play.ts) — 모두 꺼져 있으면 '@'는 일반 글자다.
 // 플리(D-053): '/플리 …'도 채팅으로 보내지 않고 onPlaylist로 가로챈다(쿨다운과 무관). 명령은 50자 제한 대신 COMMAND_MAX_LEN까지
 // 받고(붙여넣기 포함, 사용자 명세) 글자 수 표시를 숨긴다(사용자 결정). 처리되면 입력창을 비우고, 링크 오류 등은 글을 남긴다.
-export default function Composer({ disabled, hidden = false, restored, cooldown, participants, meId, onSend, onWarn, onPlaylist, onNotify, onDraft,
-  warnEnabled, mention: mentionOn }: {
+export default function Composer({ disabled, hidden = false, restored, cooldown, participants, meId, onSend, onWarn, onPraise, onPlaylist,
+  onNotify, onDraft, warnEnabled, praiseEnabled, mention: mentionOn }: {
   disabled: boolean;
   hidden?: boolean;
   restored: RestoredDraft | null;
@@ -33,10 +35,12 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
   meId?: string;
   onSend: (text: string) => Promise<boolean>;
   onWarn: (target: string) => Promise<boolean>;
+  onPraise: (target: string) => Promise<boolean>;
   onPlaylist: (text: string) => Promise<boolean>;
   onNotify: (text: string) => void;
   onDraft: (text: string, now?: boolean) => void;
   warnEnabled: boolean;
+  praiseEnabled: boolean;
   mention: boolean;
 }) {
   const [value, setValue] = useState('');
@@ -49,10 +53,11 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
   const [dismissed, setDismissed] = useState(false);   // Esc로 닫으면 다음 입력까지 열지 않는다
   const bound = useRef<Mention | null>(null);
   const list = useRef<HTMLDivElement>(null);
+  // 본인은 목록에서 뺀다(사용자 명세 1.0.8 — 경고·칭찬 공통 목록)
   const candidates = useMemo(() => (mention ? filterParticipants(mention.query, participants).slice(0, MAX_SUGGEST) : []), [mention, participants]);
   const suggesting = mentionOn && !!mention && !dismissed && !disabled && candidates.length > 0;
   const playlistCommand = isPlaylistCommand(value);
-  const command = parseWarnCommand(value) !== null || playlistCommand;
+  const command = parsePlayCommand(value) !== null || playlistCommand;
 
   function show(text: string) {
     latest.current = text;
@@ -98,14 +103,16 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); });
   }
 
-  // '@이름 경고!': 채팅이 아니라 경고. 대상을 못 찾거나 여러 명이면 안내하고 글은 남긴다
-  async function warn(name: string) {
-    if (!warnEnabled) { onNotify(WARN_OFF); return; }
-    const target = resolveTarget(name, participants, bound.current);
+  // '@이름 경고!'·'@이름 칭찬!': 채팅이 아니라 경고·칭찬. 꺼져 있거나, 대상을 못 찾거나 여러 명이거나, 자기 자신을 칭찬하면
+  // 안내하고 글은 남긴다(자기 판정은 Steam ID — 사용자 명세)
+  async function play(kind: PlayCommand, name: string) {
+    if (!(kind === 'warn' ? warnEnabled : praiseEnabled)) { onNotify(kind === 'warn' ? WARN_OFF : PRAISE_OFF); return; }
+    const target = resolvePlayTarget(kind, name, participants, bound.current, meId);
     if (target === 'none') { onNotify(`'${name}'님을 로비에서 찾지 못했습니다. @를 입력해 목록에서 골라 주세요.`); return; }
     if (target === 'ambiguous') { onNotify(`'${name}' 이름이 여러 명입니다. @를 입력해 목록에서 골라 주세요.`); return; }
+    if (target === 'self') { onNotify(PRAISE_SELF); return; }
     sending.current = true;
-    const ok = await onWarn(target);
+    const ok = await (kind === 'warn' ? onWarn : onPraise)(target);
     sending.current = false;
     if (ok && latest.current === value) {
       show('');
@@ -146,8 +153,8 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
     const text = value.trim();
     if (!text || disabled || sending.current) return;
     if (isPlaylistCommand(text)) { await playlist(text); return; }
-    const name = parseWarnCommand(text);
-    if (name !== null) { await warn(name); return; }
+    const parsed = parsePlayCommand(text);
+    if (parsed) { await play(parsed.kind, parsed.name); return; }
     if (cooldown.active) return;
     sending.current = true;
     const ok = await onSend(text);
@@ -194,7 +201,7 @@ export default function Composer({ disabled, hidden = false, restored, cooldown,
                 <span className={styles.sname}>
                   <span className={styles.snm}>{p.name}</span>
                   {p.id === meId && <span className={styles.sme}>나</span>}
-                  <YellowCards count={p.warns} />
+                  <PlayMarks warns={p.warns} praises={p.praises} />
                 </span>
                 {p.base !== p.name && <span className={styles.sbase}>{p.base}</span>}
               </span>

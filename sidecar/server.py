@@ -32,12 +32,13 @@ from volatile_store import VolatileStore
 import warns as warn_model
 import playlist as pl_model
 import worker_guard
+from play_tally import praise_tally, warn_tally
 from diag import enable_faulthandler, mark
 
 MAX_REQUEST = 32768
-# 렌더러로 보내지 않는 worker 프로필 키: Steam 차단 판정(D-033), 경고 멤버 데이터 원문(D-052 — 집계값 warns만 보낸다),
-# 플리 원문(D-053 — 검증한 합집합 playlist만 보낸다)
-INTERNAL_PROFILE_KEYS = {"steam_blocked", "cattalk_warns", "cattalk_wanted", "cattalk_pl"}
+# 렌더러로 보내지 않는 worker 프로필 키: Steam 차단 판정(D-033), 경고·칭찬 멤버 데이터 원문(D-052·1.0.8 — 집계값 warns·praises만
+# 보낸다), 플리 원문(D-053 — 검증한 합집합 playlist만 보낸다)
+INTERNAL_PROFILE_KEYS = {"steam_blocked", "cattalk_warns", "cattalk_wanted", "cattalk_praise", "cattalk_praised", "cattalk_pl"}
 CATTALK_ID = "cattalk-"     # 경고·플리 멤버 데이터 쓰기 명령 id 접두(채팅 send 명령과 결과를 가른다)
 PLAYLIST_OPS = ("pl_add", "pl_remove")
 MAX_PLAYLIST_EVENTS = 32     # 렌더러가 아직 받아 가지 않은 추가 알림 상한
@@ -47,7 +48,7 @@ PL_SETTLE = 10.0
 PL_RESTORE_TRIES = 3        # 한 번 입장에서 복원 쓰기를 다시 보내는 상한(연결이 바뀌는 중 실패 등)
 PL_MEMORY_LOBBIES = 32      # 기억해 두는 로비 수 상한(오래된 것부터 잊는다)
 WARN_OP_RETRY = 5.0          # 같은 정리 쓰기를 다시 보내기 전 기다리는 시간(프로필에 반영되기 전 중복 방지)
-WANTED_MARKER_GRACE = 5.0    # 합계 3으로 띄운 뒤 이 시간 안에 오는 같은 대상의 처형 표식은 같은 처형으로 본다(기여자마다 표식을 따로 씀)
+CONSUME_OPS = ("consume", "praise_consume")   # 발동 뒤 내 항목 정리(경고·칭찬). 표식 유예(MARKER_GRACE)는 play_tally에 있다
 # worker 교체(D-051): worker가 '게임이 꺼졌는데 이 프로세스가 아직 Steam에 Bongo Cat으로 잡혀 있다'고 알리면(steam_released,
 # 1.0.9부터 그때만 — D-057) stop을 걸고 스스로 끝나기를 기다리는 상한. 그 worker는 교체 대기 중이라 곧 끝난다. 넘기면 terminate한다.
 WORKER_RETIRE_GRACE = 5.0
@@ -75,6 +76,8 @@ ALLOWED_ERRORS = {
     "connection_changed", "development_limit_50", "control_character", "storage_failed_before_send",
     "legal_unavailable", "invalid_steam_id", "steam_profile_unavailable", "steam_profile_failed",
     "block_unavailable", "warn_unavailable", "warn_command",
+    # 칭찬(1.0.8, 경고의 거울): 대상이 지금 로비에 없음 등 / '@이름 칭찬!'이 채팅 경로로 옴(정상이면 안 옴)
+    "praise_unavailable", "praise_command", "praise_self",
     # 플리(D-053): 추가·삭제를 보낼 수 없음 / 보이는 로비 목록에 이미 있음 / 내 목록이 10개 / '/플리'가 채팅 경로로 옴(정상이면 안 옴)
     "playlist_unavailable", "playlist_remove_unavailable", "playlist_exists", "playlist_full", "playlist_command",
 }
@@ -87,9 +90,11 @@ UI_SETTINGS = {
     # 드로어 '플레이 > 경고'(기본 켜기). 렌더러만 읽는다 — 끄면 내 화면의 노란 카드·전단과 내 '@경고!' 입력만 멈추고,
     # 집계·발동·처형 정리(consume)는 그대로 돈다(다른 사용자 화면에 영향 없음)
     "play_warn": (True, lambda value: type(value) is bool),
+    # 드로어 '플레이 > 칭찬'(1.0.8, 기본 켜기). 경고와 같은 성격 — 끄면 내 화면의 별 표시·칭찬 도장과 내 '@칭찬!' 입력만 멈춘다
+    "play_praise": (True, lambda value: type(value) is bool),
 }
-# 렌더러가 알리는 공개수배 전단 처리 결과(진단 로그 전용, 결과 코드만): 끝까지 재생 / 같은 대상과 묶여 생략 /
-# 플레이 > 경고 꺼짐 / 가려진 채 1분 지남 / 대상이 목록에 없음
+# 렌더러가 알리는 공개수배 전단·칭찬 도장(1.0.8) 처리 결과(진단 로그 전용, 결과 코드만): 끝까지 재생 / 같은 대상과 묶여 생략 /
+# 플레이 > 경고(칭찬) 꺼짐 / 가려진 채 1분 지남 / 대상이 목록에 없음
 WANTED_DISPLAY = ("shown", "coalesce", "off", "expired", "absent")
 NOT_WIRED = {
     "merge_connect", "merge_start", "merge_stop", "merge_acknowledge", "merge_maximum", "merge_group",
@@ -171,18 +176,11 @@ class Sidecar:
         self.respawn_times = deque()
         self.backoff_level = 0
         self.spawned_at = 0.0
-        # 경고·공개수배(D-052): 로비 멤버 데이터 집계. 원문은 worker가 멤버 프로필(cattalk_warns·cattalk_wanted)에 싣는다
-        self.warn_counts = {}      # 대상 → 경고 총횟수(현재 로비 멤버, 0 제외)
-        self.wanted_events = []    # 렌더러가 다음 view에서 한 번 받아 갈 공개수배 [{id, target}]
-        self.wanted_fired = OrderedDict()   # 이미 띄운 공개수배(로비:대상:처형 시각) — 같은 처형을 두 번 띄우지 않는다
-        self.warn_ops = {}         # 진행 중인 cattalk 쓰기: 명령 id → (op 키, 보낸 시각, op)
-        self.warn_failed = 0       # 렌더러에 알릴 경고 쓰기 실패 수(다음 view에서 받아 간다)
-        self.warn_diag_last = None  # 진단 표식: 마지막으로 남긴 경고 데이터 수신 요약(바뀔 때만 남긴다)
-        # 처형 표식으로 놓친 공개수배 잡기: 기준 로비, 표식을 이미 한 번 본 멤버, 대상별로 아는 가장 늦은 처형 시각
-        self.wanted_base_lobby = None
-        self.wanted_base_members = set()
-        self.wanted_seen_cut = {}
-        self.wanted_last = {}      # 대상 → (마지막으로 띄운 처형 시각, 띄운 때 monotonic) — 두 경로가 같은 처형을 두 번 띄우지 않게
+        # 경고·공개수배(D-052)와 칭찬(1.0.8, 경고의 거울): 로비 멤버 데이터 집계·발동(play_tally.PlayTally — 같은 상태 기계).
+        # 원문은 worker가 멤버 프로필(cattalk_warns·cattalk_wanted / cattalk_praise·cattalk_praised)에 싣는다
+        self.warn = warn_tally()
+        self.praise = praise_tally()
+        self.warn_ops = {}         # 진행 중인 cattalk 쓰기(경고·칭찬·플리): 명령 id → (op 키, 보낸 시각, op)
         # 플리 공유(D-053): 지금 로비 멤버의 cattalk.pl(검증한 [(영상, 시각)]), 렌더러가 다음 view에서 한 번 받아 갈 추가 알림,
         # 추가 알림 기준(로비별, 멤버마다 마지막으로 본 영상 집합 — 처음 보는 멤버의 기존 곡은 알리지 않는다), 쓰기 실패 코드
         self.pl_members = {}
@@ -331,37 +329,12 @@ class Sidecar:
         return False
 
     def update_warns(self):
-        """경고·공개수배 집계(D-052). 로비 전원의 cattalk 멤버 데이터로 대상별 경고 총횟수를 세고, THRESHOLD에 닿은 대상은
-        공개수배를 한 번 띄운다. 내가 기여한 대상이면 내 항목을 정리하고 처형 표식을 남기는 쓰기를 worker로 보낸다.
-        내가 꺼져 있던 동안 처형된 내 옛 항목(다른 사람의 표식보다 오래됨)도 같은 쓰기로 정리한다."""
+        """경고·공개수배(D-052)와 칭찬(1.0.8) 집계. 종류마다 같은 상태 기계(play_tally.PlayTally)가 대상별 총횟수를 세고,
+        THRESHOLD에 닿은 대상의 발동을 한 번 띄우고, 내 항목 정리(consume) 쓰기를 worker로 보낸다."""
         state = self.service.state
-        account, lobby = state.get("account", ""), state.get("lobby", "")
-        members = set(state.get("members") or [])
-        if not (account and lobby and state.get("lobby_verified")):
-            self.warn_counts = {}
-            return
-        data = {}
-        for uid, profile in (state.get("profiles") or {}).items():
-            if uid in members and isinstance(profile, dict) and "cattalk_warns" in profile:
-                data[uid] = (warn_model.parse_warns(profile.get("cattalk_warns")), warn_model.parse_wanted(profile.get("cattalk_wanted")))
-        tally = warn_model.tally(data)
-        self.warn_counts = {target: row["count"] for target, row in tally.items() if target in members}
-        self.warn_diag(account, members, state.get("profiles") or {}, data, tally)
-        context = self.service.context()
-        mine = data.get(account)
-        for target, row in tally.items():
-            if row["count"] < warn_model.THRESHOLD:
-                continue
-            fired = self.fire_wanted(lobby, target, row["last"], members, "count", count=row["count"],
-                                     mine=bool(mine and target in mine[0]), self_target=target == account,
-                                     contributors=sum(1 for warns, _ in data.values() if target in warns and warns[target][1] > row["cut"]))
-            if fired and mine and target in mine[0]:
-                self.queue_cattalk({"op": "consume", "target": target, "when": row["last"]}, context)
-        self.detect_executions(lobby, account, members, data)
-        if mine:
-            for target, when in warn_model.stale(mine[0], warn_model.cuts(data)).items():
-                if target in members:
-                    self.queue_cattalk({"op": "consume", "target": target, "when": when}, context)
+        queue = lambda op: self.queue_cattalk(op, self.service.context())   # noqa: E731 — 두 종류가 같은 큐를 쓴다
+        self.warn.update(state, queue)
+        self.praise.update(state, queue)
 
     def update_playlist(self):
         """플리 공유(D-053). 로비 전원의 cattalk.pl을 검증해 두고, 이미 본 멤버의 목록에 새 영상이 생기면 추가 알림을 쌓는다.
@@ -443,66 +416,10 @@ class Sidecar:
             return members & {state.get("account", "")}
         return members - set(blocked) - self.steam_hidden
 
-    def fire_wanted(self, lobby, target, when, members, via, **diag):
-        """공개수배를 한 번 띄운다(같은 처형 = 로비·대상·처형 시각은 한 번만). 새로 띄웠으면 True.
-        via: count = 합계가 3인 순간을 직접 봄, marker = 그 순간을 놓쳤지만 새 처형 표식을 봄."""
-        key = f"{lobby}:{target}:{when}"
-        if key in self.wanted_fired:
-            return False
-        mark("wanted_fire", via=via, shown=target in members, **diag)
-        self.wanted_fired[key] = True
-        while len(self.wanted_fired) > 256:
-            self.wanted_fired.popitem(last=False)
-        self.wanted_last[target] = (max(when, self.wanted_last.get(target, (0, 0.0))[0]), time.monotonic())
-        if target in members:
-            self.wanted_events.append({"id": key, "target": target})
-            del self.wanted_events[:-16]
-        return True
-
-    def detect_executions(self, lobby, account, members, data):
-        """처형 표식(cattalk.wanted)으로 놓친 공개수배를 띄운다.
-        합계 3은 처형한 기여자가 0.3초쯤 뒤 바로 정리해 사라지므로, 1초마다 읽는 다른 클라이언트는 그 순간을 놓칠 수 있다(1.0.4 실측).
-        표식은 로비에 남으므로 '이미 알던 멤버의 표식이 대상의 처형 시각을 앞으로 밀었다' = 새 처형으로 보고 띄운다.
-        켜질 때·로비를 옮길 때·새 멤버 데이터가 처음 보일 때 이미 있던 표식은 지난 처형이라 기준으로만 삼는다.
-        옛 항목 정리(stale)가 남기는 표식은 이미 아는 처형 시각과 같아 앞으로 밀지 않으므로 띄우지 않는다."""
-        if self.wanted_base_lobby != lobby:
-            self.wanted_base_lobby, self.wanted_base_members, self.wanted_seen_cut, self.wanted_last = lobby, set(), {}, {}
-        known = {uid: entry for uid, entry in data.items() if uid in self.wanted_base_members}
-        now = time.monotonic()
-        for target, when in warn_model.cuts(known).items():
-            if when <= self.wanted_seen_cut.get(target, 0):
-                continue
-            last_when, last_at = self.wanted_last.get(target, (0, 0.0))
-            if when <= last_when or now - last_at < WANTED_MARKER_GRACE:
-                continue   # 합계 3으로 이미 띄운 같은 처형(다른 기여자의 표식이 몇 초 늦게·조금 다른 시각으로 와도)
-            self.fire_wanted(lobby, target, when, members, "marker", self_target=target == account)
-        for target, when in warn_model.cuts(data).items():
-            self.wanted_seen_cut[target] = max(self.wanted_seen_cut.get(target, 0), when)
-        self.wanted_base_members = (self.wanted_base_members | set(data)) & members
-
-    def warn_diag(self, account, members, profiles, data, tally):
-        """진단 표식(D-050·D-052): 경고 멤버 데이터 수신 상태를 개수로만, 바뀔 때만 남긴다(ID·이름·값은 넣지 않는다).
-        others_with_data가 0에서 늘면 다른 클라이언트가 쓴 값이 Steam을 거쳐 여기 도착한 것이다."""
-        unread = sum(1 for uid in members if not isinstance(profiles.get(uid), dict) or "cattalk_warns" not in profiles[uid])
-        malformed = sum(1 for uid, (warns, wanted) in data.items()
-                        if ((profiles[uid].get("cattalk_warns") or "").strip() not in ("", "{}") and not warns)
-                        or ((profiles[uid].get("cattalk_wanted") or "").strip() not in ("", "{}") and not wanted))
-        others = [uid for uid, (warns, wanted) in data.items() if uid != account and (warns or wanted)]
-        summary = {
-            "members": len(members), "unread": unread, "malformed": malformed,
-            "own_entries": len(data.get(account, ({}, {}))[0]),
-            "others_with_data": len(others), "others_entries": sum(len(data[uid][0]) for uid in others),
-            "wanted_markers": sum(len(wanted) for _, wanted in data.values()),
-            "targets": len(tally), "max_count": max((row["count"] for row in tally.values()), default=0),
-        }
-        if summary != self.warn_diag_last:
-            self.warn_diag_last = summary
-            mark("warn_data", **summary)
-
     def queue_cattalk(self, op, context):
-        """경고 멤버 데이터 쓰기를 worker로 보낸다(채팅 send와 같은 큐, cattalk 필드로 구분). 같은 정리 쓰기는 반영될 때까지 다시 보내지 않는다.
-        보냈으면 True. 큐가 가득 차면 False(경고는 다시 누르면 되고, 정리는 다음 집계에서 다시 시도한다)."""
-        key = f"consume:{op['target']}:{op.get('when')}" if op["op"] == "consume" else None
+        """경고·칭찬·플리 멤버 데이터 쓰기를 worker로 보낸다(채팅 send와 같은 큐, cattalk 필드로 구분). 같은 정리 쓰기는 반영될 때까지
+        다시 보내지 않는다. 보냈으면 True. 큐가 가득 차면 False(경고·칭찬은 다시 누르면 되고, 정리는 다음 집계에서 다시 시도한다)."""
+        key = f"{op['op']}:{op['target']}:{op.get('when')}" if op["op"] in CONSUME_OPS else None
         now = time.monotonic()
         if key and any(k == key and now - sent < WARN_OP_RETRY for k, sent, _ in self.warn_ops.values()):
             return True
@@ -523,7 +440,9 @@ class Sidecar:
              status=status if isinstance(status, str) and status.isascii() and len(status) <= 40 else type(status).__name__,
              seconds=round(time.monotonic() - entry[1], 3) if entry else None)
         if entry and entry[2].get("op") == "warn" and event.get("status") != "accepted":
-            self.warn_failed += 1   # 렌더러가 다음 view에서 '경고하지 못했습니다' 안내
+            self.warn.failed += 1   # 렌더러가 다음 view에서 '경고하지 못했습니다' 안내
+        if entry and entry[2].get("op") == "praise" and event.get("status") != "accepted":
+            self.praise.failed += 1   # 칭찬도 같은 안내(1.0.8)
         if entry and entry[2].get("op") in PLAYLIST_OPS and status != "accepted":
             # 플리(D-053): 사이드카 사전 검사를 지난 뒤 worker가 거절 — 다른 창·동시 추가로 꽉 찼거나 이미 있음, 또는 연결이 바뀜
             fallback = "playlist_unavailable" if entry[2]["op"] == "pl_add" else "playlist_remove_unavailable"
@@ -794,13 +713,16 @@ class Sidecar:
             # TODO(2c): update/auto_merge/notification/language 서브시스템 배선
             self.publish_avatars(result)
             result["incoming_count"] = self.incoming_count
-            # 경고·공개수배(D-052): 대상별 경고 총횟수(보이는 멤버만)와, 검색이 아닐 때 새로 생긴 공개수배(한 번만 받아 간다)
+            # 경고·공개수배(D-052)·칭찬(1.0.8): 대상별 총횟수(보이는 멤버만)와, 검색이 아닐 때 새로 생긴 발동(한 번만 받아 간다)
             visible = set(result["participants"])
-            result["warns"] = {uid: n for uid, n in self.warn_counts.items() if uid in visible}
+            result["warns"] = {uid: n for uid, n in self.warn.counts.items() if uid in visible}
+            result["praises"] = {uid: n for uid, n in self.praise.counts.items() if uid in visible}
             if not query:
-                result["wanted"] = [w for w in self.wanted_events if w["target"] in visible]
-                self.wanted_events = []
-                result["warn_failed"], self.warn_failed = self.warn_failed, 0
+                result["wanted"] = [w for w in self.warn.events if w["target"] in visible]
+                result["praised"] = [w for w in self.praise.events if w["target"] in visible]
+                self.warn.events, self.praise.events = [], []
+                result["warn_failed"], self.warn.failed = self.warn.failed, 0
+                result["praise_failed"], self.praise.failed = self.praise.failed, 0
             # 플리 공유(D-053): 보이는 멤버(차단 제외) 곡의 합집합(등록순)과, 검색이 아닐 때 새 추가 알림·쓰기 실패 코드(한 번만 받아 간다).
             # 알림은 받아 가는 순간에도 그 사람 목록에 남아 있는 곡만(추가하자마자 지운 곡은 띄우지 않는다)
             visible_pl = self.playlist_visible()
@@ -842,6 +764,9 @@ class Sidecar:
             # 경고 명령(@이름 경고!)은 채팅으로 보내지 않는다(D-052 — 렌더러가 warn으로 가로채고, 놓쳐도 여기서 막는다)
             if isinstance(args.get("text"), str) and warn_model.COMMAND.match(args["text"]):
                 raise ValueError("warn_command")
+            # 칭찬 명령(@이름 칭찬!, 1.0.8)도 같다
+            if isinstance(args.get("text"), str) and warn_model.PRAISE_COMMAND.match(args["text"]):
+                raise ValueError("praise_command")
             # 플리 명령('/플리 …')도 채팅으로 보내지 않는다(D-053 — 렌더러가 가로채고, 놓쳐도 여기서 막는다)
             if isinstance(args.get("text"), str) and pl_model.COMMAND.match(args["text"]):
                 raise ValueError("playlist_command")
@@ -925,20 +850,23 @@ class Sidecar:
             else:
                 nicknames.pop(steam_id, None)
             self.store.setting(nickname_key(account), nicknames)
-        elif action == "warn":
-            # 경고·공개수배(D-052): 내 cattalk.warns의 대상 +1(로비 멤버 데이터 쓰기, worker가 Steam에서 다시 읽어 고친다).
-            # 대상은 지금 로비 멤버여야 한다(자기 자신 포함 — 사용자 결정). 결과는 비동기: 실패는 다음 view의 warn_failed로 알린다
+        elif action in ("warn", "praise"):
+            # 경고·공개수배(D-052)·칭찬(1.0.8, 경고의 거울): 내 cattalk.warns / cattalk.praise의 대상 +1(로비 멤버 데이터 쓰기, worker가
+            # Steam에서 다시 읽어 고친다). 대상은 지금 로비 멤버여야 한다(자기 자신 포함 — 사용자 결정). 결과는 비동기: 실패는 다음 view의
+            # warn_failed / praise_failed로 알린다. 멤버 데이터라 채팅 게이트(chat_send)와 무관하다(T0)
             context, target = args.get("context"), args.get("target")
             state = self.service.state
             reason = ("closed" if self.closed else "context" if context != self.service.context()
                       else "unverified" if not state.get("lobby_verified")
                       else "target" if not isinstance(target, str) or target not in (state.get("members") or [])
+                      # 칭찬은 자기 자신을 대상으로 할 수 없다(사용자 명세 — Steam ID 비교). 입력창이 먼저 막고 여기서 한 번 더 막는다
+                      else "self" if action == "praise" and target == state.get("account")
                       else None)
-            if reason is None and not self.queue_cattalk({"op": "warn", "target": target}, context):
+            if reason is None and not self.queue_cattalk({"op": action, "target": target}, context):
                 reason = "queue_full"
-            mark("warn_request", ok=reason is None, reason=reason, self_target=target == state.get("account"))   # 진단: 거절 사유 코드만
+            mark(f"{action}_request", ok=reason is None, reason=reason, self_target=target == state.get("account"))   # 진단: 거절 사유 코드만
             if reason:
-                raise ValueError("warn_unavailable")
+                raise ValueError("praise_self" if reason == "self" else f"{action}_unavailable")
         elif action in ("playlist_add", "playlist_remove"):
             # 플리 공유(D-053): 내 cattalk.pl에 영상 ID 하나 추가·삭제(로비 멤버 데이터 쓰기, worker가 Steam에서 다시 읽어 고친다).
             # 추가는 보이는 로비 목록(차단 제외)에 이미 있거나 내 목록이 10개면 바로 거절한다. 그 뒤의 실패는 다음 view의 playlist_failed
@@ -961,15 +889,16 @@ class Sidecar:
             if reason:
                 raise ValueError({"exists": "playlist_exists", "full": "playlist_full"}.get(
                     reason, "playlist_unavailable" if adding else "playlist_remove_unavailable"))
-        elif action == "wanted_display":
-            # Cat-Talk 추가(진단 전용): 렌더러가 공개수배 전단을 어떻게 처리했는지. 대상·로비는 받지도 남기지도 않는다
+        elif action in ("wanted_display", "praised_display"):
+            # Cat-Talk 추가(진단 전용): 렌더러가 공개수배 전단 / 칭찬 도장(1.0.8)을 어떻게 처리했는지. 대상·로비는 받지도 남기지도 않는다
             result = args.get("result")
             if result not in WANTED_DISPLAY:
                 raise ValueError("invalid_query")
+            prefix = action.removesuffix("_display")
             if result == "shown":
-                mark("wanted_shown")
+                mark(f"{prefix}_shown")
             else:
-                mark("wanted_suppressed", reason=result)
+                mark(f"{prefix}_suppressed", reason=result)
         elif action == "block_user":
             # D-033: 업스트림 차단 파이프라인 재활성화(desktop.py Controller와 같은 배선). 계정 일치·자기 자신 제외·
             # bool 검사는 service.set_blocked가 한다(아니면 block_unavailable, 형식이 틀리면 invalid_steam_id).

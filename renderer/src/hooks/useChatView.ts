@@ -8,13 +8,13 @@ import {
   type PlaylistEntry, type WantedEvent, type WantedResult,
 } from '../chat/model';
 import { CARD_MS, MAX_ENTRIES, PL_EXISTS, PL_FULL } from '../chat/playlist';
+import { admitEvents, finishEvent } from '../chat/playQueue';
 import type { ReactionStack } from './useReactionStack';
 
 const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 재구성한다
 const WARN_FAILED = '경고를 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.';   // 경고 쓰기 실패 안내(D-052)
-// 같은 대상 공개수배 전단 취합(사용자 명세): 그 대상 전단이 재생 중·대기 중이거나 끝난 뒤 이 시간 안이면 새 전단은 띄우지 않는다.
-// 대상마다 따로 센다. 발동(경고 누적·합계 3·리셋)은 사이드카 그대로이고 화면 표시만 묶는다
-const WANTED_COALESCE_MS = 10_000;
+const PRAISE_FAILED = '칭찬을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.';   // 칭찬 쓰기 실패 안내(1.0.8, 경고의 거울)
+// 같은 대상 발동 화면 취합(공개수배·칭찬 도장, 10초)은 chat/playQueue.ts
 const MAX_SEEN_REACTIONS = 256;
 const MAX_AVATAR_REQUEST = 32;   // 사이드카 상한(64) 안에서 나눠 받는다. 남은 건 다음 폴링에
 const DRAFT_SAVE_MS = 300;
@@ -83,6 +83,9 @@ export interface Chat {
   warn(target: string): Promise<boolean>;   // 경고(D-052): 내 cattalk.warns의 대상 +1. 채팅으로 보내지 않는다
   wanted: WantedEvent | null;                // 띄울 공개수배(차례대로 하나씩, 대상별로 묶임)
   dismissWanted(id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>): void;   // 끝났거나 버리면 다음 것으로
+  praise(target: string): Promise<boolean>;  // 칭찬(1.0.8, 경고의 거울): 내 cattalk.praise의 대상 +1. 자기 자신은 안 된다
+  praised: WantedEvent | null;               // 띄울 칭찬 도장(차례대로 하나씩, 대상별로 묶임)
+  dismissPraised(id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>): void;
   // 플리 공유(D-053). playlist = 보이는 로비 목록(등록순, 차단 제외), playlistMine = 내 곡. add·remove는 내 cattalk.pl 쓰기를 보낸다
   // (성공 = 접수, 실패는 안내 후 false). showRandom은 랜덤 결과 카드를 띄운다
   playlist: PlaylistEntry[];
@@ -97,11 +100,43 @@ export interface Chat {
   hasDraft(): boolean;   // 입력창에 쓰던 글이 있는지(복원된 초안 포함). 업데이트 재시작 전 확인용
 }
 
-// 공개수배 전단 처리 결과를 사이드카 진단 로그에 남긴다(결과 코드만, 대상·로비는 보내지 않는다). 실패는 무시
-const reportWanted = (result: WantedResult) => { rpc('wanted_display', { result }).catch(() => {}); };
+// 발동 화면 대기열 하나(공개수배 전단 D-052 / 칭찬 도장 1.0.8 — 같은 규칙, chat/playQueue.ts). enabled = 드로어 '플레이' 토글.
+// 끄면 받는 대로 버리고, 대기 중이던 것도 버린다(다시 켜도 꺼져 있던 동안의 것은 띄우지 않는다). on = 그 종류 쓰기를 보낼지 판정용.
+// 처리 결과는 사이드카 진단 로그에 남긴다(display 액션, 결과 코드만 — 대상·로비는 보내지 않는다. 실패는 무시)
+function usePlayQueue(enabled: boolean, display: 'wanted_display' | 'praised_display') {
+  const [queue, setQueue] = useState<WantedEvent[]>([]);
+  const ref = useRef<WantedEvent[]>([]);             // 대기열과 같은 값. 판정·진단 기록을 상태 갱신 함수 밖에서 하려고 둔다
+  const ended = useRef(new Map<string, number>());   // 대상 → 그 대상 화면이 끝까지 재생된 시각(Date.now). 취합 판정용
+  const on = useRef(enabled);
+  const report = useCallback((result: WantedResult) => { rpc(display, { result }).catch(() => {}); }, [display]);
+  const set = useCallback((next: WantedEvent[]) => {
+    ref.current = next;
+    setQueue(next);
+  }, []);
+  const take = useCallback((fresh: WantedEvent[] | undefined) => {
+    if (!fresh?.length) return;
+    const admitted = admitEvents(ref.current, fresh, on.current, ended.current, Date.now());
+    admitted.reports.forEach(report);
+    if (admitted.queue !== ref.current) set(admitted.queue);
+  }, [report, set]);
+  useEffect(() => {
+    on.current = enabled;
+    if (enabled || ref.current.length === 0) return;
+    ref.current.forEach(() => report('off'));
+    set([]);
+  }, [enabled, report, set]);
+  const dismiss = useCallback((id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>) => {
+    const next = finishEvent(ref.current, id, result, ended.current, Date.now());
+    if (!next) return;
+    report(result);
+    set(next);
+  }, [report, set]);
+  return { current: queue[0] ?? null, take, dismiss, on };
+}
 
-// warnEnabled = 드로어 '플레이 > 경고'. 끄면 공개수배 전단을 받는 대로 버리고 경고 쓰기를 보내지 않는다(내 화면·내 입력만)
-export function useChatView(pushReaction: ReactionStack['push'], reactionsEnabled: boolean, warnEnabled: boolean): Chat {
+// warnEnabled·praiseEnabled = 드로어 '플레이 > 경고'·'칭찬'(서로 독립). 끄면 그 종류의 발동 화면을 받는 대로 버리고 그 쓰기를 보내지 않는다(내 화면·내 입력만)
+export function useChatView(pushReaction: ReactionStack['push'], reactionsEnabled: boolean, warnEnabled: boolean,
+  praiseEnabled: boolean): Chat {
   const { dispatch } = useUi();
   const [view, setView] = useState<ViewResponse | null>(null);
   const [failed, setFailed] = useState(false);
@@ -116,10 +151,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [latest, setLatest] = useState<ViewMessage | null>(null);   // HISTORY 폴링이 받은 최신 메시지
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState<Cooldown>({ active: false, key: 0 });
-  const [wantedQueue, setWantedQueue] = useState<WantedEvent[]>([]);
-  const wantedRef = useRef<WantedEvent[]>([]);             // 대기열과 같은 값. 판정·진단 기록을 상태 갱신 함수 밖에서 하려고 둔다
-  const wantedEnded = useRef(new Map<string, number>());   // 대상 → 그 대상 전단이 끝까지 재생된 시각(Date.now). 취합 판정용
-  const warnOn = useRef(warnEnabled);
+  const { current: wanted, take: takeWantedEvents, dismiss: dismissWanted, on: warnOn } = usePlayQueue(warnEnabled, 'wanted_display');
+  const { current: praised, take: takePraisedEvents, dismiss: dismissPraised, on: praiseOn } = usePlayQueue(praiseEnabled, 'praised_display');
   const [playlistCards, setPlaylistCards] = useState<PlaylistCard[]>([]);
   const seenPlaylist = useRef(new Set<string>());   // 이미 띄운 추가 알림 id(사이드카가 한 번만 주지만 응답을 버린 회차 대비)
   const cooldownUntil = useRef(0);   // performance.now() 기준. 판정은 이 값으로 하고 cooldown 상태는 표시용이다
@@ -172,35 +205,14 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
   }, []);
 
-  const setWanted = useCallback((next: WantedEvent[]) => {
-    wantedRef.current = next;
-    setWantedQueue(next);
-  }, []);
-
-  // 경고·공개수배(D-052): 새 공개수배는 대기열 뒤에(같은 처형은 한 번), 경고 쓰기 실패는 안내 토스트.
-  // 같은 대상 취합: 그 대상 전단이 이미 대기열에 있거나(재생 중·화면이 가려져 보류 중 포함) 끝난 지 10초가 안 됐으면 새 전단은 생략한다.
-  // 대기열에 있던 것은 보류 기한(1분)을 이번에 받은 시각부터 다시 센다 — 가려진 동안 같은 대상이 거듭 처형되면 보일 때 최근 것 하나만 뜬다
-  const takeWanted = useCallback((data: ViewResponse) => {
-    const fresh = data.wanted ?? [];
-    if (fresh.length) {
-      const at = Date.now();
-      let queue = wantedRef.current;
-      for (const w of fresh) {
-        if (queue.some((q) => q.id === w.id)) continue;
-        if (!warnOn.current) { reportWanted('off'); continue; }
-        const same = queue.find((q) => q.target === w.target);
-        const ended = wantedEnded.current.get(w.target);
-        if (same || (ended !== undefined && at - ended < WANTED_COALESCE_MS)) {
-          reportWanted('coalesce');
-          if (same) queue = queue.map((q) => (q === same ? { ...q, at } : q));
-          continue;
-        }
-        queue = [...queue, { ...w, at }];
-      }
-      if (queue !== wantedRef.current) setWanted(queue);
-    }
+  // 경고·공개수배(D-052)·칭찬(1.0.8): 새 발동은 종류별 대기열 뒤에(같은 발동은 한 번, 같은 대상 취합 — chat/playQueue.ts),
+  // 쓰기 실패는 안내 토스트
+  const takePlay = useCallback((data: ViewResponse) => {
+    takeWantedEvents(data.wanted);
+    takePraisedEvents(data.praised);
     if (data.warn_failed) setToast({ id: nextToast.current++, text: WARN_FAILED });
-  }, [setWanted]);
+    if (data.praise_failed) setToast({ id: nextToast.current++, text: PRAISE_FAILED });
+  }, [takeWantedEvents, takePraisedEvents]);
 
   // 플리(D-053) 상단 카드는 CARD_MS 뒤 스스로 빠진다
   const pushPlaylistCard = useCallback((card: PlaylistCard) => {
@@ -219,14 +231,6 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     }
     for (const code of data.playlist_failed ?? []) setToast({ id: nextToast.current++, text: errorText(new Error(code)) });
   }, [pushPlaylistCard]);
-
-  // 플레이 > 경고를 끄면 대기 중이던 전단도 버린다(다시 켜도 꺼져 있던 동안의 것은 띄우지 않는다)
-  useEffect(() => {
-    warnOn.current = warnEnabled;
-    if (warnEnabled || wantedRef.current.length === 0) return;
-    wantedRef.current.forEach(() => reportWanted('off'));
-    setWanted([]);
-  }, [warnEnabled, setWanted]);
 
   // view에는 id만 온다. 처음 보는 이미지만 받아 메모리에 둔다(디스크·localStorage에 쓰지 않는다).
   const fetchAvatars = useCallback((data: ViewResponse) => {
@@ -282,7 +286,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
         reactions: reactionInput.current.reactionsEnabled && !q && !document.hidden,
       });
       takeReactions(data, requestedAt);   // 사이드카는 준 반응을 지우므로 응답을 버려도 받아 둔다
-      takeWanted(data);                    // 공개수배·경고 실패도 사이드카가 한 번만 준다(D-052)
+      takePlay(data);                      // 공개수배·칭찬 도장과 쓰기 실패도 사이드카가 한 번만 준다(D-052·1.0.8)
       takePlaylist(data);                  // 플리 추가 알림·쓰기 실패도 한 번만 준다(D-053)
       if (sent !== version.current) return;
       setFailed(false);
@@ -318,7 +322,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       busy.current = false;
       if (again.current) { again.current = false; void poll(); }
     }
-  }, [applyTimeline, dispatch, fetchAvatars, takeDraft, takeReactions, takePlaylist, takeWanted]);
+  }, [applyTimeline, dispatch, fetchAvatars, takeDraft, takeReactions, takePlaylist, takePlay]);
 
   useEffect(() => {
     void poll();
@@ -567,7 +571,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const participants = useMemo(
     // 앱에서 차단한 멤버는 목록·상단바 참여자 수에서 뺀다(D-033). view.participants에는 blocked 플래그와 함께 남아 있다
     () => Object.entries(shown?.participants ?? {}).filter(([, p]) => !p.blocked)
-      .map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf, shown?.nicknames, shown?.warns)),
+      .map(([uid, p]) => toParticipant(uid, p, '이름 확인 중', avatarOf, shown?.nicknames, shown?.warns, shown?.praises)),
     [shown, avatarOf],
   );
   const nicknames = useMemo(() => shown?.nicknames ?? {}, [shown]);
@@ -577,26 +581,31 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   );
   const account = shown?.context.account ?? '';
   const me = useMemo(
-    () => (account && shown?.profiles[account] ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf, undefined, shown.warns) : null),
+    () => (account && shown?.profiles[account]
+      ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf, undefined, shown.warns, shown.praises) : null),
     [account, shown, avatarOf],
   );
   const lookup = useMemo(() => new Map(participants.map((p) => [p.id, p])), [participants]);
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
-  // 경고(D-052): 사이드카가 worker로 멤버 데이터 쓰기를 보낸다. 결과는 비동기(실패는 다음 view의 warn_failed)
-  const warn = useCallback(async (target: string) => {
+  // 경고(D-052)·칭찬(1.0.8): 사이드카가 worker로 멤버 데이터 쓰기를 보낸다. 결과는 비동기(실패는 다음 view의 warn_failed·praise_failed)
+  const playWrite = useCallback(async (action: 'warn' | 'praise', target: string) => {
     const current = viewRef.current;
-    // 경고는 Cat Talk 멤버 데이터 쓰기(T0)라 채팅 송신이 멈춰도 된다(1.0.8). 꺼져 있으면 입력창이 먼저 막고 안내한다
-    if (!(current?.can_command ?? current?.can_send) || !warnOn.current) return false;
+    // 경고·칭찬은 Cat Talk 멤버 데이터 쓰기(T0)라 채팅 송신이 멈춰도 된다(1.0.8). 꺼져 있으면 입력창이 먼저 막고 안내한다
+    if (!(current?.can_command ?? current?.can_send) || !(action === 'warn' ? warnOn : praiseOn).current) return false;
     try {
-      await rpc('warn', { context: current.context, target });
+      await rpc(action, { context: current.context, target });
       void poll();
       return true;
     } catch (error) {
       showError(error);
       return false;
     }
-  }, [poll, showError]);
+  }, [poll, showError, warnOn, praiseOn]);
+  const warn = useCallback((target: string) => playWrite('warn', target), [playWrite]);
+  // 칭찬은 자기 자신을 대상으로 할 수 없다(사용자 명세 — Steam ID 비교). 입력창이 먼저 막고, 여기서도 한 번 더 막는다(사이드카·worker도)
+  const praise = useCallback((target: string) => (target === viewRef.current?.context.account ? Promise.resolve(false)
+    : playWrite('praise', target)), [playWrite]);
   // 플리(D-053): 추가는 보이는 로비 목록에 이미 있거나 내 곡이 10개면 바로 안내한다(사이드카도 같은 검사를 한 번 더 한다).
   // 접수되면 true — 추가 알림은 내 멤버 데이터가 바뀐 뒤 다른 사람과 같은 길(view의 playlist_added)로 온다
   const playlist = useMemo(() => shown?.playlist ?? [], [shown]);
@@ -622,22 +631,9 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const playlistRemove = useCallback((id: string) => playlistWrite('playlist_remove', id), [playlistWrite]);
   const showRandom = useCallback((id: string) => pushPlaylistCard({ key: `random:${Date.now()}:${id}`, kind: 'random', video: id }), [pushPlaylistCard]);
 
-  // 끝까지 재생한 대상은 끝난 시각을 적어 둔다(그 뒤 10초 안의 같은 대상 처형은 취합). 오래된 기록은 그때 지운다
-  const dismissWanted = useCallback((id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>) => {
-    const done = wantedRef.current.find((w) => w.id === id);
-    if (!done) return;
-    if (result === 'shown') {
-      const now = Date.now(), ended = wantedEnded.current;
-      for (const [target, at] of ended) if (now - at >= WANTED_COALESCE_MS) ended.delete(target);
-      ended.set(done.target, now);
-    }
-    reportWanted(result);
-    setWanted(wantedRef.current.filter((w) => w.id !== id));
-  }, [setWanted]);
-
   return {
     items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, resend, cooldown, openProfile, openTrade, setNickname, setBlocked, refresh, notify, saveSettings, saveDraft, sending, hasDraft,
-    warn, wanted: wantedQueue[0] ?? null, dismissWanted,
+    warn, wanted, dismissWanted, praise, praised, dismissPraised,
     playlist, playlistMine, playlistCards, playlistAdd, playlistRemove, showRandom,
     blocksReady: shown?.blocks_ready ?? true,
     conn: failed ? 'off' : connState(view),

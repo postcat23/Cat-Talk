@@ -11,13 +11,16 @@ let revision = 1;
 let theme: Theme = 'system';
 const notifications = { notification_flash: true, notification_toast: true };
 let reactionsEnabled = true;
-const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clear_cats: false, auto_open_chest: false, play_warn: true };
+const uiSettings: UiSettings = { chat_opacity: 100, presence_notices: true, clear_cats: false, auto_open_chest: false, play_warn: true, play_praise: true };
 const drafts = new Map<string, string>();
 const nicknames: Record<string, string> = { ...INITIAL_NICKNAMES };
 const blocked: Record<string, string> = {};   // 앱 차단(D-033): id → 차단 시점 이름
 // 경고·공개수배(D-052) 대역: 실제는 로비 멤버 데이터 합산. 목업은 내 경고만 세고 3이면 공개수배 1건 + 0으로
 const warnCounts: Record<string, number> = {};
 let wantedQueue: { id: string; target: string }[] = [];
+// 칭찬(1.0.8, 경고의 거울) 대역: 내 칭찬만 세고 3이면 칭찬 도장 1건 + 0으로. 자기 자신은 거절(사용자 명세)
+const praiseCounts: Record<string, number> = {};
+let praisedQueue: { id: string; target: string }[] = [];
 const NICKNAME_MAX = 15;   // 사이드카와 같은 상한(코드 포인트)
 // 플리 공유(D-053) 대역: 실제는 로비 멤버 데이터 cattalk.pl 합집합. 목업은 다른 참여자 곡 하나로 시작하고 내 추가·삭제만 다룬다
 const PL_MAX = 10;
@@ -52,7 +55,8 @@ function view({ query = '', before, start, limit = 100 }: ViewArgs): ViewRespons
     draft: drafts.get(CONTEXT.lobby) ?? '',
     nicknames: { ...nicknames },
     warns: { ...warnCounts },
-    ...(!needle && { wanted: takeWanted() }),
+    praises: { ...praiseCounts },
+    ...(!needle && { wanted: takeWanted(), praised: takePraised() }),
     playlist: playlist.filter((e) => !(e.by in blocked)).map((e) => ({ ...e })),
     playlist_mine: playlist.filter((e) => e.by === ME_ID).map((e) => e.id),
     ...(!needle && { playlist_added: takePlaylistAdded(), playlist_failed: [] }),
@@ -119,6 +123,24 @@ function takeWanted() {
   return taken;
 }
 
+function takePraised() {
+  const taken = praisedQueue;
+  praisedQueue = [];
+  return taken;
+}
+
+function praise({ target }: Record<string, unknown>) {
+  if (target === ME_ID) return { error: 'praise_self' };
+  if (typeof target !== 'string' || !(target in PROFILES) || target in blocked) return { error: 'praise_unavailable' };
+  const count = (praiseCounts[target] ?? 0) + 1;
+  if (count >= 3) {
+    delete praiseCounts[target];
+    praisedQueue.push({ id: `mock:praise:${target}:${Date.now()}`, target });
+  } else praiseCounts[target] = count;
+  revision++;
+  return { ok: true };
+}
+
 function warn({ target }: Record<string, unknown>) {
   if (typeof target !== 'string' || !(target in PROFILES) || target in blocked) return { error: 'warn_unavailable' };
   const count = (warnCounts[target] ?? 0) + 1;
@@ -167,6 +189,8 @@ function dispatch(args: Record<string, unknown>) {
     case 'block_user': return setBlocked(args);
     case 'warn': return warn(args);
     case 'wanted_display': return { ok: true };   // 진단 로그 전용(사이드카가 결과 코드만 남긴다)
+    case 'praise': return praise(args);
+    case 'praised_display': return { ok: true };
     case 'playlist_add': return playlistWrite(true, args);
     case 'playlist_remove': return playlistWrite(false, args);
     default: return { error: 'not_wired' };

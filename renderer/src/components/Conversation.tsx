@@ -6,6 +6,7 @@ import Drawer from './Drawer';
 import ParticipantModal from './ParticipantModal';
 import PlaylistModal from './PlaylistModal';
 import WantedPoster from './WantedPoster';
+import PraiseStamp from './PraiseStamp';
 import styles from './Conversation.module.css';
 
 // 대화 영역. 드로어·참여자 모달·스크림은 이 범위 안에만 겹쳐 입력창을 가리지 않는다.
@@ -18,6 +19,8 @@ export default function Conversation({ reactions }: { reactions: Stack }) {
       <MessageList />
       {/* 공개수배(D-052): 경고 총횟수가 3에 닿은 대상의 전단·총격 모션. 대화 위, 드로어·모달 아래 */}
       <WantedPoster />
+      {/* 칭찬 도장(1.0.8): 칭찬 총횟수가 3에 닿은 대상. 같은 자리, 전단이 있으면 그 뒤에 */}
+      <PraiseStamp />
       <div className={overlayOpen ? `${styles.scrim} ${styles.show}` : styles.scrim} onClick={() => dispatch({ type: 'closeOverlays' })} />
       <Drawer />
       <ParticipantModal />
