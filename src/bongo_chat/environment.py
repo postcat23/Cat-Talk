@@ -29,7 +29,7 @@ UNAVAILABLE = "unavailable"
 
 
 def contract_path():
-    """CATTALK_CONTRACT (set by Electron main; 1.0.9 points it at the verified remote contract) or the bundled default."""
+    """CATTALK_CONTRACT (set by Electron main to the effective contract: bundle + verified remote manifest, 1.0.8 ②) or the bundled default."""
     override = os.environ.get("CATTALK_CONTRACT")
     if override:
         return Path(override)

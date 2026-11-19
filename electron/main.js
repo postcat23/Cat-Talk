@@ -11,6 +11,7 @@ const { createUpdater } = require('./updater');
 const { createLogger } = require('./logger');
 const { createReporter } = require('./report');
 const { createPlaylistLinks } = require('./playlist');
+const { createCompatRemote } = require('./compat-remote');
 const os = require('os');
 
 const REQUEST_TIMEOUT_MS = 5000;
@@ -20,9 +21,9 @@ const ICON = path.join(__dirname, 'app-icon.ico');
 // 설치본은 실행·읽기 파일(사이드카·Python 소스·패처·호환성 도구)을 asar 밖 resources에 둔다(package.json build.extraResources).
 // dev는 레포 루트. 두 경우 모두 sidecar·src·artifacts의 상대 위치가 같아 사이드카(Python)는 경로를 바꾸지 않는다.
 const RES = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
-// 호환성 계약(1.0.8, Cat Talk 소유 schema 2). 사이드카(CATTALK_CONTRACT)와 상자 설치 사전 점검이 같은 파일을 본다.
-// 환경에 CATTALK_CONTRACT가 있으면 그것(저하 시험·1.0.9 원격 계약 자리), 없으면 번들 기본값.
-const CONTRACT = process.env.CATTALK_CONTRACT || path.join(RES, 'sidecar', 'compat', 'contract.json');
+// 호환성 계약(1.0.8, Cat Talk 소유 schema 2)의 번들 기본값. 환경에 CATTALK_CONTRACT가 있으면 그것(저하 시험용).
+// 실제로 쓰는 계약은 이 번들에 서명된 원격 매니페스트(②)를 합친 '유효 계약'이다(아래 compat, CONTRACT).
+const BUNDLED_CONTRACT = process.env.CATTALK_CONTRACT || path.join(RES, 'sidecar', 'compat', 'contract.json');
 const APP_ID = 'CatTalk.Desktop';   // Windows 토스트 발신자
 const WINDOW_APP_ID = 'CatTalk.Window';   // 작업표시줄용. 레지스트리에 등록하지 않는다(registerToastIdentity 참고)
 // 항상 위 레벨. Windows Electron은 기본값 'floating'(~'status')이면 창이 활성화될 때마다 주 작업표시줄(Shell_TrayWnd) 바로 뒤로
@@ -54,6 +55,34 @@ log.main('start', { version: app.getVersion(), packaged: app.isPackaged, dev: DE
 const primary = app.requestSingleInstanceLock();
 log.main('instance_lock', { primary });
 if (!primary) app.quit();
+
+// 호환성 데이터 핫업데이트(②, 1.0.8): 번들 ∪ 서명된 원격 매니페스트 − 차단 목록을 데이터 폴더의 유효 계약으로 쓰고, 사이드카
+// (CATTALK_CONTRACT)와 상자 설치 사전 점검이 그 파일을 본다. 새 매니페스트를 받으면 worker만 다시 띄운다(재설치 없음).
+// 시험용 덮어쓰기: 매니페스트 주소는 https(소스 실행은 로컬 http도)만 — 어디서 받든 앱 공개키 서명을 통과해야 한다.
+// 공개키 덮어쓰기는 소스 실행에서만 받는다(설치본은 무시 — 시험 키로 서명한 매니페스트를 받아들이지 않게).
+function compatOverrides() {
+  const url = process.env.CATTALK_MANIFEST_URL;
+  const urlOk = !!url && (/^https:\/\//i.test(url) || (!app.isPackaged && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(url)));
+  const key = !app.isPackaged ? process.env.CATTALK_MANIFEST_PUBKEY : undefined;
+  if (url || key) log.main('compat_override', { url: urlOk, key: !!key });
+  return { ...(urlOk ? { url } : {}), ...(key ? { publicKeyB64: key } : {}) };
+}
+let compat = null;
+try {
+  compat = createCompatRemote({
+    bundledPath: BUNDLED_CONTRACT, dataDir: windowState.dataDir(), fetch: (u, init) => net.fetch(u, init),
+    log: (event, data) => log.main(event, data), onChanged: () => reloadCompat(), ...compatOverrides(),
+  });
+} catch (e) {
+  log.main('compat_disabled', { reason: e.code || 'error' });   // 공개키가 틀리면 원격 반영 없이 번들 계약으로 돈다
+}
+const CONTRACT = primary && compat ? compat.prepare() : BUNDLED_CONTRACT;
+
+// 새 매니페스트로 유효 계약이 바뀌었다: worker만 다시 띄워 새 계약으로 판정하게 하고(대화 기록은 사이드카에 그대로), 상자 상태도 다시 그린다
+function reloadCompat() {
+  sidecarRequest(JSON.stringify({ action: 'reload_compat' })).catch(() => {});
+  if (win && !win.isDestroyed()) win.webContents.send('chest:changed');
+}
 app.on('child-process-gone', (_e, d) => log.main('child_process_gone', { type: d.type, reason: d.reason, exitCode: d.exitCode, name: d.name || d.serviceName }));
 app.on('gpu-info-update', () => log.main('gpu_info_update', app.getGPUFeatureStatus()));
 app.on('will-quit', () => log.main('will_quit'));
@@ -125,6 +154,8 @@ function startSidecar() {
       let msg; try { msg = JSON.parse(line); } catch (e) { continue; }
       // 사이드카 알림(요청 응답 아님, D-033 3단계): 게임 고양이 숨김 목록. 렌더러로 보내지 않고 main이 게임 폴더 파일에 쓴다.
       if (msg.event === 'hidden_ids') { chest.setHidden(msg.ids).catch(() => {}); continue; }
+      // 호환 상태(②): 모르는 연결 지문이 있으면 원격 매니페스트를 즉시·백오프로 받는다
+      if (msg.event === 'compat_status') { if (compat) compat.status(msg); continue; }
       const p = settle(msg.id);
       if (p) p.resolve(JSON.stringify(msg.result));
     }
@@ -496,6 +527,7 @@ app.whenReady().then(() => {
   setInterval(logMetrics, METRICS_MS).unref?.();
   startSidecar(); createWindow();
   updater.start();
+  if (compat) compat.start();   // 원격 호환성 매니페스트: 시작 때 1회 + 6시간마다(net.fetch는 ready 뒤에만 쓸 수 있다)
   // 해상도·배율·작업표시줄·배치 변화와 디스플레이 추가: 현재 디스플레이 기준으로 재도크(창은 그 자리)하고 드로어 버튼을 갱신한다.
   // 번호가 밀려도 저장값은 고른 번호 그대로다(사용자 결정, 2026-11-18).
   const redock = () => { displayChanged(); if (win && !win.isDestroyed()) dockTo(currentDisplay()); };

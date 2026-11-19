@@ -99,6 +99,8 @@ class LiveConnection:
                  "lobby_source": self.locator.source if valid else "",   # diagnostics only (presence/registry/callback/friends)
                  # Paused gates for the soft banner; the public build number only names the build in that banner.
                  "degraded": list(self.compatibility.degraded) if self.compatibility else [],
+                 # Features whose fingerprint the contract does not list: the sidecar tells main to fetch the remote manifest (1.0.8 ②).
+                 "unknown": list(self.compatibility.unknown) if self.compatibility else [],
                  "game_build": self.compatibility.build if self.compatibility else "",
                  "notice": notice}
         self.state = state

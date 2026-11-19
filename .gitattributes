@@ -1,2 +1,5 @@
 # 텍스트는 저장소에서 LF로 통일, 바이너리는 자동 감지
 * text=auto eol=lf
+# 호환성 매니페스트(1.0.8 ②): 서명은 파일 바이트 그대로 검사하므로 git이 줄끝을 바꾸지 않게 한다(바꾸면 서명이 깨진다)
+compat/manifest.json -text
+compat/manifest.json.sig binary
