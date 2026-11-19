@@ -59,8 +59,9 @@ function Panel() {
             <TopBar />
             <SearchBar />
             <Conversation reactions={reactions} />
-            {/* 창이 작은 70%·50%에서 오버레이를 열면 입력창을 숨겨 오버레이(--ovh 100%)가 창 전체를 덮게 한다 */}
-            <Composer disabled={!chat.canSend} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen || overlays.playlist !== null)}
+            {/* 창이 작은 70%·50%에서 오버레이를 열면 입력창을 숨겨 오버레이(--ovh 100%)가 창 전체를 덮게 한다.
+                입력창은 로비가 확인되면 연다(canCommand, 1.0.8): 채팅 송신이 멈춰도 경고·플리 명령은 쓸 수 있고, 일반 글은 send가 안내한다 */}
+            <Composer disabled={!chat.canCommand} hidden={settings.height !== '100%' && (overlays.drawerOpen || overlays.modalOpen || overlays.playlist !== null)}
               restored={chat.restoredDraft} cooldown={chat.cooldown} onSend={chat.send} onDraft={chat.saveDraft}
               participants={chat.participants} meId={chat.me?.id} onWarn={chat.warn} onPlaylist={playlistCommand} onNotify={chat.notify}
               warnEnabled={settings.playWarn} mention={mentionEnabled(settings)} />

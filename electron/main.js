@@ -20,6 +20,9 @@ const ICON = path.join(__dirname, 'app-icon.ico');
 // 설치본은 실행·읽기 파일(사이드카·Python 소스·패처·호환성 도구)을 asar 밖 resources에 둔다(package.json build.extraResources).
 // dev는 레포 루트. 두 경우 모두 sidecar·src·artifacts의 상대 위치가 같아 사이드카(Python)는 경로를 바꾸지 않는다.
 const RES = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+// 호환성 계약(1.0.8, Cat Talk 소유 schema 2). 사이드카(CATTALK_CONTRACT)와 상자 설치 사전 점검이 같은 파일을 본다.
+// 환경에 CATTALK_CONTRACT가 있으면 그것(저하 시험·1.0.9 원격 계약 자리), 없으면 번들 기본값.
+const CONTRACT = process.env.CATTALK_CONTRACT || path.join(RES, 'sidecar', 'compat', 'contract.json');
 const APP_ID = 'CatTalk.Desktop';   // Windows 토스트 발신자
 const WINDOW_APP_ID = 'CatTalk.Window';   // 작업표시줄용. 레지스트리에 등록하지 않는다(registerToastIdentity 참고)
 // 항상 위 레벨. Windows Electron은 기본값 'floating'(~'status')이면 창이 활성화될 때마다 주 작업표시줄(Shell_TrayWnd) 바로 뒤로
@@ -93,7 +96,7 @@ function startSidecar() {
     windowsHide: !DEV,
     // 설정 DB(settings.sqlite3)가 창 상태·패처 백업과 같은 데이터 폴더에 생기도록 main이 정한 폴더를 넘긴다(D-041).
     // CATTALK_LOG_DIR: 사이드카·worker의 faulthandler 파일 위치
-    env: { ...process.env, CATTALK_DATA: windowState.dataDir(), CATTALK_LOG_DIR: log.dir },
+    env: { ...process.env, CATTALK_DATA: windowState.dataDir(), CATTALK_LOG_DIR: log.dir, CATTALK_CONTRACT: CONTRACT },
   });
   log.main('sidecar_spawn', { pid: child.pid, cmd: path.basename(cmd) });
   child.stderr.on('data', (chunk) => {
@@ -392,7 +395,7 @@ const chest = createAutoChest({
   patcherExe: path.join(RES, 'artifacts', 'auto_chest', 'AutoChestPatcher.exe'),
   // 설치 사전 점검이 패치 결과의 Cat Talk 연결 호환성 지문을 원본과 비교한다(D-033 3단계). 사이드카가 쓰는 것과 같은 도구·계약이다.
   probeExe: path.join(RES, 'artifacts', 'compatibility', 'FeatureProbe.exe'),
-  featureContract: path.join(RES, 'src', 'bongo_chat', 'feature-contract.json'),
+  featureContract: CONTRACT,
   sys: defaultSys((url) => shell.openExternal(url)),
   stopWorker: stopSidecar,
   startWorker: async () => { startSidecar(); },

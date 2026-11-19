@@ -60,7 +60,23 @@ const NOTICES: Record<string, string> = {
   game_missing_or_ambiguous: 'Bongo Cat을 실행하면 연결할 수 있습니다.',
   worker_stopped: '게임 연결이 끊어졌습니다. 보낸 결과를 알 수 없는 메시지는 다시 보내지 않습니다.',
   offline: '오프라인으로 실행 중입니다. 게임과 연결하지 않습니다.',
+  // 1.0.8: 게임의 Steam 모듈(steam_api64.dll)에 Cat Talk이 쓰는 함수가 없을 때. 이것만은 모든 기능이 멈춘다(T0)
+  steam_api_unsupported: '게임의 Steam 연결 모듈이 바뀌어 연결할 수 없습니다. Cat Talk 업데이트가 필요합니다.',
 };
+
+// 1.0.8 우아한 저하: 게임 업데이트로 일부 기능만 멈췄을 때의 소프트 배너(연결은 유지). 게이트는 worker의 degraded
+const DEGRADED_TEXT: Record<string, string> = {
+  chat_send: '채팅 보내기',
+  avatars: '모자·스킨 표시',
+};
+export const CHAT_SEND_PAUSED = '봉고캣 업데이트로 채팅 보내기가 잠시 멈췄습니다. 경고·플리는 그대로 쓸 수 있습니다.';
+
+export function degradedNotice(degraded: string[]) {
+  const names = degraded.map((g) => DEGRADED_TEXT[g]).filter(Boolean);
+  if (names.length === 0) return '';
+  const avatars = degraded.includes('avatars') ? ' 고양이는 기본 모습으로 보입니다.' : '';
+  return `봉고캣 업데이트로 ${names.join('·')}를 잠시 멈췄습니다.${avatars} 받기·경고·플리는 그대로 쓸 수 있고, Cat Talk 업데이트로 다시 켜집니다.`;
+}
 export const VIEW_UNAVAILABLE = '대화를 불러오지 못해 표시하거나 보낼 수 없습니다. 다시 확인하고 있습니다.';
 const STORAGE_ERROR = '저장에 실패해 일부 기록이 보관되지 않았습니다.';
 const UNKNOWN_NOTICE = '게임 상태를 확인하지 못했습니다. 연결을 멈추고 다시 확인하고 있습니다.';

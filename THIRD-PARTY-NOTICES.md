@@ -17,12 +17,12 @@ Cat-Talk 자체 코드에는 루트 [LICENSE](LICENSE)(PolyForm Noncommercial Li
 
 upstream `981dd43`과 git blob 해시가 같은(바이트 단위로 동일한) 파일입니다(2026-11-10 대조). Cat-Talk는 이 파일들을 수정하지 않습니다.
 
-**`src/bongo_chat/` — 36개**
+**`src/bongo_chat/` — 35개** (1.0.8에서 `feature-contract.json`은 `sidecar/compat/contract.json`으로 옮김)
 
-`__init__.py` · `__main__.py` · `auto_merge.py` · `avatars.py` · `bootstrap.py` · `desktop.py` · `environment.py` · `exit_codes.py` · `feature-contract.json` · `localization.py` · `memory.py` · `merge_bootstrap.py` · `merge_bridge.py` · `merge_connection.py` · `merge_install.py` · `notifications.py` · `presence.py` · `privacy.py` · `profiles.py` · `protocol.py` · `reactions.py` · `service.py` · `steam.py` · `store.py` · `ui/app-icon.ico` · `ui/app-icon.png` · `ui/app.js` · `ui/favicon.ico` · `ui/index.html` · `ui/messenger.css` · `ui/translations.json` · `update-config.json` · `update_diagnostic.py` · `updates.py` · `windows_notifications.py` · `worker.py`
+`__init__.py` · `__main__.py` · `auto_merge.py` · `avatars.py` · `bootstrap.py` · `desktop.py` · `environment.py` · `exit_codes.py` · `localization.py` · `memory.py` · `merge_bootstrap.py` · `merge_bridge.py` · `merge_connection.py` · `merge_install.py` · `notifications.py` · `presence.py` · `privacy.py` · `profiles.py` · `protocol.py` · `reactions.py` · `service.py` · `steam.py` · `store.py` · `ui/app-icon.ico` · `ui/app-icon.png` · `ui/app.js` · `ui/favicon.ico` · `ui/index.html` · `ui/messenger.css` · `ui/translations.json` · `update-config.json` · `update_diagnostic.py` · `updates.py` · `windows_notifications.py` · `worker.py`
 
 이 중 `ui/app-icon.ico`·`ui/app-icon.png`·`ui/favicon.ico`는 upstream의 MIT 자산이라, NOTICE의 Cat Talk 브랜딩 유보 대상이 아닙니다.
-설치본에는 이 중 사이드카가 쓰는 12개 모듈이 사이드카 번들(3절) 안에 바이트코드로 들어가고, `feature-contract.json`은 번들 안과 `resources/src/bongo_chat/`(설치 사전 점검용)에 원본 파일로 들어갑니다.
+설치본에는 이 중 사이드카가 쓰는 모듈이 사이드카 번들(3절) 안에 바이트코드로 들어갑니다. 1.0.8부터 `src/bongo_chat/`은 Cat Talk이 직접 고치는 포크이고(`worker.py`·`steam.py`·`environment.py`·`service.py` 수정, `lobby.py` 추가), `feature-contract.json`은 Cat Talk 소유 계약 `sidecar/compat/contract.json`(schema 2 — upstream 지문·기능 명세에서 옮겨 기능별 판정 정보를 더함)으로 옮겨 번들 안과 `resources/sidecar/compat/`에 들어갑니다.
 
 **`tools/` — 37개**
 

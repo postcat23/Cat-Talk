@@ -97,6 +97,9 @@ export interface ViewResponse {
   connected: boolean;
   lobby_verified: boolean;
   can_send: boolean;
+  // 1.0.8 티어. 이전 사이드카에는 없다(없으면 can_send·[]로 본다)
+  can_command?: boolean;   // 로비 확인됨 — Cat Talk 명령(경고·플리, T0) 가능. 채팅 송신(can_send)과 별개
+  degraded?: string[];     // 멈춘 게이트: 'chat_send'(T1) · 'avatars'(T2)
   messages: ViewMessage[];
   profiles: Record<string, ViewProfile>;
   participants: Record<string, ViewProfile>;

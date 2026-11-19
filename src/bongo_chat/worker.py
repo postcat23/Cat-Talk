@@ -46,6 +46,9 @@ class LiveConnection:
         valid = lobby != "0"
         return account, lobby, members, valid, valid
 
+    def allows(self, gate):
+        return not self.compatibility or self.compatibility.allows(gate)
+
     def snapshot(self):
         account, lobby, members, valid, verified = self.destination()
         identity = (self.game.pid, self.game.created, account, lobby, valid)
@@ -58,6 +61,12 @@ class LiveConnection:
             profiles = {}
             for uid in members:
                 row = self.steam.profile(lobby, uid)
+                if not self.allows("avatars"):
+                    # T2 paused: the game's hat/skin member data meaning is unverified on this build, so show the
+                    # Steam name and the default cat. Cat Talk's own fields in the row (warn/playlist/blocks, T0) stay.
+                    row["hat"] = row["skin"] = None
+                    profiles[uid] = row
+                    continue
                 # The game publishes -1 for an explicitly unequipped slot.
                 # Its default body/paw sprites are CatLeft/CatRight. Unknown
                 # slots and failed item lookups must not become default outfits.
@@ -81,12 +90,16 @@ class LiveConnection:
                  # Profiles refresh once a second, membership every tick.
                  "profiles": {uid: row for uid, row in self.profiles.items()
                               if verified and uid in members},
-                 "send_enabled": verified and not self.read_only,
+                 # T1: chat sending needs a known chat fingerprint; receiving does not (it only parses).
+                 "send_enabled": verified and not self.read_only and self.allows("chat_send"),
                  "avatar_stage": getattr(self.avatars, "stage", "disabled"),
                  "avatar_error": getattr(self.avatars, "error", ""),
                  "state": "ready" if verified else "no_lobby",
                  "name": self.steam.room_name(lobby) if valid else "",
                  "lobby_source": self.locator.source if valid else "",   # diagnostics only (presence/registry/callback/friends)
+                 # Paused gates for the soft banner; the public build number only names the build in that banner.
+                 "degraded": list(self.compatibility.degraded) if self.compatibility else [],
+                 "game_build": self.compatibility.build if self.compatibility else "",
                  "notice": notice}
         self.state = state
         return state, members, changed

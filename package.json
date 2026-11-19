@@ -21,7 +21,7 @@
     "files": ["electron/**", "renderer/dist/**", "package.json"],
     "extraResources": [
       { "from": "artifacts/sidecar/cattalk-sidecar", "to": "sidecar-bin" },
-      { "from": "src/bongo_chat/feature-contract.json", "to": "src/bongo_chat/feature-contract.json" },
+      { "from": "sidecar/compat/contract.json", "to": "sidecar/compat/contract.json" },
       { "from": "artifacts/compatibility", "to": "artifacts/compatibility" },
       { "from": "artifacts/auto_chest", "to": "artifacts/auto_chest" },
       { "from": "LICENSE", "to": "LICENSE" },

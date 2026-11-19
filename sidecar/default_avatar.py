@@ -74,7 +74,16 @@ def _install_diag():
         return wrapper
 
     worker_module.running_game = timed("game_detect", worker_module.running_game)
-    worker_module.verify_compatibility = timed("compatibility", worker_module.verify_compatibility)
+    timed_verify = timed("compatibility", worker_module.verify_compatibility)
+
+    def verify_with_features(*args, **kwargs):
+        # 1.0.8 기능별 판정: 모르는 기능·멈춘 게이트(이름뿐)와 공개 빌드 번호를 남긴다. 저하 신고의 1차 단서
+        result = timed_verify(*args, **kwargs)
+        mark("compat_features", build=getattr(result, "build", ""), unknown=list(getattr(result, "unknown", ())),
+             degraded=list(getattr(result, "degraded", ())))
+        return result
+
+    worker_module.verify_compatibility = verify_with_features
     steam_class = worker_module.Steam
     steam_class.start = timed("steam_init", steam_class.start)
 

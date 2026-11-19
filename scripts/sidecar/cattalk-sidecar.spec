@@ -1,10 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Cat-Talk 사이드카 PyInstaller spec — onedir, 창 없음(D-036). scripts/build-sidecar.ps1이 실행한다.
 #
-# - 진입점 sidecar/server.py. upstream src/bongo_chat은 수정하지 않고, 정적 분석이 따라가는 모듈만 들어간다
-#   (사이드카 경로 12개). collect_submodules는 쓰지 않는다 — 쓰면 안 쓰는 updates·merge_* 등이 딸려 온다.
-# - 호환성 계약·도구는 upstream 번들과 같은 bongo_chat/ 아래에 둔다. environment.py·memory.py가 frozen일 때
-#   Path(__file__).with_name(...)으로 찾는 경로다.
+# - 진입점 sidecar/server.py. src/bongo_chat(1.0.8부터 Cat Talk 소유 포크)에서 정적 분석이 따라가는 모듈만 들어간다.
+#   collect_submodules는 쓰지 않는다 — 쓰면 안 쓰는 updates·merge_* 등이 딸려 온다.
+# - 호환성 도구는 bongo_chat/compatibility 아래에 둔다(environment.py·memory.py가 frozen일 때 Path(__file__) 옆에서 찾는다).
+#   호환성 계약(1.0.8, schema 2)은 Cat Talk 소유 sidecar/compat/contract.json을 번들 compat/ 아래에 둔다
+#   (environment.contract_path: frozen이면 sys._MEIPASS/compat). 실행 중에는 Electron이 CATTALK_CONTRACT로 같은 파일을 가리킨다.
 # - FMOD 제외: UnityPy 1.25.4는 Sprite만 읽어도 export/__init__ → AudioClipConverter → fmod_toolkit을 import한다.
 #   런타임 훅(upstream packaging/hooks/disable_unity_audio.py 사본)이 AudioClipConverter를 빈 모듈로 먼저 등록하므로
 #   fmod_toolkit·pyfmodex·AudioClipConverter는 번들에 넣지 않는다(fmod.dll 미포함).
@@ -19,7 +20,7 @@ SRC = ROOT / "src"
 COMPAT = ROOT / "artifacts" / "compatibility"
 
 datas = [
-    (str(SRC / "bongo_chat" / "feature-contract.json"), "bongo_chat"),
+    (str(ROOT / "sidecar" / "compat" / "contract.json"), "compat"),
     (str(COMPAT / "FeatureProbe.exe"), "bongo_chat/compatibility"),
     (str(COMPAT / "MemoryScan.exe"), "bongo_chat/compatibility"),
     (str(COMPAT / "Mono.Cecil.dll"), "bongo_chat/compatibility"),

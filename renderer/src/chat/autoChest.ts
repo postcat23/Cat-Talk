@@ -34,6 +34,10 @@ function object(features?: Feature[]) {
 }
 
 export const reapplyNotice = (features: Feature[]) => `${names(features)} 재적용이 필요합니다`;
+// 1.0.8 T3 소프트 배너: 켜 둔 패치 기능이 현재 게임 빌드와 맞지 않을 때(incompatible). 채팅·경고·플리는 그대로라 막지 않고 알린다.
+// 게임 패치 규칙은 데이터로 넓힐 수 없어(앱 릴리스 전용) 'Cat Talk 업데이트'를 안내한다
+export const patchPausedNotice = (features: Feature[]) =>
+  `봉고캣 업데이트로 ${object(features)} 잠시 쓸 수 없습니다. 채팅·경고·플리는 그대로이고, Cat Talk 업데이트로 다시 켜집니다.`;
 // 설치 도구가 없거나 앱과 맞지 않을 때(patcher_mismatch) 설정이 켜져 있으면 띄운다. 재적용으로는 못 고친다.
 // [재설치] 버튼은 재설치 수단(설치 파일·업데이터)이 생기는 배포 셋업에서 붙인다(D-029).
 export const REINSTALL_NOTICE = '앱 재설치가 필요합니다';

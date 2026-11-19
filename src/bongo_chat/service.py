@@ -392,6 +392,10 @@ class ChatService:
         profiles = {uid: p for uid, p in self.state.get("profiles", {}).items() if uid in allowed | {account}}
         return {"context": self.context(), "state": self.state.get("state"), "notice": self.state.get("notice", ""),
                 "game_build": self.state.get("game_build", ""),
+                # 1.0.8 tiers: paused gates (soft banner) and whether Cat Talk commands (warn/playlist, T0) are usable
+                # while chat sending (T1) is paused.
+                "degraded": list(self.state.get("degraded") or []) if self.fresh() else [],
+                "can_command": self.verified() and lobby == self.state.get("lobby"),
                 "connected": self.connected(), "lobby_verified": self.verified(),
                 "blocks_ready": self.blocked is not None,
                 "blocked_users": [dict(steam_id=uid, name=name) for uid, name in sorted((self.blocked or {}).items())],

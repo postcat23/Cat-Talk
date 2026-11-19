@@ -18,7 +18,7 @@ const refs = fs.readdirSync(managedRefs).filter((n) => /\.dll$/i.test(n) && n !=
 const patcherExe = path.join(__dirname, '..', '..', 'artifacts', 'auto_chest', 'AutoChestPatcher.exe');
 // 사전 점검의 Cat Talk 연결 호환성 지문(D-033 3단계): 실제 업스트림 도구·계약을 쓴다(tools/prepare-compatibility.ps1이 만든다)
 const probeExe = path.join(__dirname, '..', '..', 'artifacts', 'compatibility', 'FeatureProbe.exe');
-const featureContract = path.join(__dirname, '..', '..', 'src', 'bongo_chat', 'feature-contract.json');
+const featureContract = path.join(__dirname, '..', '..', 'sidecar', 'compat', 'contract.json');   // 1.0.8 Cat Talk 소유 계약(schema 2)
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const origSha = sha(copy);
 let failed = 0;

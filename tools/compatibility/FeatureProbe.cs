@@ -244,10 +244,17 @@ public static class FeatureProbe {
             if (args.Length != 2 || new FileInfo(args[1]).Length > 65536) throw new InvalidDataException();
             var json = new JavaScriptSerializer { MaxJsonLength = 65536 };
             var spec = json.Deserialize<ProbeSpec>(File.ReadAllText(args[1], Encoding.UTF8));
-            if (spec.schema != 1 || spec.features == null || spec.features.Count < 1 || spec.features.Count > 16) throw new InvalidDataException();
+            // schema 2 (Cat Talk 1.0.8 contract) adds policy/native/patch sections; this reader only needs features.
+            if ((spec.schema != 1 && spec.schema != 2) || spec.features == null || spec.features.Count < 1 || spec.features.Count > 16) throw new InvalidDataException();
             using (var modules = new Modules(args[0], spec.assemblies)) {
                 var result = new SortedDictionary<string, string>(StringComparer.Ordinal);
-                foreach (var row in spec.features) result.Add(row.Key, new Feature(modules).Digest(row.Value));
+                // Per-feature isolation (1.0.8): a game update that breaks one feature's roots must not hide the others.
+                // The caller treats "unavailable" as an unknown fingerprint for that feature only.
+                foreach (var row in spec.features) {
+                    string digest;
+                    try { digest = new Feature(modules).Digest(row.Value); } catch { digest = "unavailable"; }
+                    result.Add(row.Key, digest);
+                }
                 Console.WriteLine(json.Serialize(result));
             }
             return 0;

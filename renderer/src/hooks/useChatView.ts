@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { rpc } from '../rpc';
 import { useUi, type Settings } from '../state/UiContext';
-import { errorText, noticeText, PROFILE_OPENING, TRADE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
+import { CHAT_SEND_PAUSED, errorText, noticeText, PROFILE_OPENING, TRADE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
   accountStatus, connState, displayName, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
   type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
@@ -56,6 +56,9 @@ export interface Chat {
   notice: string;
   toast: Toast | null;
   canSend: boolean;
+  // 1.0.8 티어: 채팅 송신(T1)이 멈춰도 Cat Talk 명령(경고·플리, T0)은 쓸 수 있다 — 입력창은 이것으로 연다
+  canCommand: boolean;
+  degraded: string[];   // 멈춘 게이트(chat_send·avatars). 소프트 배너 문구의 재료
   incoming: number | undefined;
   restoredDraft: RestoredDraft | null;
   query: string;
@@ -431,7 +434,12 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   // 사용자가 입력창에서 보낸 텍스트만 여기로 온다. 자동 송신 경로는 없다.
   const send = useCallback(async (text: string) => {
     const current = viewRef.current;
-    if (!current?.can_send || !takeSendSlot()) return false;
+    if (!current?.can_send) {
+      // 채팅 송신만 멈춘 상태(1.0.8 T1): 글은 입력창에 남기고 이유를 알린다. 경고·플리 명령은 이 경로로 오지 않는다
+      if (current?.can_command && current.degraded?.includes('chat_send')) notify(CHAT_SEND_PAUSED);
+      return false;
+    }
+    if (!takeSendSlot()) return false;
     setSending(true);
     try {
       await rpc('send', { context: current.context, text });
@@ -444,7 +452,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     } finally {
       setSending(false);
     }
-  }, [poll, setLive, showError, takeSendSlot]);
+  }, [notify, poll, setLive, showError, takeSendSlot]);
 
   // ↻ 재전송: 사용자가 누른 실패 메시지만. 사이드카가 저장된 원문으로 다시 보내고 옛 행을 지운다(새 행은 맨 아래).
   // 쿨다운을 send와 함께 써서 연타·연속 전송으로 다시 실패하지 않게 한다. 맨 아래로 간 메시지가 보이게 LIVE로 돌린다
@@ -578,7 +586,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   // 경고(D-052): 사이드카가 worker로 멤버 데이터 쓰기를 보낸다. 결과는 비동기(실패는 다음 view의 warn_failed)
   const warn = useCallback(async (target: string) => {
     const current = viewRef.current;
-    if (!current?.can_send || !warnOn.current) return false;   // 꺼져 있으면 입력창이 먼저 막고 안내한다
+    // 경고는 Cat Talk 멤버 데이터 쓰기(T0)라 채팅 송신이 멈춰도 된다(1.0.8). 꺼져 있으면 입력창이 먼저 막고 안내한다
+    if (!(current?.can_command ?? current?.can_send) || !warnOn.current) return false;
     try {
       await rpc('warn', { context: current.context, target });
       void poll();
@@ -635,6 +644,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     accountStatus: accountStatus(shown),
     notice: failed ? VIEW_UNAVAILABLE : noticeText(view),
     canSend: shown?.can_send === true,
+    canCommand: (shown?.can_command ?? shown?.can_send) === true,
+    degraded: shown?.degraded ?? [],
     incoming: shown?.incoming_count,
   };
 }

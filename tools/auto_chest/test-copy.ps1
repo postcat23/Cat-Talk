@@ -192,7 +192,7 @@ Run '15m verify v5 against that runtime -> refuse' 2 @('verify', $orig, $patched
 # Cat Talk는 연결 전에 업스트림 FeatureProbe로 게임 코드 지문을 계산해 지원 목록과 비교한다. 패치는 그 지문을 하나도 바꾸면 안 된다
 # (2026-11-10: 숨김 setter 입구 훅이 privacy 지문을 바꿔 연결이 멈췄다). 업스트림 도구는 실행만 한다.
 $probe = Join-Path $projectRoot 'artifacts/compatibility/FeatureProbe.exe'
-$contract = Join-Path $projectRoot 'src/bongo_chat/feature-contract.json'
+$contract = Join-Path $projectRoot 'sidecar/compat/contract.json'   # 1.0.8 Cat Talk 소유 계약(schema 2)
 $probeRun = 0
 function Features($dll) {
   $script:probeRun++

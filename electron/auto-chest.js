@@ -127,6 +127,20 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     return 'ok';
   }
 
+  // 원본 백업의 기록 SHA(소문자 hex). 없으면 null
+  function backupSha() {
+    try { return fs.readFileSync(`${original}.sha256`, 'utf-8').trim().toLowerCase(); } catch { return null; }
+  }
+
+  // 계약 patch.deny_sha256(1.0.8, T3 제한 방향 — 원격 데이터는 이 목록을 늘려 막을 수만 있다)에 든 순정 DLL인지
+  function deniedBuild(sha) {
+    if (typeof sha !== 'string' || !/^[0-9a-f]{64}$/.test(sha)) return false;
+    try {
+      const deny = JSON.parse(fs.readFileSync(featureContract, 'utf-8'))?.patch?.deny_sha256;
+      return Array.isArray(deny) && deny.includes(sha);
+    } catch { return false; }
+  }
+
   // 원본 백업이 기록된 SHA와 같은지(패처 restore가 게임을 끈 뒤에야 하던 확인을 앞당긴다). 없거나 다르면 false.
   function backupIntact() {
     try {
@@ -161,6 +175,11 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     const r = await patcher('inspect', dll);
     if (r.code === 2) return { state: 'incompatible', reason: r.json.reason };
     if (r.code !== 0) return { state: 'error', reason: r.json.reason };
+    // T3 제한 방향(1.0.8): 계약의 patch.deny_sha256에 있는 순정 DLL이면 새 설치·재적용을 막는다(이미 설치된 패치는 건드리지 않는다).
+    // 패치된 DLL은 원본 백업의 기록 해시로 본다. 계약을 못 읽으면 막지 않는다(패처 자체 검사는 그대로).
+    if (deniedBuild(r.json.state === 'clean' ? r.json.sha256 : backupSha())) {
+      return { state: 'incompatible', reason: 'denied', game, patched: r.json.state === 'patched' };
+    }
     if (r.json.state === 'clean') return { state: wanted ? 'needs_reapply' : 'not_installed' };
     if (!samePath(r.json.flag, flag)) return { state: 'needs_reapply', reason: 'flag_path_changed', game, patched: true };   // 게임 경로가 바뀜
     if (r.json.upToDate === false) return { state: 'needs_reapply', reason: 'outdated', game, patched: true };   // 이전 패치 세트(v1~v4) → 재적용으로 v5(D-028, D-033, D-046, D-047)
@@ -271,7 +290,8 @@ function createAutoChest({ dataDir, patcherExe, probeExe, featureContract, sys, 
     try {
       const features = JSON.parse(r.stdout);
       const keys = Object.keys(features).sort();
-      if (keys.length === 0 || !keys.every((k) => typeof features[k] === 'string' && /^[0-9a-f]{64}$/.test(features[k]))) return null;
+      // 1.0.8 FeatureProbe는 기능별로 격리해 계산하지 못한 기능만 'unavailable'로 낸다. 패치 전후가 기능마다 같으면 통과다
+      if (keys.length === 0 || !keys.every((k) => typeof features[k] === 'string' && (features[k] === 'unavailable' || /^[0-9a-f]{64}$/.test(features[k])))) return null;
       return JSON.stringify(keys.map((k) => [k, features[k]]));
     } catch { return null; }
   }

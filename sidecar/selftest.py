@@ -3,9 +3,9 @@
 PyInstaller 번들이 Python 없는 PC에서도 사이드카의 실제 경로를 갖췄는지 본다. 게임 프로세스·Steam에는
 붙지 않는다(메모리 읽기·Steam 초기화 없음). 게임 폴더는 읽기만 한다.
 - spawn: spawn 자식 프로세스가 뜨는지(번들의 multiprocessing.freeze_support 경로, worker와 같은 방식)
-- contract: 호환성 계약(feature-contract.json)을 upstream이 찾는 경로에서 읽는지
+- contract: Cat Talk 호환성 계약(sidecar/compat/contract.json, schema 2 — 번들 안 compat/contract.json)을 읽는지
 - helpers: FeatureProbe.exe·MemoryScan.exe가 upstream이 찾는 경로에 있는지
-- compatibility(--game): 실제 게임 폴더로 호환성 판정(해시 + FeatureProbe 메타데이터 판독, 읽기 전용)
+- compatibility(--game): 실제 게임 폴더로 기능별 지문 계산(FeatureProbe 메타데이터 판독, 읽기 전용). 모르는 기능·멈춘 게이트는 보고만 한다
 - avatar(--game): UnityPy + Pillow로 게임 에셋에서 기본 고양이를 합성하는지(upstream Avatars 그대로)
 - fmod: FMOD(fmod_toolkit·pyfmodex·fmod.dll)가 프로세스에 올라왔는지. 번들은 올라오면 실패(런타임 훅으로 제외)
 결과는 JSON 한 줄로 stdout에 쓰고, 모두 통과하면 종료 코드 0이다. 이름·ID·대화·이미지 내용은 내보내지 않는다.
@@ -99,12 +99,14 @@ def run(argv):
     if game:
         root = Path(game)
         try:
-            report["build"] = environment.verify_compatibility(root).build
-            checks["compatibility"] = True
-        except environment.UnsupportedGameBuild:
-            checks["compatibility"], report["compatibility_error"] = False, "unsupported_game_build"
-        except RuntimeError as exc:
-            checks["compatibility"], report["compatibility_error"] = False, str(exc)
+            # 1.0.8 기능별 판정: 모르는 지문은 실패가 아니라 저하(degraded)다. 점검은 '도구가 이 게임의 지문 5개를 모두
+            # 계산하는가'로 본다(도구 고장으로 전부 저하된 상태를 통과로 보지 않게).
+            digests = environment.probe_features(root)
+            result = environment.verify_compatibility(root)
+            report.update(build=result.build, unknown=list(result.unknown), degraded=list(result.degraded))
+            checks["compatibility"] = all(value != environment.UNAVAILABLE for value in digests.values())
+        except (RuntimeError, ValueError, OSError) as exc:
+            checks["compatibility"], report["compatibility_error"] = False, str(exc) or type(exc).__name__
         checks["avatar"], report["avatar"] = _avatar(root)
 
     report["fmod"] = {"fmod_toolkit": "fmod_toolkit" in sys.modules, "pyfmodex": "pyfmodex" in sys.modules,
