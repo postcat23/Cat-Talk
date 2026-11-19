@@ -65,17 +65,27 @@ const NOTICES: Record<string, string> = {
 };
 
 // 1.0.8 우아한 저하: 게임 업데이트로 일부 기능만 멈췄을 때의 소프트 배너(연결은 유지). 게이트는 worker의 degraded
+// 이름 안에는 '·'를 쓰지 않는다(이름을 '·'로 이어 붙여서 '모자·스킨'이면 항목 수가 헷갈린다)
 const DEGRADED_TEXT: Record<string, string> = {
   chat_send: '채팅 보내기',
-  avatars: '모자·스킨 표시',
+  avatars: '모자와 스킨 표시',
 };
-export const CHAT_SEND_PAUSED = '봉고캣 업데이트로 채팅 보내기가 잠시 멈췄습니다. 경고·플리는 그대로 쓸 수 있습니다.';
+export const CHAT_SEND_PAUSED = '봉고캣 업데이트로 잠시 채팅을 보낼 수 없습니다. 경고·플리는 그대로 사용할 수 있습니다.';
+
+// 목적격 조사는 마지막 이름의 받침으로 고른다(autoChest.ts object()와 같은 규칙)
+function withObject(text: string) {
+  const code = text.charCodeAt(text.length - 1) - 0xac00;
+  return `${text}${code >= 0 && code < 11172 && code % 28 === 0 ? '를' : '을'}`;
+}
 
 export function degradedNotice(degraded: string[]) {
   const names = degraded.map((g) => DEGRADED_TEXT[g]).filter(Boolean);
   if (names.length === 0) return '';
+  const target = withObject(names.join('·'));
   const avatars = degraded.includes('avatars') ? ' 고양이는 기본 모습으로 보입니다.' : '';
-  return `봉고캣 업데이트로 ${names.join('·')}를 잠시 멈췄습니다.${avatars} 받기·경고·플리는 그대로 쓸 수 있고, Cat Talk 업데이트로 다시 켜집니다.`;
+  const kept = degraded.includes('chat_send') ? '받기·경고·플리' : '채팅·경고·플리';   // 보내기가 멈췄을 때만 '받기'(채팅 받기). 아니면 채팅 전체가 그대로다
+  // T1·T2는 원격 호환성 매니페스트(②)로 앱 업데이트 없이 돌아온다(T3 배너만 'Cat Talk 업데이트' 안내, autoChest.ts)
+  return `봉고캣 업데이트로 ${target} 잠시 사용할 수 없습니다.${avatars} 곧 자동으로 복구됩니다. ${kept}는 그대로 사용할 수 있습니다.`;
 }
 export const VIEW_UNAVAILABLE = '대화를 불러오지 못해 표시하거나 보낼 수 없습니다. 다시 확인하고 있습니다.';
 const STORAGE_ERROR = '저장에 실패해 일부 기록이 보관되지 않았습니다.';
