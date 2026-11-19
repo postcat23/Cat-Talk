@@ -251,7 +251,7 @@ Cat-Talk main 추가 코드: `steam_trade_failed`(교환 요청 URI 형식 재�
 ### 차단 멤버 고양이 숨김 목록 (D-033 3단계·D-040)
 
 - **파일**: 게임 폴더(플래그 옆) `CatTalkHidden.ids`. 한 줄에 SteamID64 하나(십진, 줄마다 LF), 정렬·중복 없음. 없거나 비면 아무도 숨기지 않는다. 앱을 꺼도 남는다(결정 B).
-- **게임(패치 세트 3 이상)**: 게임 숨김(`LobbyMemberInstance.IsHidden`: 고양이 오브젝트를 끄고 자리를 비운다)을 쓴다. 숨김 setter·getter·`PlayerDataCache`·`LobbyMemberVisibility.SetVisibility`와 그 호출 대상은 Cat Talk 연결 호환성 지문(업스트림 `feature-contract.json`의 `privacy`) 범위라 고치지 않고, 그 밖의 세 곳에만 훅을 건다.
+- **게임(패치 세트 3 이상)**: 게임 숨김(`LobbyMemberInstance.IsHidden`: 고양이 오브젝트를 끄고 자리를 비운다. 게임 빌드 26754239부터는 setter가 `AnimatedSetActive`로 축소 애니메이션 뒤에 끈다 — 패처는 두 모양을 모두 받고 삽입 내용은 같다)을 쓴다. 숨김 setter·getter·`PlayerDataCache`·`LobbyMemberVisibility.SetVisibility`와 그 호출 대상은 Cat Talk 연결 호환성 지문(업스트림 `feature-contract.json`의 `privacy`) 범위라 고치지 않고, 그 밖의 세 곳에만 훅을 건다.
   - 입장·재입장(`LobbyMemberInstance.Start`의 숨김 호출 직전): 목록에 있으면 처음부터 숨김.
   - 자동 숨김 토글·참여자 목록 행 생성(`HandleAutoHideUpdated`의 `SetVisibility` 호출 직전): 목록에 있으면 '숨김'으로(게임 버튼 상태도 맞음).
   - `CatSpawnManager.Update`가 0.5초마다 파일을 읽어(`File.Exists`·`ReadAllText`) 전 멤버에 적용: 목록에 있는데 보이는 멤버는 숨기고, 목록에서 빠진 멤버는 게임 '자동 숨김' 설정값으로 되돌린다(결정 A. 차단 전 수동 숨김은 기억하지 않는다). 그 밖의 멤버는 건드리지 않는다. 게임 참여자 목록의 '보이기'를 직접 누르면(지문 범위라 훅 불가) 최대 0.5초 보였다가 다시 숨는다.

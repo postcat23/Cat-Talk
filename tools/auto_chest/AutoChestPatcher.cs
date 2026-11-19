@@ -14,7 +14,8 @@
 //     OnUIHoverCallback.IsPointerOverUIElement와 OnSpecificUIHoverCallback의 결과 필터에서 투명화 중에는 레이어 2를 뺀다.
 //   팝업 두 곳: 이모트 도넛·말풍선 버튼은 레이캐스트가 아니라 커서 거리로 열린다(실게임 확인). 게임이 반투명 중에 켜는
 //     TranslucentOnHoverSetting.DisablePopups를 EmoteDonut.Update와 CatSpeech.Update가 읽는 분기에서, 투명화 중에도 꺼진 쪽으로 보낸다.
-// 차단 멤버 고양이 숨김(D-033 3단계): 게임의 멤버별 숨김(LobbyMemberInstance.IsHidden: 고양이 오브젝트를 끄고 자리를 비운다)을 쓴다.
+// 차단 멤버 고양이 숨김(D-033 3단계): 게임의 멤버별 숨김(LobbyMemberInstance.IsHidden: 고양이 오브젝트를 끄고 자리를 비운다.
+//   빌드 26754239부터는 게임이 축소 애니메이션 뒤에 끈다)을 쓴다.
 //   목록 파일은 플래그 옆 CatTalkHidden.ids(한 줄에 SteamID64 하나, LF). 없거나 비면 아무도 숨기지 않는다. 앱이 통째로 다시 쓴다.
 //   숨김 setter·getter·PlayerDataCache·LobbyMemberVisibility.SetVisibility와 그 호출 대상은 Cat Talk 연결 호환성 지문(업스트림
 //   feature-contract.json의 privacy)이 본문까지 본다. 여기를 바꾸면 Cat Talk가 '지원하지 않는 게임 빌드'로 연결을 멈춘다(2026-11-10 실측:
@@ -364,9 +365,12 @@ sealed class Target {
         UserDataType = Getter.Body.Variables[0].VariableType;
         if (UserDataType.FullName != "Heathen.SteamworksIntegration.UserData" || GetData.ReturnType.FullName != UserDataType.FullName
             || GetIdStr.ReturnType.MetadataType != MetadataType.String || GetIdStr.Parameters.Count != 0) throw new Incompatible("member_getter_shape");
-        // set_IsHidden은 게임 숨김 저장(PlayerDataCache.SetIsHidden)과 고양이 켜고 끄기(GameObject.SetActive)를 하는 그 setter여야 한다
+        // set_IsHidden은 게임 숨김 저장(PlayerDataCache.SetIsHidden)과 고양이 켜고 끄기를 하는 그 setter여야 한다. 켜고 끄기는 빌드 26538670까지
+        // cat.gameObject.SetActive(!value), 26754239부터 _catVisibility.SetActive(!value)(BongoCat.AnimatedSetActive: 숨길 때 축소 애니메이션 뒤
+        // 대상 오브젝트를 끈다, 실측 2026-11-19). 둘 중 하나여야 한다. 우리 훅은 이 setter를 부르기만 하므로 삽입 내용은 같다.
         var s = Setter.Body.Instructions;
-        if (!s.Any(i => CallsNamed(i, "PlayerDataCache", "SetIsHidden")) || !s.Any(i => CallsNamed(i, "GameObject", "SetActive"))) throw new Incompatible("member_setter_shape");
+        if (!s.Any(i => CallsNamed(i, "PlayerDataCache", "SetIsHidden"))
+            || !s.Any(i => CallsNamed(i, "GameObject", "SetActive") || CallsNamed(i, "AnimatedSetActive", "SetActive"))) throw new Incompatible("member_setter_shape");
         // setter에 우리 훅이 있으면(2026-11-10 시험본: setter 입구 훅 — Cat Talk 연결 지문을 깨 연결이 멈췄다) 다시 패치하지 않는다
         if (s.Any(i => { var r = i.Operand as MethodReference; return r != null && r.DeclaringType.FullName == MemberTypeName && r.Name.StartsWith("CatTalk", StringComparison.Ordinal); }))
             throw new Incompatible("hidden_setter_hook");

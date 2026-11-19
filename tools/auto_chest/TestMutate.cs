@@ -74,6 +74,15 @@ static class TestMutate {
                 il.InsertBefore(il.Body.Instructions[0], il.Create(OpCodes.Nop));
                 break;
             }
+            case "setter-shape": {   // 숨김 setter가 고양이를 켜고 끄지 않음(게임 업데이트 가정). 켜고 끄기 호출(빌드에 따라 GameObject 또는
+                // AnimatedSetActive의 SetActive)을 pop 둘로 바꿔 스택은 맞춘다. 분기가 가리키는 명령 객체는 그대로 둔다.
+                var il = Method(m, MemberType, "set_IsHidden").Body.GetILProcessor();
+                var call = il.Body.Instructions.Single(i => i.OpCode == OpCodes.Callvirt && ((MethodReference)i.Operand).Name == "SetActive"
+                    && (((MethodReference)i.Operand).DeclaringType.Name == "GameObject" || ((MethodReference)i.Operand).DeclaringType.Name == "AnimatedSetActive"));
+                call.OpCode = OpCodes.Pop; call.Operand = null;
+                il.InsertAfter(call, il.Create(OpCodes.Pop));
+                break;
+            }
             // ---- v3 변형: 숨김 훅 일부만 있으면 모든 명령이 거부해야 한다 ----
             case "partial-hidden-start": RemoveBlockBefore(Method(m, MemberType, "Start"), "CatTalkHide", 2); break;   // 입장 훅만 없음
             case "partial-hidden-toggle": RemoveBlockBefore(Method(m, VisibilityType, "HandleAutoHideUpdated"), "CatTalkVisible", 3); break;   // 토글 훅만 없음

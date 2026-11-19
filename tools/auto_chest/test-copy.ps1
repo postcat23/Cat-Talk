@@ -119,8 +119,12 @@ Run '17l backup of v2 -> refuse' 2 @('backup', $v2old, (Join-Path $Work 'misc/ba
 # v3(상자 + 투명화 + 차단 멤버 숨김) 설치본 → v5(D-046·D-047): 1.0.0 사용자가 지나는 길. 획득 팝업 게이트(2)와 루트 후크(Start 12 + Smooth 17
 # + 메뉴 닫기 메서드 26)만 더하고, 결과가 원본에서 바로 만든 v5와 같아야 한다
 $v3old = Join-Path $Work 'v3old/Assembly-CSharp.dll'; $v4c = Join-Path $Work 'v4up/Assembly-CSharp.dll'
-& $legacy3 patch $orig $v3old $flag $mg | Out-Null
-Check '19a v3 patcher made v3' ($LASTEXITCODE -eq 0) ''
+# 게임 빌드 26754239부터 숨김 setter 모양이 바뀌어 v3 패처(69e21e9)는 그 빌드를 거부한다(member_setter_shape). 그 빌드에는 v3 설치본이
+# 생길 수 없으므로(게임 업데이트가 DLL을 원본으로 바꾸고, v3 패처는 새 빌드를 패치하지 않는다) 19번 묶음은 SKIP으로 표시하고 통과로 세지 않는다.
+$v3out = & $legacy3 patch $orig $v3old $flag $mg 2>$null; $v3code = $LASTEXITCODE
+$v3skip = ($v3code -eq 2) -and ("$v3out" -match '"reason":"member_setter_shape"')
+if ($v3skip) { 'SKIP 19 v3 -> v5 upgrade (v3 patcher refuses this build: member_setter_shape)' } else {
+Check '19a v3 patcher made v3' ($v3code -eq 0) "$v3out"
 $iv3 = Inspect $v3old
 Check '19b v3 reads patched, version 3, outdated' ($iv3.state -eq 'patched' -and $iv3.patchVersion -eq 3 -and $iv3.upToDate -eq $false -and $iv3.hiddenFile -eq 'C:\CatTalkTest\CatTalkHidden.ids') "$($iv3.patchVersion)"
 Run '19c verify v3 -> refuse' 2 @('verify', $orig, $v3old, $flag, $mg)
@@ -135,9 +139,10 @@ Copy-Item -LiteralPath $v4c -Destination $target -Force
 Run '19j restore over upgraded' 0 @('restore', (Join-Path $Work 'bak'), $target)
 Check '19k restored == original bytes' ((Sha $target) -eq $origSha) ''
 Run '19l backup of v3 -> refuse' 2 @('backup', $v3old, (Join-Path $Work 'misc/bak3'))
+}
 
 foreach ($m in 'no-hover-type','no-smooth','no-layer','no-update','no-overui','no-donut','no-speech','no-alpha','extra-anchor',
-    'no-member-type','no-setter','no-member-start','no-toggle','no-spawn-update','no-autohide','getter-shape','no-popup','popup-shape','root-smooth-targets','no-toggle-setactive') {
+    'no-member-type','no-setter','no-member-start','no-toggle','no-spawn-update','no-autohide','getter-shape','setter-shape','no-popup','popup-shape','root-smooth-targets','no-toggle-setactive') {
   $bad = Join-Path $Work "mut/$m.dll"; & $mutate $orig $bad $m
   Run "12 clean, $m -> inspect refuse" 2 @('inspect', $bad)
   Run "12 clean, $m -> patch refuse" 2 @('patch', $bad, (Join-Path $Work "misc/$m.dll"), $flag, $mg)
@@ -201,7 +206,7 @@ function Features($dll) {
 $fOrig = Features $orig
 Check '18a probe reads the original' ($null -ne $fOrig -and $fOrig -match '"privacy":"[0-9a-f]{64}"') ''
 Check '18b v5 keeps every connection fingerprint' ((Features $patched) -eq $fOrig) ''
-Check '18c v1/v2/v3 -> v5 keep it too' ((Features $v4a) -eq $fOrig -and (Features $v4b) -eq $fOrig -and (Features $v4c) -eq $fOrig) ''
+Check '18c v1/v2/v3 -> v5 keep it too' ((Features $v4a) -eq $fOrig -and (Features $v4b) -eq $fOrig -and ($v3skip -or (Features $v4c) -eq $fOrig)) $(if ($v3skip) { '(v3 skipped, see 19)' } else { '' })
 Check '18d setter hook (2026-11-10 trial shape) changes it' ((Features (Join-Path $Work 'mut/setter-hook.dll')) -ne $fOrig) ''
 Check '18e setter edit outside our hooks changes it' ((Features (Join-Path $Work 'mut/edit-setter-outside.dll')) -ne $fOrig) ''
 

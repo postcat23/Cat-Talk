@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `sidecar` — 봉고캣 빌드 26754239(2026-11-19 업데이트)에서 '지원하지 않는 버전'으로 연결이 멈추던 문제 수정: 새 빌드의 연결 호환성 지문을 실측해 지원 목록(`feature-contract.json`)에 세 번째 프로필로 추가. 바뀐 곳은 lobby(Heathen.Steamworks)·privacy(숨김 setter의 축소 애니메이션 등 게임 코드) 두 지문이며, 이전 빌드 지원·검사 방식은 그대로
+- `auto-chest` — 같은 빌드에서 상자 자동 오픈·투명화·차단 멤버 고양이 숨김 패치가 '호환 안 됨'(`member_setter_shape`)으로 막히던 문제 수정: 게임 숨김 setter가 고양이를 축소 애니메이션(`AnimatedSetActive`)으로 끄는 새 모양도 허용(삽입하는 훅·패치 세트 5 그대로, 이전 빌드 모양도 계속 허용)
+
 ## [1.0.6] - 2026-11-18
 
 ### Added
