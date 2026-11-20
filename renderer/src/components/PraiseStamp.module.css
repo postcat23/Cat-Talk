@@ -1,46 +1,51 @@
-/* 칭찬 도장(1.0.8). 공개수배 전단과 같은 자리(대화 영역 가운데, 반응 카드 z 4 위·스크림 z 6과 드로어 아래)·같은 길이. 클릭은 통과한다.
-   타임라인(총 4.6초 = PraiseStamp.tsx DURATION_MS): 0~0.5s 아바타 등장 → 0.55·0.7·0.85s 별 셋(머리 위 곡선) → 1.25s 도장이 날아와
-   1.53s 쾅(충격 빛·아바타 흔들림) → 되튐·정착 → 3.8~4.6s 사라짐. 수치는 스크린샷 확인 후 확정 */
-/* 전단은 종이가 불투명해 뒤를 가리지만 아바타는 둘레가 투명하다 — 배경을 전단보다 조금 더 어둡게(.45) 하고 아래 후광이 가운데를 가린다 */
-.stage{position:absolute;inset:0;z-index:5;display:grid;place-items:center;pointer-events:none;
-  background:rgba(0,0,0,.45);animation:dim 4.6s linear forwards}
-@keyframes dim{0%{background-color:rgba(0,0,0,0)}6%{background-color:rgba(0,0,0,.45)}83%{background-color:rgba(0,0,0,.45)}100%{background-color:rgba(0,0,0,0)}}
-.scene{position:relative;width:min(76%,300px);aspect-ratio:1;animation:out .8s ease-in 3.8s forwards}
+/* 칭찬 도장(1.0.9). 공개수배 전단과 같은 자리(대화 영역 가운데, 반응 카드 z 4 위·스크림 z 6과 드로어 아래)·같은 길이. 클릭은 통과한다.
+   생김새(사용자 명세 2026-11-20): 아바타를 가운데에 담은 원형 도장 — 테두리(굵은 바깥 고리·얇은 안쪽 고리, 흰 띠 없음) + 위쪽 곡선
+   '참잘했어요' + 아래쪽 곡선 별 셋, 색은 칭찬 별(#ff4f7b = PraiseStar.tsx PRAISE_STAR). 도장 지름 = 장면 폭.
+   타임라인(총 4.6초 = PraiseStamp.tsx DURATION_MS): 0.7s 도장(테두리·글자·아바타·후광 한 덩어리)이 크게 기운 채 날아와(가속)
+   0.98s 쾅(충격 빛) → 되튐·정착(등장은 사용자 확정 2026-11-20) → 1.2·1.35·1.5s 아래쪽 별 셋(이후 1.4초 주기로 반짝임)
+   → 3.8~4.6s 사라짐. 수치는 스크린샷 확인 후 확정 */
+/* 전단은 종이가 불투명해 뒤를 가리지만 아바타는 둘레가 투명하다 — 뒤의 대화를 전단보다 조금 더 가리고(.45) 후광이 가운데를 가린다.
+   막 색은 테마를 따른다(--scrim-rgb: 라이트 흰색·다크 검정, 사용자 피드백 2026-11-20). 막은 ::before의 불투명도로 켜고 끈다 */
+.stage{position:absolute;inset:0;z-index:5;display:grid;place-items:center;pointer-events:none}
+.stage::before{content:'';position:absolute;inset:0;background:rgb(var(--scrim-rgb));opacity:0;animation:dim 4.6s linear forwards}
+@keyframes dim{0%{opacity:0}6%{opacity:.45}83%{opacity:.45}100%{opacity:0}}
+.scene{position:relative;width:min(86%,330px);aspect-ratio:1;animation:out .8s ease-in 3.8s forwards}
 @keyframes out{to{opacity:0;transform:scale(.96)}}
-/* 축하 빛: 아바타 뒤 분홍빛 후광(가운데는 진해서 뒤의 대화가 아바타 사이로 비치지 않는다) */
-.scene::before{content:'';position:absolute;left:8%;right:8%;top:22%;bottom:0;border-radius:50%;
-  background:radial-gradient(closest-side,rgba(255,186,210,.72),rgba(255,140,175,.36) 55%,rgba(255,120,160,.12) 80%,transparent);
-  opacity:0;animation:glow .6s ease-out .1s forwards}
-@keyframes glow{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:none}}
-/* 아바타: 채팅과 같은 콘텐츠 bbox 박스(Cat sprite). 그림 가로폭을 장면의 58%로, 별 자리를 남기려고 조금 아래에 */
-.avatar{position:absolute;left:0;right:0;top:24%;bottom:2%;display:flex;align-items:center;justify-content:center;--sprite-w:58%}
-.avatar > *{flex:none;animation:popIn .5s cubic-bezier(.2,1.4,.4,1) both,jolt .16s linear 1.53s}
-@keyframes popIn{0%{opacity:0;transform:scale(.6)}60%{opacity:1;transform:scale(1.06)}100%{opacity:1;transform:none}}
-@keyframes jolt{0%,100%{transform:none}30%{transform:translate(-5px,3px) rotate(-2deg)}65%{transform:translate(3px,-2px) rotate(1deg)}}
-/* 별: 차례로 튀어나와(--at) 가볍게 반짝인다. 회전은 --rot */
-.star{position:absolute;width:19%;aspect-ratio:1;transform:translate(-50%,-50%) rotate(var(--rot)) scale(0);
-  animation:starPop .45s cubic-bezier(.2,1.6,.4,1) var(--at) forwards,twinkle 1.4s ease-in-out calc(var(--at) + .45s) infinite}
-.starIcon{display:block;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 0 6px rgba(255,79,123,.6))}
-@keyframes starPop{0%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(0)}100%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1)}}
-@keyframes twinkle{0%,100%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1)}50%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1.12)}}
-/* 도장: 아바타 오른쪽 아래에 겹치게. 크고 기운 채 날아와(가속) 1.53s에 쾅 → 살짝 되튐 → -14° 정착(공개수배 전단 붙이기와 같은 느낌) */
-.stamp{position:absolute;width:50%;right:0;bottom:2%;opacity:0;transform:rotate(-14deg);animation:slam .7s 1.25s forwards}
+/* 도장 한 덩어리(후광·아바타·무늬): 크고 기운 채 날아와(가속) 0.98s에 쾅 → 살짝 되튐 → 똑바로 정착(위쪽 글자가 읽히게).
+   아바타도 도장을 찍을 때 같이 나타난다(사용자 명세 2026-11-20 — 전에는 아바타가 0~0.5s에 먼저 떴다) */
+.stamp{position:absolute;inset:0;opacity:0;animation:slam .7s .7s forwards}
+/* 축하 빛: 도장 안쪽에 깐 분홍빛 후광(가운데는 진해서 뒤의 대화가 아바타 사이로 비치지 않는다). 안쪽 고리(지름의 85%)까지
+   닿게 지름의 84%로 넓혔다(사용자 피드백 2026-11-20 '아바타 뒤 그라데이션 범위 확장') */
+.stamp::before{content:'';position:absolute;inset:8%;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(255,186,210,.72),rgba(255,140,175,.36) 55%,rgba(255,120,160,.12) 80%,transparent)}
+/* 아바타: 도장 가운데(위 글자와 아래 별 사이). 채팅과 같은 콘텐츠 bbox 박스(Cat sprite), 그림 가로폭을 도장 지름의 52%로 */
+.avatar{position:absolute;left:0;right:0;top:26%;bottom:25%;display:flex;align-items:center;justify-content:center;--sprite-w:52%}
+.avatar > *{flex:none}
+/* 도장 무늬(SVG — 테두리·글자·별). 분홍 빛 번짐(칭찬 별과 같은 계열)으로 어두운 배경에서 테두리가 또렷하게 */
+.seal{position:absolute;inset:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 0 6px rgba(255,79,123,.55))}
 @keyframes slam{
-  0%{opacity:0;transform:translate(18px,-28px) rotate(-32deg) scale(2.4);animation-timing-function:cubic-bezier(.5,0,.9,.4)}
+  0%{opacity:0;transform:rotate(-24deg) scale(2.2);animation-timing-function:cubic-bezier(.5,0,.9,.4)}
   15%{opacity:1}
-  40%{transform:rotate(-12deg) scale(.88);animation-timing-function:ease-out}
-  62%{transform:rotate(-15deg) scale(1.06);animation-timing-function:ease-in-out}
-  80%{transform:rotate(-13.5deg) scale(.98);animation-timing-function:ease-in-out}
-  100%{opacity:1;transform:rotate(-14deg)}
+  40%{transform:rotate(2deg) scale(.9);animation-timing-function:ease-out}
+  62%{transform:rotate(-1deg) scale(1.04);animation-timing-function:ease-in-out}
+  80%{transform:rotate(.5deg) scale(.99);animation-timing-function:ease-in-out}
+  100%{opacity:1;transform:none}
 }
+/* 위쪽 곡선 글자(viewBox 단위) */
+.sealText{font-size:34px;font-weight:700;letter-spacing:2px}
+/* 아래쪽 별: 차례로 튀어나와(--at) 커졌다 작아지며 반짝인다(1.4초 주기). 자리·기울기는 바깥 g(transform 속성)가 맡는다.
+   처음 버전(사용자 결정 2026-11-20 — 맥동 강화·순차·스프링 안을 시험한 뒤 되돌림)에서 확대 폭만 1.12배 → 1.25배('확대/축소 갭 키우기') */
+.sealStar{transform-box:fill-box;transform-origin:center;transform:scale(0);
+  animation:starPop .45s cubic-bezier(.2,1.6,.4,1) var(--at) forwards,twinkle 1.4s ease-in-out calc(var(--at) + .45s) infinite}
+@keyframes starPop{0%{transform:scale(0)}100%{transform:scale(1)}}
+@keyframes twinkle{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
 /* 쾅 순간의 충격: 도장 뒤에서 붉은 빛이 확 퍼졌다 사라진다 */
-.impact{position:absolute;width:58%;aspect-ratio:1;right:-4%;bottom:-4%;border-radius:50%;opacity:0;
-  background:radial-gradient(closest-side,rgba(255,90,120,.55),rgba(255,90,120,.2) 70%,transparent);animation:impact .45s ease-out 1.53s}
+.impact{position:absolute;inset:4%;border-radius:50%;opacity:0;
+  background:radial-gradient(closest-side,rgba(255,90,120,.55),rgba(255,90,120,.2) 70%,transparent);animation:impact .45s ease-out .98s}
 @keyframes impact{from{opacity:1;transform:scale(.7)}to{opacity:0;transform:scale(1.3)}}
 /* 움직임 줄이기: 튀어나오기·쾅·반짝임 없이 도장까지 찍힌 장면을 보여 주고 사라진다 */
 @media (prefers-reduced-motion:reduce){
-  .avatar > *,.scene::before{animation:none;opacity:1}
-  .star{animation:none;transform:translate(-50%,-50%) rotate(var(--rot)) scale(1)}
   .stamp{animation:none;opacity:1}
+  .sealStar{animation:none;transform:none}
   .impact{display:none}
 }
