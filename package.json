@@ -30,7 +30,7 @@
       { "from": "LICENSES", "to": "LICENSES" }
     ],
     "win": { "target": "nsis", "icon": "electron/app-icon.ico" },
-    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": false, "artifactName": "Cat-Talk-Setup-${version}.${ext}" },
+    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": false, "artifactName": "Cat-Talk-Setup-${version}.${ext}", "include": "scripts/installer.nsh" },
     "publish": { "provider": "github", "owner": "postcat23", "repo": "Cat-Talk" }
   },
   "devDependencies": {
