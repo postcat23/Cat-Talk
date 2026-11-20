@@ -5,8 +5,10 @@
 ; the orphaned-worker signature are stopped (scripts/installer/reap-orphan-workers.ps1): the install's
 ; resources\sidecar-bin\cattalk-sidecar.exe + the worker argument --multiprocessing-fork + parent gone. Nothing else.
 ;
-; customInit runs in .onInit after the install directory is known (initMultiUser). It runs on every install, including
-; auto-updates: electron-builder's own app check (_CHECK_APP_RUNNING) is skipped when the installer's parent is the app.
+; customInit runs in .onInit after the install directory is known (initMultiUser), on every install including
+; auto-updates, before electron-builder's own app check (_CHECK_APP_RUNNING, install section). That check runs on
+; auto-updates too (it compares the installer's own process name, not its parent's) and, when PowerShell is available,
+; stops every process under the install directory. This hook is the earlier step, limited to orphaned workers.
 ; A failure here never blocks the install; the result is discarded (.onInit has no UI or log yet).
 
 !macro customInit
