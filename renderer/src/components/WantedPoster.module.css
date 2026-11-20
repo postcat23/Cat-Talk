@@ -1,10 +1,12 @@
 /* 공개수배 전단(D-052). 대화 영역 가운데, 반응 카드(z 4) 위·스크림(z 6)과 드로어 아래. 클릭은 통과한다.
    타임라인(총 4.6초 = WantedPoster.tsx DURATION_MS): 0~0.6s 벽에 붙이기(0.27s 쾅 → 되튐 → 정착) → 0.55~0.8s 조준선이 사진으로
    → 1.0·1.16·1.32s 세 발(번쩍임·탄흔·흔들림·조준선 반동) → 1.75s 조준선 사라짐 → 3.8~4.6s 전단 사라짐 */
-/* 어둡게는 배경색만 바꾼다(opacity로 하면 전단까지 반투명해져 붙이는 순간이 약해진다). 전단은 제 애니메이션(slap·out)으로 나타나고 사라진다 */
-.stage{position:absolute;inset:0;z-index:5;display:grid;place-items:center;pointer-events:none;
-  background:rgba(0,0,0,.28);animation:dim 4.6s linear forwards}
-@keyframes dim{0%{background-color:rgba(0,0,0,0)}6%{background-color:rgba(0,0,0,.28)}83%{background-color:rgba(0,0,0,.28)}100%{background-color:rgba(0,0,0,0)}}
+/* 뒤를 가리는 막은 ::before 한 장의 불투명도로만 켜고 끈다(stage 자체 opacity로 하면 전단까지 반투명해져 붙이는 순간이 약해진다).
+   막 색은 테마를 따른다(--scrim-rgb: 라이트 흰색·다크 검정, 사용자 피드백 2026-11-20 — 칭찬 도장과 같게). 전단은 제 애니메이션(slap·out)으로
+   나타나고 사라진다 */
+.stage{position:absolute;inset:0;z-index:5;display:grid;place-items:center;pointer-events:none}
+.stage::before{content:'';position:absolute;inset:0;background:rgb(var(--scrim-rgb));opacity:0;animation:dim 4.6s linear forwards}
+@keyframes dim{0%{opacity:0}6%{opacity:.28}83%{opacity:.28}100%{opacity:0}}
 /* 전단 원본 1199×1312. 사진틀(투명 구멍) = 왼쪽 14.93%·위 24.09%·너비 70.06%·높이 39.25%(실측) */
 .poster{position:relative;width:min(78%,320px);aspect-ratio:1199/1312;
   animation:slap .6s both,jolt .1s linear 1s,jolt .1s linear 1.16s,jolt .1s linear 1.32s,out .8s ease-in 3.8s forwards}

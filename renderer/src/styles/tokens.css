@@ -15,6 +15,9 @@
      밝기를 낮춰 배지 배경(--surface + --line) 대비 4.51:1. 다크는 --good 5.77:1·#ffa24a 5.66:1 */
   --good-text:#21774b; --warn-text:#a25408;
   --notice:#f0ecff; --notice-fg:#4a3aa0;
+  /* --scrim-rgb: 발동 화면(칭찬 도장·공개수배 전단) 뒤에 까는 막의 색(R,G,B — rgb(var(--scrim-rgb))에 불투명도를 따로 준다).
+     라이트는 흰색, 다크는 검정(사용자 피드백 2026-11-20 — 라이트에서 검은 막이 어색함) */
+  --scrim-rgb:255,255,255;
   --ui:"Pretendard","Noto Sans KR",system-ui,sans-serif;
   /* 숫자 표시(시각·인원·카운터·버전)도 단일 폰트로. Pretendard 숫자는 비례폭이라 쓰는 곳에서 tabular-nums(tnum)로 고정 */
   --mono:var(--ui);
@@ -22,8 +25,8 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --backdrop:#121319; --backdrop-2:#0d0e13; --panel:#1a1b22; --surface:#23242d; --fg:#ececf2; --muted:#9a9aac; --line:rgba(255,255,255,.10);
   --accent:#a68bff; --accent-fg:#16131f; --peer:#2a2b35; --own:#6b5fa6; --own-fg:#f4f1ff;
-  --good:#4fd08a; --bad:#ff6b67; --bad-text:var(--bad); --good-text:var(--good); --warn-text:#ffa24a; --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; color-scheme:dark}}
+  --good:#4fd08a; --bad:#ff6b67; --bad-text:var(--bad); --good-text:var(--good); --warn-text:#ffa24a; --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; --scrim-rgb:0,0,0; color-scheme:dark}}
 :root[data-theme="dark"]{
   --backdrop:#121319; --backdrop-2:#0d0e13; --panel:#1a1b22; --surface:#23242d; --fg:#ececf2; --muted:#9a9aac; --line:rgba(255,255,255,.10);
   --accent:#a68bff; --accent-fg:#16131f; --peer:#2a2b35; --own:#6b5fa6; --own-fg:#f4f1ff;
-  --good:#4fd08a; --bad:#ff6b67; --bad-text:var(--bad); --good-text:var(--good); --warn-text:#ffa24a; --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; color-scheme:dark}
+  --good:#4fd08a; --bad:#ff6b67; --bad-text:var(--bad); --good-text:var(--good); --warn-text:#ffa24a; --idle:#7b7b8a; --notice:#201c33; --notice-fg:#c7bcff; --scrim-rgb:0,0,0; color-scheme:dark}
