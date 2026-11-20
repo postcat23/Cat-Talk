@@ -4,7 +4,7 @@ dispatch/request/poll/close는 src/bongo_chat/desktop.py의 Controller에서 Qt�
 notifications·merger를 뺀 포팅이다. worker는 run_worker를 기본 아바타 글루(default_avatar)로 감싸 spawn한다.
 요청: {"id": <int>, "args": {"action": "...", ...}}  응답: {"id": <int>, "result": {...}}
 """
-from collections import OrderedDict
+from collections import OrderedDict, deque
 import hashlib
 import json
 import multiprocessing as mp
@@ -31,6 +31,7 @@ from default_avatar import run_worker_with_default
 from volatile_store import VolatileStore
 import warns as warn_model
 import playlist as pl_model
+import worker_guard
 from diag import enable_faulthandler, mark
 
 MAX_REQUEST = 32768
@@ -47,11 +48,21 @@ PL_RESTORE_TRIES = 3        # 한 번 입장에서 복원 쓰기를 다시 보�
 PL_MEMORY_LOBBIES = 32      # 기억해 두는 로비 수 상한(오래된 것부터 잊는다)
 WARN_OP_RETRY = 5.0          # 같은 정리 쓰기를 다시 보내기 전 기다리는 시간(프로필에 반영되기 전 중복 방지)
 WANTED_MARKER_GRACE = 5.0    # 합계 3으로 띄운 뒤 이 시간 안에 오는 같은 대상의 처형 표식은 같은 처형으로 본다(기여자마다 표식을 따로 씀)
-# worker 교체(steam_release 글루): Steam을 놓은 worker가 스스로 끝나기를 기다리는 상한. 그 worker는 재시도 대기 중이라 stop을 걸면
-# discovery·avatars 정리(join 각 1초) 뒤 끝난다. 넘기면 terminate한다.
+# worker 교체(D-051): worker가 '게임이 꺼졌는데 이 프로세스가 아직 Steam에 Bongo Cat으로 잡혀 있다'고 알리면(steam_released,
+# 1.0.9부터 그때만 — D-057) stop을 걸고 스스로 끝나기를 기다리는 상한. 그 worker는 교체 대기 중이라 곧 끝난다. 넘기면 terminate한다.
 WORKER_RETIRE_GRACE = 5.0
 # 교체가 아닌 worker 종료(크래시·강제 종료) 뒤 새 worker를 띄우기까지. 업스트림이 같은 프로세스에서 재시도하는 간격(3초)과 같다.
 WORKER_RESPAWN_DELAY = 3.0
+# 안전망 재생성 백오프(1.0.9, 사용자 명세): 60초 안에 이미 3번 다시 띄웠으면 다음은 5→10→20초…(최대 60초)를 두고 띄운다.
+# worker가 60초 살아 있으면 처음으로 돌린다. 정상 교체(게임 종료·계약 갱신)는 한 번씩이라 걸리지 않는다 — 1.0.8까지의 로그오프 교체
+# 루프(0.5초마다, 2026-11-18 21분에 2,255개) 같은 반복만 막는다.
+WORKER_SWAP_WINDOW = 60.0
+WORKER_SWAP_LIMIT = 3
+WORKER_BACKOFF_START = 5.0
+WORKER_BACKOFF_MAX = 60.0
+WORKER_STABLE_RESET = 60.0
+# terminate 뒤 실제 종료 확인(1.0.9): 기다림을 늘려 가며 최대 3번. 합 4초 — 종료 정리(join 3초 + 이것)가 Electron의 8초 안에 든다
+WORKER_TERMINATE_WAITS = (1.0, 1.0, 2.0)
 # 아바타 PNG는 view에 싣지 않고 id만 보낸다(600ms 폴링마다 수십 KB×참여자×2가 되는 것을 막는다).
 # 메모리에만 두고 렌더러가 avatars 액션으로 한 번씩 받아 간다.
 MAX_AVATARS = 256
@@ -151,8 +162,15 @@ class Sidecar:
         self.compat_pushed = None
         self.worker = None
         self.read_only = read_only
-        self.retire_by = None   # Steam을 놓은 worker를 끝내는 중이면 강제 종료 기한(monotonic). 끝나면 새 worker를 띄운다
-        self.respawn_at = None   # worker가 예기치 않게 끝났으면 다시 띄울 시각(monotonic)
+        self.retire_by = None   # 교체를 요청한 worker를 끝내는 중이면 강제 종료 기한(monotonic). 끝나면 새 worker를 띄운다
+        self.respawn_at = None   # 지난 worker가 끝났고 새 worker를 띄울 시각(monotonic) — 크래시 지연·안전망 백오프
+        # worker 생명주기(1.0.9, D-057): 이 사이드카가 어떻게 끝나든 worker도 끝내는 잡(첫 spawn 때 만든다), worker PID 기록
+        # (다음 시작 때 남은 것 정리), 안전망 백오프(최근 재생성 시각·단계·지금 worker를 띄운 시각)
+        self.job = None
+        self.registry = worker_guard.WorkerRegistry(data / worker_guard.REGISTRY_NAME)
+        self.respawn_times = deque()
+        self.backoff_level = 0
+        self.spawned_at = 0.0
         # 경고·공개수배(D-052): 로비 멤버 데이터 집계. 원문은 worker가 멤버 프로필(cattalk_warns·cattalk_wanted)에 싣는다
         self.warn_counts = {}      # 대상 → 경고 총횟수(현재 로비 멤버, 0 제외)
         self.wanted_events = []    # 렌더러가 다음 view에서 한 번 받아 갈 공개수배 [{id, target}]
@@ -191,7 +209,20 @@ class Sidecar:
         if offline:
             self.service.update(unavailable("offline"))
         else:
+            self.reap_leftover_workers()
             self.spawn_worker()
+
+    def reap_leftover_workers(self):
+        """시작 때 이전 실행이 남긴 worker를 끝낸다(1.0.9, D-057). 1.0.9+는 PID 기록으로, 설치본은 1.0.8 이하 고아도
+        시그니처(같은 실행 파일 + worker 실행 인자 + 부모 없음)로. 개발 실행은 기록으로만(임의 Python 프로세스는 건드리지 않는다)."""
+        legacy = sys.executable if getattr(sys, "frozen", False) else None
+        try:
+            counts = worker_guard.reap_leftovers(self.registry.path, legacy)
+        except Exception as exc:   # 정리 실패가 사이드카 시작을 막지 않는다
+            mark("worker_reap_failed", error=type(exc).__name__)
+            return
+        if any(counts.values()):
+            mark("worker_reap", **counts)
 
     def spawn_worker(self):
         # worker마다 stop을 새로 둔다(교체할 worker만 멈춘다). 큐는 이어 쓴다: 옛 worker는 정상 종료로 끝나 큐를 깨끗이 놓고,
@@ -201,11 +232,23 @@ class Sidecar:
         self.worker = self.context.Process(target=run_worker_with_default,
             args=(self.commands, self.events, self.stop, self.read_only, True), daemon=True)
         self.worker.start()
+        self.spawned_at = time.monotonic()
         mark("worker_spawn", pid=self.worker.pid)
+        self.guard_worker(self.worker.pid)
+
+    def guard_worker(self, pid):
+        """1.0.9(D-057): 새 worker를 이 사이드카의 잡에 넣고(사이드카가 어떻게 끝나든 OS가 worker도 끝낸다) PID를 기록한다.
+        잡을 못 만들거나 못 넣어도 worker는 돈다 — worker 쪽 부모 감시가 두 번째 겹이다."""
+        if self.job is None:
+            self.job = worker_guard.WorkerJob.create()
+        if self.job is not None and not self.job.assign(pid):
+            mark("worker_job_assign", ok=False)
+        self.registry.record(pid)
 
     def retire_worker(self):
-        """Steam을 놓은 worker를 끝낸다(steam_release 글루). Steam은 그 프로세스가 끝나야 Bongo Cat '실행 중'을 푼다(D-019).
-        stop만 걸고 기다린다 — worker는 재시도 대기(stop.wait) 중이라 discovery·avatars 정리 후 곧 끝난다. 새 worker는 tend_worker가 띄운다."""
+        """교체를 요청한 worker(게임이 꺼졌는데 Steam에 Bongo Cat으로 잡혀 있음 — 1.0.9 worker는 그때만 요청한다)와 계약 갱신 때
+        worker를 끝낸다. Steam은 그 프로세스가 끝나야 Bongo Cat '실행 중'을 푼다(D-019). stop만 걸고 기다린다 — worker는 교체
+        대기(stop.wait) 중이라 곧 끝난다. 새 worker는 tend_worker가 띄운다."""
         if self.closed or self.worker is None or self.retire_by is not None or not self.worker.is_alive():
             return
         mark("worker_retire", pid=self.worker.pid)
@@ -213,43 +256,79 @@ class Sidecar:
         self.retire_by = time.monotonic() + WORKER_RETIRE_GRACE
 
     def tend_worker(self):
-        """worker 교체(Steam 놓음)와 예기치 않은 종료 뒤 재시작을 맡는다. poll마다 부른다(메인 스레드라 짧게 끝낸다).
-        새 worker를 띄우지 못하면(OSError 등) 사이드카는 살려 두고 WORKER_RESPAWN_DELAY 뒤 다시 띄운다."""
+        """worker 교체(게임 종료 = steam_released, 계약 갱신)와 예기치 않은 종료 뒤 재시작을 맡는다. poll마다 부른다(메인 스레드라
+        짧게 끝낸다). 1.0.9(D-057): 다시 띄우기 전 안전망 백오프(respawn_delay), terminate 뒤 실제 종료 확인(end_worker),
+        끝난 worker의 PID 기록 정리. 새 worker를 띄우지 못하면(OSError 등) 사이드카는 살려 두고 WORKER_RESPAWN_DELAY 뒤 다시 띄운다."""
         if self.closed or self.worker is None:
             return
-        if self.retire_by is not None:
-            if self.worker.is_alive():
-                if time.monotonic() < self.retire_by:
-                    return
-                self.worker.terminate()  # 이 앱의 자식 worker만. 게임 프로세스는 건드리지 않는다.
-                self.worker.join(1)
-                mark("worker_terminated", pid=self.worker.pid)
-                # 쓰는 도중 끊긴 프로세스는 큐를 망가뜨릴 수 있어 새 큐로 바꾼다(남은 이벤트는 이번 poll에서 이미 비웠다)
-                self.replace_queues()
-            mark("worker_retired", pid=self.worker.pid, exitcode=self.worker.exitcode)
-            self.retire_by = None
-            self.respawn()
+        now = time.monotonic()
+        if self.respawn_at is not None:   # 지난 worker는 끝났고 새 worker를 기다리는 중(크래시 지연·백오프·spawn 실패)
+            if now >= self.respawn_at:
+                self.respawn_at = None
+                self.respawn()
             return
         if self.worker.is_alive():
-            return
-        if self.respawn_at is None:
+            if self.retire_by is None or now < self.retire_by:
+                if self.backoff_level and now - self.spawned_at >= WORKER_STABLE_RESET:
+                    self.backoff_level = 0   # 60초 살아 있으면 안전망을 처음으로(사용자 명세)
+                    mark("worker_backoff_reset")
+                return
+            self.end_worker()
+            mark("worker_terminated", pid=self.worker.pid)
+            # 쓰는 도중 끊긴 프로세스는 큐를 망가뜨릴 수 있어 새 큐로 바꾼다(남은 이벤트는 이번 poll에서 이미 비웠다)
+            self.replace_queues()
+        retired = self.retire_by is not None
+        self.retire_by = None
+        if retired:
+            mark("worker_retired", pid=self.worker.pid, exitcode=self.worker.exitcode)
+        else:
             # 교체가 아닌 종료(크래시·강제 종료 등): 지금처럼 끊김을 알리고, 잠시 뒤 새 worker로 다시 연결한다
             mark("worker_stopped", exitcode=self.worker.exitcode)
             try:
                 self.service.update(unavailable("worker_stopped"))
             except (sqlite3.Error, OSError):
                 self.service.storage_error = True
-            self.respawn_at = time.monotonic() + WORKER_RESPAWN_DELAY
-        elif time.monotonic() >= self.respawn_at:
-            self.respawn_at = None
+        if not self.worker.is_alive():
+            self.registry.forget(self.worker.pid)   # 끝내지 못한 worker는 기록을 남긴다 — 다음 시작 때 정리
+        delay = self.respawn_delay(now, 0.0 if retired else WORKER_RESPAWN_DELAY)
+        if delay > 0:
+            self.respawn_at = now + delay
+        else:
             self.respawn()
 
     def respawn(self):
+        self.respawn_times.append(time.monotonic())
         try:
             self.spawn_worker()
         except Exception as exc:
             mark("worker_spawn_failed", error=type(exc).__name__)
             self.respawn_at = time.monotonic() + WORKER_RESPAWN_DELAY
+
+    def respawn_delay(self, now, base):
+        """안전망 재생성 백오프(1.0.9, 사용자 명세): 최근 60초 안에 이미 3번 다시 띄웠으면 5→10→20초…(최대 60초)를 둔다.
+        한 번 걸리면 지연이 길어져 60초 창이 비어도 단계를 유지하고, worker가 60초 살아 있을 때만 처음으로 돌아간다(tend_worker).
+        base = 원래 지연(교체 0초, 크래시 3초)."""
+        while self.respawn_times and now - self.respawn_times[0] > WORKER_SWAP_WINDOW:
+            self.respawn_times.popleft()
+        if self.backoff_level == 0 and len(self.respawn_times) < WORKER_SWAP_LIMIT:
+            return base
+        delay = min(WORKER_BACKOFF_START * 2 ** self.backoff_level, WORKER_BACKOFF_MAX)
+        self.backoff_level += 1
+        mark("worker_respawn_backoff", delay=delay, recent=len(self.respawn_times))
+        return max(base, delay)
+
+    def end_worker(self):
+        """terminate 뒤 실제로 끝났는지 확인한다(1.0.9). 남아 있으면 기다림을 늘려 다시 terminate하고(최대 3번) 표식을 남긴다.
+        끝내지 못하면 False — 그 worker의 PID 기록은 남겨 다음 시작 때 정리하고, 이 사이드카가 끝나면 잡이 끝낸다."""
+        for attempt, wait in enumerate(WORKER_TERMINATE_WAITS, 1):
+            self.worker.terminate()  # 이 앱의 자식 worker만. 게임 프로세스는 건드리지 않는다.
+            self.worker.join(wait)
+            if not self.worker.is_alive():
+                if attempt > 1:
+                    mark("worker_terminate_retry", pid=self.worker.pid, attempts=attempt)
+                return True
+        mark("worker_terminate_failed", pid=self.worker.pid)
+        return False
 
     def update_warns(self):
         """경고·공개수배 집계(D-052). 로비 전원의 cattalk 멤버 데이터로 대상별 경고 총횟수를 세고, THRESHOLD에 닿은 대상은
@@ -498,7 +577,8 @@ class Sidecar:
                     else:
                         self.service.result(event["id"], event["status"])
                 elif event.get("type") == "steam_released":
-                    # 업스트림은 연결 끊김 상태를 먼저 보내고(보내던 메시지는 거기서 '알 수 없음'으로 정리) 그 뒤 Steam을 놓는다
+                    # worker 교체 요청: 게임이 꺼졌는데 그 프로세스가 Steam에 Bongo Cat으로 잡혀 있다(1.0.9부터 그때만 온다).
+                    # worker는 연결 끊김 상태를 먼저 보내고(보내던 메시지는 거기서 '알 수 없음'으로 정리) 그 뒤 Steam을 놓고 요청한다
                     self.retire_worker()
             self.update_warns()
             self.update_playlist()
@@ -528,8 +608,9 @@ class Sidecar:
         if self.worker:
             self.worker.join(3)
             if self.worker.is_alive():
-                self.worker.terminate()  # 이 앱의 자식 worker만. 게임 프로세스는 건드리지 않는다.
-                self.worker.join(2)
+                self.end_worker()   # terminate + 실제 종료 확인(1.0.9). 남으면 이 프로세스가 끝날 때 잡이 끝낸다
+            if not self.worker.is_alive():
+                self.registry.forget(self.worker.pid)
         self.poll()
         self.service.end("app_closed")
         self.store.close()
