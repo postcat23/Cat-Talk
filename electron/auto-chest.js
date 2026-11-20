@@ -9,7 +9,7 @@
 // 원본 복원(D-038): 패치는 남았는데 패치를 쓰는 기능이 하나도 없으면(설정·플래그 꺼짐 + 숨김 목록 빔) 렌더러가 토스트로 제안하고,
 // [원본 복원]이 백업이 지금 DLL의 원본인지 확인한 뒤 되돌린다(재적용과 대칭: 게임이 켜져 있으면 카운트다운 → 종료 → 복원 → 재실행).
 // 게임 재시작·실행(드로어): 같은 게임 조작·카운트다운·진행 알림을 쓰고, 설치·복원과 겹치지 않는다. worker는 건드리지 않는다 —
-// 게임이 꺼지면 사이드카가 Steam을 놓은 worker를 새 프로세스로 바꿔 Steam의 '실행 중'이 풀린다(sidecar/steam_release.py).
+// 게임이 꺼지면 worker가 교체를 요청하고 사이드카가 그 worker를 새 프로세스로 바꿔 Steam의 '실행 중'이 풀린다(bongo_chat/worker.py, D-057).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');

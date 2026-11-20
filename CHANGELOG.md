@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `sidecar` — Steam이 서버와 연결이 끊겨 로그오프된 동안 Cat Talk이 게임 연결용 백그라운드 프로세스(worker)를 0.5초마다 새로 띄우던 문제 수정(2026-11-18 21분 장애 동안 2,255개). 이제 같은 프로세스로 1초마다 다시 로그온됐는지만 확인하고(새 프로세스·호환성 검사·Steam 재초기화 없음), 다시 연결되면 그대로 이어 감. worker 교체는 게임이 꺼졌을 때만(Steam '실행 중' 해제). 그래도 교체가 반복되면 60초 안 네 번째부터 5→10→20초(최대 60초) 간격으로 늦추고, worker가 60초 동안 정상이면 되돌림
+- `sidecar` — Cat Talk이 비정상 종료(크래시·작업 관리자 강제 종료)되면 worker가 남아 Steam에 Bongo Cat이 계속 실행 중으로 잡히고 게임 업데이트가 'File locked'로 막힐 수 있던 문제 수정: 사이드카가 어떻게 끝나든 OS가 worker도 함께 끝내고(Job Object), worker는 사이드카가 사라지면 스스로 끝나며, 종료 단계에서 멈추지 않음. 시작할 때 이전 실행이 남긴 worker를 정리(1.0.8 이하가 남긴 것 포함). worker를 바꿀 때는 실제로 끝났는지 확인하고 남으면 다시 끝냄
+- `installer` — 설치·자동 업데이트 때 이전 버전이 남긴 worker를 먼저 끝내 파일 덮어쓰기 실패를 막음. 같은 설치 폴더의 `cattalk-sidecar.exe` 중 worker 실행 인자가 있고 부모 프로세스가 없는 것만 끝냄(그 밖의 프로세스는 건드리지 않음)
+
 ## [1.0.8] - 2026-11-20
 
 ### Added

@@ -5,8 +5,9 @@ upstream worker는 run_worker 안에서 `from .avatars import Avatars`를 호출
 모듈 속성을 이 서브클래스로 바꿔 끼운다(upstream 파일은 수정하지 않는다).
 기본 스킨은 upstream worker와 같다: 장착 해제(-1) 슬롯은 CatLeft/CatRight, 모자 없음.
 run_worker_with_default는 Steam '모든 대화 차단' 글루(steam_relationship — 멤버별 판정 D-033, 전체 목록 알림 D-040)와
-Steam 놓음 알림 글루(steam_release — 사이드카가 그 worker를 새 프로세스로 교체해 Steam의 '게임 실행 중'을 푼다),
-경고·공개수배 멤버 데이터 글루(steam_warns, D-052)도 함께 끼운다.
+경고·공개수배 멤버 데이터 글루(steam_warns, D-052)도 함께 끼운다. 1.0.9부터 worker 교체 요청(steam_released)은 worker가
+직접 '게임이 꺼졌을 때만' 보낸다(bongo_chat.worker — 예전 steam_release 글루는 Steam을 놓을 때마다 보내 로그오프 중 교체 루프가 됐다).
+worker 생명주기(D-057): 이벤트 큐가 종료 때 멈추지 않게 하고, 사이드카가 사라지면 스스로 끝난다(worker_guard).
 """
 import queue
 import threading
@@ -15,8 +16,8 @@ import time
 from bongo_chat import avatars as avatars_module
 from bongo_chat.worker import run_worker
 from steam_relationship import install as install_steam_block
-from steam_release import install as install_steam_release
 from steam_warns import install as install_steam_warns
+from worker_guard import watch_parent
 
 DEFAULT_SKIN = "Cat"
 RENDER_TIMEOUT = 60   # 에셋 로드 + 1장 합성 상한(초). 넘기면 포기하고 이모지 폴백 유지
@@ -89,12 +90,16 @@ def _install_diag():
 
 
 def run_worker_with_default(commands, events, stop, read_only=False, render_avatars=True):
+    # 1.0.9(D-057): 종료 때 이벤트 큐 전송 스레드를 기다리지 않는다. 읽는 쪽(사이드카)이 없으면 파이프가 차 그 join이 영원히
+    # 끝나지 않아, 프로세스가 Steam 등록·게임 파일 핸들을 쥔 채 남았다(2026-11-20 모델 재현). 아직 안 보낸 이벤트는 버려도 된다 —
+    # 교체 요청(steam_released)은 사이드카가 받아 stop을 건 뒤에야 끝나므로 이미 전달됐다.
+    events.cancel_join_thread()
     try:
         _install_diag()
     except Exception:
         pass   # 진단 실패가 worker를 막지 않는다
+    watch_parent(stop)   # 사이드카가 사라지면 스스로 끝난다(사이드카 잡의 두 번째 겹)
     avatars_module.Avatars = _with_default(avatars_module.Avatars, events)
     install_steam_block(events)   # 멤버 프로필에 Steam '모든 대화 차단' 여부(D-033 2단계) + 차단한 사람 전체 목록 알림(D-040)
-    install_steam_release(events)   # Steam을 놓으면 알림 → 사이드카가 이 worker를 새 프로세스로 교체(게임 재실행 막힘 방지)
     install_steam_warns()   # 경고·공개수배(D-052): cattalk.* 멤버 데이터 읽기(프로필)·쓰기(cattalk 명령)
     run_worker(commands, events, stop, read_only, render_avatars)

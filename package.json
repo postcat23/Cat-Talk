@@ -1,6 +1,6 @@
 {
   "name": "cat-talk",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "description": "Bongo Cat 로비 채팅 데스크톱 메신저 (bongo-cat-chat 포크)",
   "author": "postcat23",
@@ -30,7 +30,7 @@
       { "from": "LICENSES", "to": "LICENSES" }
     ],
     "win": { "target": "nsis", "icon": "electron/app-icon.ico" },
-    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": false, "artifactName": "Cat-Talk-Setup-${version}.${ext}" },
+    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": false, "artifactName": "Cat-Talk-Setup-${version}.${ext}", "include": "scripts/installer.nsh" },
     "publish": { "provider": "github", "owner": "postcat23", "repo": "Cat-Talk" }
   },
   "devDependencies": {

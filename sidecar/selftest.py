@@ -8,6 +8,8 @@ PyInstaller 번들이 Python 없는 PC에서도 사이드카의 실제 경로를
 - compatibility(--game): 실제 게임 폴더로 기능별 지문 계산(FeatureProbe 메타데이터 판독, 읽기 전용). 모르는 기능·멈춘 게이트는 보고만 한다
 - avatar(--game): UnityPy + Pillow로 게임 에셋에서 기본 고양이를 합성하는지(upstream Avatars 그대로)
 - fmod: FMOD(fmod_toolkit·pyfmodex·fmod.dll)가 프로세스에 올라왔는지. 번들은 올라오면 실패(런타임 훅으로 제외)
+- lifecycle(1.0.9, D-057): spawn 자식이 부모(사이드카) 핸들을 받는지(worker 부모 감시의 전제), 사이드카 잡에 넣은 자식이
+  잡 핸들이 닫히면 OS에 의해 끝나는지(사이드카가 비정상 종료돼도 worker가 고아로 남지 않는 근거)
 결과는 JSON 한 줄로 stdout에 쓰고, 모두 통과하면 종료 코드 0이다. 이름·ID·대화·이미지 내용은 내보내지 않는다.
 """
 import base64
@@ -39,6 +41,35 @@ def _spawn_ok(timeout=30):
         process.join(5)
         if process.is_alive():
             process.kill()
+
+
+def _lifecycle_child(queue):
+    queue.put(mp.parent_process() is not None)   # worker_guard.watch_parent가 기다리는 부모 sentinel
+    time.sleep(60)   # 잡 핸들이 닫히면 OS가 끝낸다(점검이 실패하면 아래 finally가 끝낸다)
+
+
+def _lifecycle(timeout=30):
+    from worker_guard import WorkerJob
+    context = mp.get_context("spawn")
+    queue = context.Queue()
+    process = context.Process(target=_lifecycle_child, args=(queue,), daemon=True)
+    process.start()
+    job = WorkerJob.create()
+    try:
+        assigned = bool(job and job.assign(process.pid))
+        try:
+            parent_seen = queue.get(timeout=timeout) is True
+        except Exception:
+            parent_seen = False
+        if job:
+            job.close()
+        process.join(5)
+        killed = assigned and not process.is_alive()
+        return parent_seen and killed, {"parent_seen": parent_seen, "job_assigned": assigned, "job_kill": killed}
+    finally:
+        if process.is_alive():
+            process.kill()
+            process.join(2)
 
 
 def _dll_loaded(name):
@@ -84,6 +115,7 @@ def run(argv):
     checks, report = {}, {"frozen": frozen}
 
     checks["spawn"] = _spawn_ok()
+    checks["lifecycle"], report["lifecycle"] = _lifecycle()
 
     try:
         environment.compatibility_contract()
