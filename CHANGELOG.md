@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-11-20
+
 ### Added
 
 - `sidecar` — 게임 메모리 대신 Steam으로 현재 로비를 확인. 게임이 Steam에 알리는 로비(리치 프레즌스 → `LAST_LOBBY` 레지스트리 → 로비 콜백 → 친구 게임 정보 순)를 '나 ∈ 로비 멤버'와 Bongo Cat 로비 데이터로 검증해 쓰고, 보내기 직전에 다시 확인함. 게임 업데이트로 게임 내부 구조가 바뀌어도 채팅이 멈추지 않고, 메모리 탐색이 없어져 연결이 바로 준비됨. `steam_api64.dll`은 해시 고정 대신 필요한 Steam 함수가 있는지 확인
