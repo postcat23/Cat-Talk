@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "assemblies": [
     "Assembly-CSharp.dll",
     "Heathen.Steamworks.dll"
@@ -68,35 +68,70 @@
       "channel": 6
     }
   },
-  "native": {
-    "BongoCat_Data/Plugins/x86_64/steam_api64.dll": [
-      "e082bf5c9f881c822b1540a76b74f9d15e18019a73ebd206a559595badcb7f65"
-    ],
-    "MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll": [
-      "e1b05864961ea0a17d7eed0b5e6176cff254bf56cba89ff4beaafe00f629d1e9"
-    ]
-  },
-  "profiles": [
-    {
-      "chat": "de162b62f7a74f42d299cb613376ca6c83637dc0d09c48bd25daaa0199e6514a",
-      "lobby": "a7ffe69b73bc2242b26eed3d4874f5e5379f05f59a75a683803f4a1b81d4c7ef",
-      "privacy": "1bf9e53a331d2d73ce76e35c88b327984d311974d06cb85ceeaec3ac4c6cec83",
-      "profiles": "474e344c61f30d06892a79883a527499d676c9f7f4fd1fd6bcfc3cab34f5e41c",
-      "reactions": "9b0b7d0fd98c7e853420e4012309cc30a5c2552bb0a4e15a38361d0dd1558418"
+  "policy": {
+    "chat": {
+      "tier": "T1",
+      "gate": "chat_send",
+      "recovery": "data",
+      "fingerprints": [
+        "de162b62f7a74f42d299cb613376ca6c83637dc0d09c48bd25daaa0199e6514a",
+        "1e252928fb66bf01b6a13dd29af8a2a3e294e54f8fec2cb89206a91963f5fc50"
+      ]
     },
-    {
-      "chat": "1e252928fb66bf01b6a13dd29af8a2a3e294e54f8fec2cb89206a91963f5fc50",
-      "lobby": "a7ffe69b73bc2242b26eed3d4874f5e5379f05f59a75a683803f4a1b81d4c7ef",
-      "privacy": "969a8723d2a7ac1625a0c6d95926f7c5c6b3b9c84caa70ce394178a2564b9d8b",
-      "profiles": "474e344c61f30d06892a79883a527499d676c9f7f4fd1fd6bcfc3cab34f5e41c",
-      "reactions": "8f7095bf8811672b85f2ba078135917a19ff5367e0b76d78506f3dbded3d3568"
+    "reactions": {
+      "tier": "T1",
+      "gate": null,
+      "recovery": "data",
+      "fingerprints": [
+        "9b0b7d0fd98c7e853420e4012309cc30a5c2552bb0a4e15a38361d0dd1558418",
+        "8f7095bf8811672b85f2ba078135917a19ff5367e0b76d78506f3dbded3d3568"
+      ]
     },
-    {
-      "chat": "1e252928fb66bf01b6a13dd29af8a2a3e294e54f8fec2cb89206a91963f5fc50",
-      "lobby": "5f3182eb8471e777b5c27dc662c1811de054cb30c8066417ed80b97e916b3a66",
-      "privacy": "d256809b67e954a143125477231c6becc7b44e21d64c374768244efcc90d37db",
-      "profiles": "474e344c61f30d06892a79883a527499d676c9f7f4fd1fd6bcfc3cab34f5e41c",
-      "reactions": "8f7095bf8811672b85f2ba078135917a19ff5367e0b76d78506f3dbded3d3568"
+    "profiles": {
+      "tier": "T2",
+      "gate": "avatars",
+      "recovery": "data",
+      "fingerprints": [
+        "474e344c61f30d06892a79883a527499d676c9f7f4fd1fd6bcfc3cab34f5e41c"
+      ]
+    },
+    "lobby": {
+      "tier": "memory",
+      "gate": null,
+      "recovery": "data",
+      "fingerprints": [
+        "a7ffe69b73bc2242b26eed3d4874f5e5379f05f59a75a683803f4a1b81d4c7ef",
+        "5f3182eb8471e777b5c27dc662c1811de054cb30c8066417ed80b97e916b3a66"
+      ]
+    },
+    "privacy": {
+      "tier": "memory",
+      "gate": null,
+      "recovery": "data",
+      "fingerprints": [
+        "1bf9e53a331d2d73ce76e35c88b327984d311974d06cb85ceeaec3ac4c6cec83",
+        "969a8723d2a7ac1625a0c6d95926f7c5c6b3b9c84caa70ce394178a2564b9d8b",
+        "d256809b67e954a143125477231c6becc7b44e21d64c374768244efcc90d37db"
+      ]
     }
-  ]
+  },
+  "native": {
+    "BongoCat_Data/Plugins/x86_64/steam_api64.dll": {
+      "tier": "T0",
+      "check": "exports"
+    },
+    "MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll": {
+      "tier": "memory",
+      "check": "sha256",
+      "sha256": [
+        "e1b05864961ea0a17d7eed0b5e6176cff254bf56cba89ff4beaafe00f629d1e9"
+      ]
+    }
+  },
+  "patch": {
+    "tier": "T3",
+    "recovery": "app",
+    "remote": "restrict",
+    "deny_sha256": []
+  }
 }

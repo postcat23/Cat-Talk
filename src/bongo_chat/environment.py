@@ -1,4 +1,14 @@
-"""Discover the running installation, never launch or change the game."""
+"""Discover the running installation, never launch or change the game.
+
+Cat Talk 1.0.8 (fork): compatibility is judged per feature, not as one five-fingerprint combination. The contract is
+Cat Talk-owned (sidecar/compat/contract.json, schema 2) and maps each feature to a tier and a gate:
+  T0  Steam core (lobby via Steam, participants, names, warn/wanted/playlist, blocks) - no game-code fingerprint;
+      needs only the Steam API exports (steam.REQUIRED_EXPORTS). Always on.
+  T1  game chat protocol: chat fingerprint unknown -> gate 'chat_send' paused (receiving continues).
+  T2  profile meaning: profiles fingerprint unknown -> gate 'avatars' paused (names + default cat).
+  T3  game patch (auto chest/transparent/hidden cats): judged by the patcher in Electron, app release only.
+  memory  lobby/privacy fingerprints of the Mono memory layer: kept as data, gate nothing (chat does not read memory).
+A broken or missing contract/probe pauses every T1/T2 gate but never blocks T0."""
 from dataclasses import dataclass
 import hashlib
 import json
@@ -11,7 +21,24 @@ import time
 
 import psutil
 
-SUPPORT_PATH = Path(__file__).with_name("feature-contract.json")
+CONTRACT_NAME = "contract.json"
+FEATURES = ("chat", "reactions", "profiles", "lobby", "privacy")
+TIERS = {"T1", "T2", "memory"}
+GATES = ("chat_send", "avatars")
+UNAVAILABLE = "unavailable"
+
+
+def contract_path():
+    """CATTALK_CONTRACT (set by Electron main to the effective contract: bundle + verified remote manifest, 1.0.8 ②) or the bundled default."""
+    override = os.environ.get("CATTALK_CONTRACT")
+    if override:
+        return Path(override)
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "compat" / CONTRACT_NAME
+    return Path(__file__).resolve().parents[2] / "sidecar" / "compat" / CONTRACT_NAME
+
+
+SUPPORT_PATH = contract_path()
 BUILD_FILES = (
     "BongoCat_Data/Managed/Assembly-CSharp.dll",
     "BongoCat_Data/Plugins/x86_64/steam_api64.dll",
@@ -41,20 +68,29 @@ def installed_build(root):
         return ""
 
 
-def compatibility_contract():
+def _digests(values, limit):
+    return (isinstance(values, list) and len(values) <= limit
+            and all(isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) for v in values))
+
+
+def compatibility_contract(path=None):
+    """Load and validate the schema 2 contract. Raises RuntimeError('unsupported_feature_contract')."""
     try:
-        catalog = json.loads(SUPPORT_PATH.read_text(encoding="utf-8"))
-        profiles = catalog["profiles"]
-        features = {"privacy", "lobby", "chat", "profiles", "reactions"}
-        valid = (catalog["schema"] == 1 and set(catalog["features"]) == features
-                 and catalog["assemblies"] == ["Assembly-CSharp.dll", "Heathen.Steamworks.dll"]
-                 and isinstance(profiles, list) and 0 < len(profiles) <= 64
-                 and set(catalog["native"]) == {BUILD_FILES[1], BUILD_FILES[2]})
-        valid = valid and all(isinstance(row, dict) and set(row) == features
-                            and all(re.fullmatch(r"[0-9a-f]{64}", v) for v in row.values()) for row in profiles)
-        valid = valid and all(isinstance(values, list) and 0 < len(values) <= 16
-                            and all(re.fullmatch(r"[0-9a-f]{64}", v) for v in values)
-                            for values in catalog["native"].values())
+        catalog = json.loads(Path(path or SUPPORT_PATH).read_text(encoding="utf-8"))
+        policy, native, patch = catalog["policy"], catalog["native"], catalog["patch"]
+        valid = (catalog["schema"] == 2 and catalog["assemblies"] == ["Assembly-CSharp.dll", "Heathen.Steamworks.dll"]
+                 and isinstance(catalog["features"], dict) and set(catalog["features"]) == set(FEATURES)
+                 and isinstance(policy, dict) and set(policy) == set(FEATURES))
+        valid = valid and all(
+            isinstance(row, dict) and row.get("tier") in TIERS and row.get("gate") in (*GATES, None)
+            and row.get("recovery") in ("data", "app") and _digests(row.get("fingerprints"), 64)
+            and (row["gate"] is None or row["tier"] in ("T1", "T2"))
+            for row in policy.values())
+        valid = valid and native.get(BUILD_FILES[1], {}).get("check") == "exports" and _digests(
+            native.get(BUILD_FILES[2], {}).get("sha256"), 16)
+        # T3 can only be narrowed by data (remote 'restrict'): a deny list of clean Assembly-CSharp hashes.
+        valid = valid and patch.get("tier") == "T3" and patch.get("remote") == "restrict" and _digests(
+            patch.get("deny_sha256"), 256)
         if not valid:
             raise ValueError
         return catalog
@@ -76,6 +112,12 @@ class Compatibility:
     root: Path
     stamps: tuple
     build: str
+    known: tuple = ()      # features whose fingerprint the contract lists (any tier)
+    unknown: tuple = ()    # features whose fingerprint is not listed or could not be computed
+    degraded: tuple = ()   # paused gates (T1 'chat_send', T2 'avatars'); T0 is never in here
+
+    def allows(self, gate):
+        return gate not in self.degraded
 
     def check(self):
         try:
@@ -86,14 +128,15 @@ class Compatibility:
         raise RuntimeError("game_files_changed")
 
 
-def probe_features(root, stop=None):
+def probe_features(root, stop=None, path=None):
+    """{feature: 64-hex digest or 'unavailable'}; FeatureProbe isolates features, so one broken root hides only itself."""
     helper = (Path(__file__).with_name("compatibility") if getattr(sys, "frozen", False)
               else Path(__file__).resolve().parents[2] / "artifacts/compatibility") / "FeatureProbe.exe"
     if not helper.is_file():
         raise RuntimeError("compatibility_tool_missing")
     # Invoke only the shipped metadata reader, with arguments (never shell text).
     # It does not execute the game, load it through reflection, or write to it.
-    process = subprocess.Popen([str(helper), str(root / "BongoCat_Data/Managed"), str(SUPPORT_PATH)],
+    process = subprocess.Popen([str(helper), str(root / "BongoCat_Data/Managed"), str(path or SUPPORT_PATH)],
                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     started = time.monotonic()
@@ -111,8 +154,9 @@ def probe_features(root, stop=None):
         if process.returncode != 0 or len(output) > 4096:
             raise ValueError("feature_probe_failed")
         features = json.loads(output)
-        if (not isinstance(features, dict) or set(features) != {"privacy", "lobby", "chat", "profiles", "reactions"}
-                or not all(isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) for v in features.values())):
+        if (not isinstance(features, dict) or set(features) != set(FEATURES)
+                or not all(isinstance(v, str) and (v == UNAVAILABLE or re.fullmatch(r"[0-9a-f]{64}", v))
+                           for v in features.values())):
             raise ValueError("feature_probe_failed")
         return features
     finally:
@@ -157,29 +201,40 @@ def running_game():
     return games[0]
 
 
+def evaluate(catalog, digests):
+    """Per-feature judgement -> (known, unknown, degraded). Pure: no files, no processes (unit-testable)."""
+    known, unknown = [], []
+    for feature in FEATURES:
+        listed = catalog and digests.get(feature) in set(catalog["policy"][feature]["fingerprints"])
+        (known if listed else unknown).append(feature)
+    if not catalog:
+        return tuple(known), tuple(unknown), GATES   # no contract: every T1/T2 gate pauses, T0 keeps running
+    degraded = sorted({catalog["policy"][f]["gate"] for f in unknown if catalog["policy"][f]["gate"]})
+    return tuple(known), tuple(unknown), tuple(degraded)
+
+
 def verify_compatibility(root, stop=None):
-    catalog = compatibility_contract()
-    observed = {}
+    """Never refuses a build for unknown fingerprints (1.0.8): it reports which gates to pause instead.
+    Only cancellation propagates; a missing/slow probe or a broken contract degrades T1/T2 and leaves T0 running."""
+    try:
+        catalog = compatibility_contract()
+    except RuntimeError:
+        catalog = None
     try:
         before = file_stamps(root)
     except OSError:
         before = None
-    for relative in catalog["native"]:
+    digests = {}
+    if catalog and before is not None:
         try:
-            with (root / relative).open("rb") as stream:
-                observed[relative] = hashlib.file_digest(stream, "sha256").hexdigest()
-        except OSError:
-            observed[relative] = "unavailable"
-    native_ok = all(observed[name] in hashes for name, hashes in catalog["native"].items())
-    if native_ok and before is not None:
-        try:
-            observed["features"] = probe_features(root, stop)
+            digests = probe_features(root, stop)
+        except RuntimeError as exc:
+            if str(exc) == "compatibility_cancelled":
+                raise
         except (ValueError, OSError, subprocess.SubprocessError):
-            observed["features"] = "unavailable"
-    if not native_ok or observed.get("features") not in catalog["profiles"]:
-        fingerprint = hashlib.sha256(json.dumps(observed, sort_keys=True).encode("ascii")).hexdigest()
-        raise UnsupportedGameBuild(installed_build(root), fingerprint)
-    result = Compatibility(root, before, installed_build(root))
+            pass
+    known, unknown, degraded = evaluate(catalog, digests)
+    result = Compatibility(root, before, installed_build(root), known, unknown, degraded)
     result.check()
     return result
 

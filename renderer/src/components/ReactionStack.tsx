@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import type { ReactionStack as Stack } from '../hooks/useReactionStack';
 import { useChat } from '../hooks/useChatView';
 import { useChest } from '../hooks/useAutoChest';
-import { progressText, reapplyNotice, REINSTALL_NOTICE, RESTORE_NOTICE } from '../chat/autoChest';
+import { patchPausedNotice, progressText, reapplyNotice, REINSTALL_NOTICE, RESTORE_NOTICE } from '../chat/autoChest';
+import { degradedNotice } from '../chat/messages';
 import { updateReadyNotice, useUpdate, UPDATE_DRAFT_NOTICE } from '../hooks/useAppUpdate';
 import { displayName } from '../chat/model';
 import Cat from './Cat';
@@ -18,12 +20,21 @@ const TOAST_MS = 4000;         // upstream 토스트와 같은 시간
 // 대화 영역 위에 뜨는 카드 스택: 안내 카드(항상 맨 위) + 반응 카드(최신이 위).
 // key로 문구·회차가 바뀌면 카드를 새로 만들어, 닫았던 안내도 새 상태면 다시 보이게 한다.
 export default function ReactionStack({ stack }: { stack: Stack }) {
-  const { byId, notice, toast, sending, hasDraft, nicknames, playlistCards } = useChat();
+  const { byId, notice, toast, sending, hasDraft, nicknames, playlistCards, degraded } = useChat();
   const chest = useChest();
   const update = useUpdate();
   const install = chest?.progress;
+  // 1.0.8 우아한 저하: 게임 업데이트로 일부만 멈췄을 때의 소프트 배너(연결은 유지된다). 멈춘 게이트가 바뀌면 다시 뜬다(key)
+  const degradedText = degradedNotice(degraded);
+  // T3(게임 패치)가 현재 빌드와 맞지 않음 — 켜 둔 기능이 있을 때만. [X]는 이 상태가 이어지는 동안 이번 실행에서 숨긴다
+  const patchPaused = !!chest && chest.wanted.length > 0 && chest.state === 'incompatible';
+  const [patchHidden, setPatchHidden] = useState(false);
+  useEffect(() => { if (!patchPaused) setPatchHidden(false); }, [patchPaused]);
   return (
     <div className={styles.stack}>
+      {degradedText && <NoticeCard key={`degraded:${degraded.join(',')}`} text={degradedText} />}
+      {patchPaused && !patchHidden && !install && <NoticeCard key="patch-paused" text={patchPausedNotice(chest?.wanted ?? [])}
+        onClose={() => setPatchHidden(true)} />}
       {/* 상자 자동 오픈·투명화 설치 진행. 카운트다운 동안만 취소 가능(이후 단계는 게임 파일을 다룬다) */}
       {install && <NoticeCard key={install.phase} text={progressText(install)}
         action={install.phase === 'countdown' ? { label: '취소', onClick: () => chest?.cancel() } : undefined} />}

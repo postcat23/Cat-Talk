@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "sequence": 1,
+  "issued": "2026-11-19",
+  "note": "Cat Talk 번들 계약의 연결 지문 전체(봉고캣 빌드 26754239 포함)",
+  "add": {
+    "chat": [
+      "de162b62f7a74f42d299cb613376ca6c83637dc0d09c48bd25daaa0199e6514a",
+      "1e252928fb66bf01b6a13dd29af8a2a3e294e54f8fec2cb89206a91963f5fc50"
+    ],
+    "reactions": [
+      "9b0b7d0fd98c7e853420e4012309cc30a5c2552bb0a4e15a38361d0dd1558418",
+      "8f7095bf8811672b85f2ba078135917a19ff5367e0b76d78506f3dbded3d3568"
+    ],
+    "profiles": [
+      "474e344c61f30d06892a79883a527499d676c9f7f4fd1fd6bcfc3cab34f5e41c"
+    ],
+    "lobby": [
+      "a7ffe69b73bc2242b26eed3d4874f5e5379f05f59a75a683803f4a1b81d4c7ef",
+      "5f3182eb8471e777b5c27dc662c1811de054cb30c8066417ed80b97e916b3a66"
+    ],
+    "privacy": [
+      "1bf9e53a331d2d73ce76e35c88b327984d311974d06cb85ceeaec3ac4c6cec83",
+      "969a8723d2a7ac1625a0c6d95926f7c5c6b3b9c84caa70ce394178a2564b9d8b",
+      "d256809b67e954a143125477231c6becc7b44e21d64c374768244efcc90d37db"
+    ]
+  },
+  "deny": {},
+  "patch": {
+    "deny_sha256": []
+  }
+}

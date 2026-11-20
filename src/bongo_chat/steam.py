@@ -5,9 +5,26 @@ import os
 import time
 from uuid import uuid4
 
+from .lobby import LOBBY_TAGS
 from .protocol import MAX_PACKET, InvalidMessage, decode_event, encode
 
 APP_ID = 3419430
+# Cat Talk 1.0.8: the game's steam_api64.dll is no longer pinned by hash. These flat exports (core + Cat Talk glue:
+# steam_warns, steam_relationship) must exist; versioned accessors also fix the interface ABI (SteamFriends_v018 ...).
+REQUIRED_EXPORTS = (
+    "InitFlat", "Shutdown", "GetHSteamPipe", "ManualDispatch_Init", "ManualDispatch_RunFrame",
+    "ManualDispatch_GetNextCallback", "ManualDispatch_FreeLastCallback",
+    "SteamUser_v023", "SteamFriends_v018", "SteamUtils_v010", "SteamMatchmaking_v009", "SteamInventory_v003",
+    "ISteamUser_GetSteamID", "ISteamUser_BLoggedOn", "ISteamUtils_GetAppID", "ISteamUtils_GetServerRealTime",
+    "ISteamFriends_GetFriendGamePlayed", "ISteamFriends_GetFriendRichPresence", "ISteamFriends_GetPlayerNickname",
+    "ISteamFriends_GetFriendPersonaName", "ISteamFriends_GetFriendRelationship", "ISteamFriends_GetFriendCount",
+    "ISteamFriends_GetFriendByIndex",
+    "ISteamMatchmaking_GetNumLobbyMembers", "ISteamMatchmaking_GetLobbyMemberByIndex", "ISteamMatchmaking_GetLobbyData",
+    "ISteamMatchmaking_GetLobbyMemberData", "ISteamMatchmaking_SetLobbyMemberData", "ISteamMatchmaking_GetLobbyChatEntry",
+    "ISteamMatchmaking_SendLobbyChatMsg",
+    "ISteamInventory_LoadItemDefinitions", "ISteamInventory_GetItemDefinitionProperty",
+)
+LOBBY_CALLBACKS = (505, 506, 507)   # LobbyDataUpdate_t, LobbyChatUpdate_t, LobbyChatMsg_t: first field is the lobby id
 
 
 @contextmanager
@@ -52,7 +69,10 @@ class Steam:
         self.directory = os.add_dll_directory(str(directory))
         os.environ["SteamAppId"] = os.environ["SteamGameId"] = str(APP_ID)
         self.dll = C.CDLL(str(directory / "steam_api64.dll"), winmode=0x1100)
+        if any(not hasattr(self.dll, "SteamAPI_"+name) for name in REQUIRED_EXPORTS):
+            raise RuntimeError("steam_api_unsupported")
         self.rejected = 0
+        self.observed = {}   # lobby id -> monotonic time last seen in a lobby callback (lobby.py 'callback' source)
 
     def bind(self, name, result, *arguments):
         fn = getattr(self.dll, "SteamAPI_"+name)
@@ -87,6 +107,8 @@ class Steam:
         self.read_entry = self.bind("ISteamMatchmaking_GetLobbyChatEntry", C.c_int, C.c_void_p, C.c_uint64, C.c_int,
                                     C.POINTER(C.c_uint64), C.c_void_p, C.c_int, C.POINTER(C.c_int))
         self.send_entry = self.bind("ISteamMatchmaking_SendLobbyChatMsg", C.c_bool, C.c_void_p, C.c_uint64, C.c_void_p, C.c_int)
+        self.rich_get = self.bind("ISteamFriends_GetFriendRichPresence", C.c_char_p, C.c_void_p, C.c_uint64, C.c_char_p)
+        self.lobby_data = self.bind("ISteamMatchmaking_GetLobbyData", C.c_char_p, C.c_void_p, C.c_uint64, C.c_char_p)
         self.bind("ISteamInventory_LoadItemDefinitions", C.c_bool, C.c_void_p)(self.inventory)
 
     def account(self):
@@ -102,6 +124,20 @@ class Steam:
         if not 0 <= count <= 1000:
             raise RuntimeError("invalid_member_count")
         return {str(self.member_at(self.matchmaking, int(lobby), i)) for i in range(count)}
+
+    def own_presence(self, key):
+        """This account's rich presence value set by the game (lobby.py 'presence' source)."""
+        value = self.rich_get(self.friends, self.uid(self.user), key)
+        return (value or b"").decode("ascii", "replace")[:64]
+
+    def lobby_tagged(self, lobby):
+        """The lobby carries Bongo Cat/Heathen lobby data (any known key)."""
+        return any(self.lobby_data(self.matchmaking, int(lobby), key) for key in LOBBY_TAGS)
+
+    def observed_lobbies(self, window):
+        """Lobby ids seen in lobby callbacks within window seconds, newest first."""
+        horizon = time.monotonic() - window
+        return [lobby for lobby, seen in sorted(self.observed.items(), key=lambda item: -item[1]) if seen >= horizon]
 
     def reported_game(self, account):
         """Friends presence hint, not an inventory of all running Steam games."""
@@ -151,6 +187,11 @@ class Steam:
             if not self.next_callback(self.pipe, C.byref(callback)):
                 break
             try:
+                if callback.kind in LOBBY_CALLBACKS and callback.data and callback.size >= 8:
+                    # Only the lobby id, before any filtering: a lobby the game joined shows up here at once.
+                    self.observed[str(C.cast(callback.data, C.POINTER(C.c_uint64)).contents.value)] = time.monotonic()
+                    if len(self.observed) > 64:
+                        self.observed = dict(sorted(self.observed.items(), key=lambda item: -item[1])[:32])
                 if not accept or callback.kind != 507 or callback.size != C.sizeof(ChatHeader) or not callback.data:
                     continue
                 header = C.cast(callback.data, C.POINTER(ChatHeader)).contents

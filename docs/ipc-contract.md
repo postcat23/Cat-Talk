@@ -24,7 +24,7 @@
 | 원본 | Electron 전환 |
 |---|---|
 | Controller + worker + service + store + merger (Qt 제외 Python 전부) | **Python 사이드카** 프로세스 |
-| QWebChannel `bridge.request` | Electron main ↔ 사이드카 IPC(stdio JSON 라인/로컬 소켓), main ↔ renderer는 `ipcRenderer`/`contextBridge`. 요청 응답이 아닌 사이드카 → main 알림 줄은 하나뿐이다(`hidden_ids`, §9 — main 전용, 렌더러로 가지 않는다) |
+| QWebChannel `bridge.request` | Electron main ↔ 사이드카 IPC(stdio JSON 라인/로컬 소켓), main ↔ renderer는 `ipcRenderer`/`contextBridge`. 요청 응답이 아닌 사이드카 → main 알림 줄은 둘이다(`hidden_ids` §9, `compat_status` 1.0.8 ② — 둘 다 main 전용, 렌더러로 가지 않는다) |
 | 렌더러 600ms `view` 폴링 | 그대로 폴링 유지 가능. (선택) 사이드카 push로 바꿀 수 있으나 **계약 보존 원칙상 1차는 폴링 유지 권장** |
 | worker spawn + Queue | 사이드카 내부에 그대로 유지(파이썬 multiprocessing). Electron은 사이드카 1개만 관리 |
 
@@ -76,6 +76,8 @@
 **연결·컨텍스트**
 - `context` `{account,lobby,generation}`, `state`(checking/…/ready), `notice`, `game_build`
 - `connected`, `lobby_verified`, `can_send`
+- Cat-Talk 1.0.8(우아한 저하): `degraded[]` = 멈춘 게이트(`chat_send` — T1 채팅 프로토콜 지문을 모름, 받기는 계속 / `avatars` — T2 프로필 지문을 모름, 이름+기본 고양이). 렌더러는 소프트 배너로 알리고 연결은 유지한다. `can_command` = 로비 확인됨 — Cat Talk 명령(경고·플리, T0)은 `can_send`가 false여도 된다(입력창은 이것으로 연다). 로비는 Steam에서 찾는다(worker 상태 `lobby_source`: presence/registry/callback/friends — 진단 로그에만). worker는 더 이상 `unsupported_game_build`로 연결을 멈추지 않는다(지문은 기능별 판정, `sidecar/compat/contract.json` schema 2). 연결을 멈추는 경우는 게임의 `steam_api64.dll`에 필요한 함수가 없을 때(`steam_api_unsupported`)뿐이다
+- Cat-Talk 1.0.8(② 원격 호환성 데이터, [compat-manifest.md](compat-manifest.md)): worker 상태의 `unknown[]`(계약에 없는 기능)을 사이드카가 main에 `{"event":"compat_status","build":"<빌드>","unknown":[…],"degraded":[…]}`로 알린다(판정이 끝난 ready·no_lobby 상태만, 바뀔 때만 — 계정·로비 없음). main은 `unknown`이 있으면 서명된 원격 매니페스트를 즉시·백오프로 받고, 유효 계약이 바뀌면 사이드카에 `{action:"reload_compat"}` → `{ok:true}`를 보내 worker만 교체한다(재설치·앱 재시작 없음, 대화 기록 유지). T1·T2 소프트 배너는 '곧 자동으로 복구됩니다', T3 배너만 Cat Talk 업데이트를 안내한다
 
 **메시지·방**
 - `messages[]`: `{seq,id,session,account,lobby,sender,name,body,received,own,status,echo,kind?,unsaved?}` — `kind`는 `chat`/`member_joined`/`member_left`(프레즌스), `unsaved:true`는 아직 미저장(휘발 버퍼)
@@ -256,7 +258,7 @@ Cat-Talk main 추가 코드: `steam_trade_failed`(교환 요청 URI 형식 재�
   - 자동 숨김 토글·참여자 목록 행 생성(`HandleAutoHideUpdated`의 `SetVisibility` 호출 직전): 목록에 있으면 '숨김'으로(게임 버튼 상태도 맞음).
   - `CatSpawnManager.Update`가 0.5초마다 파일을 읽어(`File.Exists`·`ReadAllText`) 전 멤버에 적용: 목록에 있는데 보이는 멤버는 숨기고, 목록에서 빠진 멤버는 게임 '자동 숨김' 설정값으로 되돌린다(결정 A. 차단 전 수동 숨김은 기억하지 않는다). 그 밖의 멤버는 건드리지 않는다. 게임 참여자 목록의 '보이기'를 직접 누르면(지문 범위라 훅 불가) 최대 0.5초 보였다가 다시 숨는다.
   - 투명화(알파 0)와 독립이다.
-- **연결 호환성 지문 보증**: 패치 결과의 업스트림 `FeatureProbe` 지문이 원본과 같아야 한다 — 설치 사전 점검이 원본·패치 결과를 비교해 다르면 게임을 건드리기 전에 `failed`(`incompatible`)로, 지문을 내지 못하면 `preflight_failed`로 끝낸다. 패처 사본 검증(`test-copy.ps1`)도 같은 비교를 한다. (2026-11-10: 숨김 setter 입구 훅 시험본이 `privacy` 지문을 바꿔 Cat Talk가 '지원하지 않는 게임 빌드'로 연결을 멈췄다 — 패처는 그 모양을 `hidden_setter_hook`으로 거부한다.)
+- **연결 호환성 지문 보증**: 패치 결과의 업스트림 `FeatureProbe` 지문이 원본과 같아야 한다 — 설치 사전 점검이 원본·패치 결과를 비교해 다르면 게임을 건드리기 전에 `failed`(`incompatible`)로, 지문을 내지 못하면 `preflight_failed`로 끝낸다. 패처 사본 검증(`test-copy.ps1`)도 같은 비교를 한다. (2026-11-10: 숨김 setter 입구 훅 시험본이 `privacy` 지문을 바꿔 Cat Talk가 '지원하지 않는 게임 빌드'로 연결을 멈췄다 — 패처는 그 모양을 `hidden_setter_hook`으로 거부한다.) 1.0.8: 계약은 번들 `sidecar/compat/contract.json`(schema 2)에 서명된 원격 매니페스트(②)를 합친 유효 계약(`%LOCALAPPDATA%\CatTalk\compat\contract.json`, main이 사이드카와 같은 파일을 `CATTALK_CONTRACT`로 넘긴다)이고, FeatureProbe가 기능별로 격리해 계산하지 못한 기능만 `unavailable`로 낸다 — 사전 점검은 기능마다 패치 전후가 같으면 통과다. **T3 제한 방향**: 계약 `patch.deny_sha256`에 든 순정 DLL(패치본은 원본 백업의 기록 해시)이면 새 설치·재적용을 `incompatible`(`denied`)로 막는다(이미 설치된 패치는 그대로). 원격 데이터(1.0.8 ②)는 이 목록을 늘려 막을 수만 있고 패처 규칙을 넓힐 수 없다. 패치 기능을 켜 둔 상태에서 `incompatible`이면 렌더러가 소프트 배너로 앱 업데이트를 안내한다.
 - **사이드카 → main 알림 줄**: `{"event":"hidden_ids","ids":["<SteamID64>", …]}`(요청 응답이 아니라 `id`가 없다). main만 받고 렌더러로 보내지 않는다(Steam 차단 여부를 렌더러에 보내지 않는 2단계 원칙 유지). 목록 = 현재 계정의 앱 차단(`service.blocked`) ∪ Steam 차단. Steam 차단 = worker가 열거한 '모든 대화 차단' 전체(`steam_ignored`, D-040) ∪ 지금 로비 멤버의 멤버별 판정(`steam_hidden` ∩ 멤버) — 아직 만나지 않은 차단자도 입장 전부터 목록에 있다. 나간 멤버의 지난 판정은 쓰지 않는다(계속 차단이면 전체 목록에 있고, 방 밖에서 풀었으면 빠져야 한다). 전체 목록 열거에 실패하면(`ids: null`) 종전대로 이번 실행의 멤버별 판정 전체(`steam_hidden`, 나간 멤버 유지). 계정이 있고, 그 계정의 앱 차단 목록을 읽었고, 그 계정의 전체 목록 응답(성공·실패)이 왔고, 지금 로비 멤버(나 제외) 모두의 `steam_blocked` 판정이 도착했을 때만 낸다 — 그 전에 내면 이미 숨긴 차단자가 목록에서 잠깐 빠져 다시 보이기 때문이다. 이번 실행에서 판정이 끝난 첫 목록 1회(앱 실행 때) + 그 뒤 바뀔 때마다 낸다. 계정이 없으면(게임 꺼짐·연결 대기) 내지 않아 파일은 그대로다.
 - **main 쓰기**(`electron/auto-chest.js` `setHidden`): 알림을 받을 때마다, 그리고 설치·재적용이 끝날 때 마지막 목록을, 설치 판정 후 **현재 세트(`PATCH_VERSION`) 설치 상태에서만** 통째로 쓴다(임시 파일 `CatTalkHidden.ids.cattalk-new`에 쓰고 교체). 미설치·이전 세트(`needs_reapply`)·호환 안 됨·패처 불일치·설치 중·게임 없음이면 쓰지 않는다. 교체가 실패하면(게임이 마침 읽는 중 등) 같은 목록으로 `POLL_MS`(0.5초) 뒤 다시 쓴다. 형식이 틀린 항목(SteamID64 숫자 모양 아님)은 사이드카와 main 양쪽에서 뺀다.
 - **알려진 한계**: 이미 Steam에서 차단해 둔 사람은 입장 전부터 목록에 있어 처음부터 숨는다(D-040 — 종전엔 이번 실행에서 처음 만난 Steam 차단 멤버가 판정·쓰기·게임 확인까지 잠깐 보였다). 남는 경우는 Steam에서 막 차단한 사람이 다음 열거(1초) 전에 들어오거나 방 안에서 차단했을 때다 — 판정(약 1초)·쓰기·게임 확인(0.5초)까지 고양이가 잠깐 보일 수 있다. 전체 목록 열거에 실패한 실행은 종전 한계로 돌아간다. 앱 차단은 설정에 영속돼 목록에서 빠지지 않는다. 미패치 기기는 1·2단계(앱 화면 숨김)까지만 된다.

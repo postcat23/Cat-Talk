@@ -1,11 +1,15 @@
-"""Separate native process. Its IPC has no network listener or auto-send source."""
+"""Separate native process. Its IPC has no network listener or auto-send source.
+
+Cat Talk 1.0.8 (fork): the lobby comes from Steam (lobby.LobbyLocator), not from game memory. The game's own lobby
+announcements are candidates and Steam membership is the authority, so chat no longer depends on the game's managed
+code layout (the lobby/privacy fingerprints that stopped 1.0.6 on build 26754239)."""
 import queue
 import time
 from uuid import uuid4
 
 from .environment import UnsupportedGameBuild, running_game, verify_compatibility
-from .memory import MemoryDiscovery
-from .steam import APP_ID, Steam
+from .lobby import LobbyLocator
+from .steam import Steam
 from .reactions import ReactionAssets
 
 
@@ -16,8 +20,9 @@ def unavailable(notice):
 
 
 class LiveConnection:
-    def __init__(self, game, memory, steam, read_only=False, avatars=None, compatibility=None):
-        self.game, self.memory, self.steam = game, memory, steam
+    def __init__(self, game, steam, read_only=False, avatars=None, compatibility=None):
+        self.game, self.steam = game, steam
+        self.locator = LobbyLocator(steam)
         self.read_only, self.avatars = read_only, avatars
         self.compatibility = compatibility
         self.identity = None
@@ -26,31 +31,23 @@ class LiveConnection:
         self.profiles = {}
         self.profile_time = 0
         self.last_send = 0
-        self.discovery_failed = False
-
-    def _lobby_candidate(self, account):
-        if self.memory is not None:
-            # Bongo Cat's verified process is authoritative, including no lobby
-            # or a failed read. Friends presence may describe another game.
-            return self.memory.lobby()
-        app, lobby = self.steam.reported_game(account)
-        # A provisional hint for early room/draft display, never send authority.
-        return lobby if app == APP_ID else "0"
 
     def destination(self):
-        """Verify the destination independently of hidden-list availability."""
+        """Steam-verified destination: a candidate the game announced, confirmed by Steam membership + lobby data.
+        Returns (account, lobby, members, valid, verified); valid and verified are the same check now."""
         if self.compatibility:
             self.compatibility.check()
         if not self.game.alive():
             raise RuntimeError("process_changed")
         account = self.steam.account()
-        lobby = self._lobby_candidate(account)
-        members = self.steam.members(lobby) if lobby != "0" else set()
-        if (self.steam.account() != account or self._lobby_candidate(account) != lobby
-                or not self.game.alive()):
+        lobby, _, members = self.locator.locate(account)
+        if self.steam.account() != account or not self.game.alive():
             raise RuntimeError("connection_changed")
-        valid = lobby != "0" and account in members
-        return account, lobby, members, valid, valid and self.memory is not None
+        valid = lobby != "0"
+        return account, lobby, members, valid, valid
+
+    def allows(self, gate):
+        return not self.compatibility or self.compatibility.allows(gate)
 
     def snapshot(self):
         account, lobby, members, valid, verified = self.destination()
@@ -64,6 +61,12 @@ class LiveConnection:
             profiles = {}
             for uid in members:
                 row = self.steam.profile(lobby, uid)
+                if not self.allows("avatars"):
+                    # T2 paused: the game's hat/skin member data meaning is unverified on this build, so show the
+                    # Steam name and the default cat. Cat Talk's own fields in the row (warn/playlist/blocks, T0) stay.
+                    row["hat"] = row["skin"] = None
+                    profiles[uid] = row
+                    continue
                 # The game publishes -1 for an explicitly unequipped slot.
                 # Its default body/paw sprites are CatLeft/CatRight. Unknown
                 # slots and failed item lookups must not become default outfits.
@@ -73,13 +76,10 @@ class LiveConnection:
                     row["avatar"] = self.avatars.get(skin.replace(" ", ""), hat.replace(" ", "") if hat else None)
                 profiles[uid] = row
             self.profiles, self.profile_time = profiles, time.monotonic()
-        if (self.steam.account() != account or self._lobby_candidate(account) != lobby
+        if (self.steam.account() != account or (valid and not self.locator.still(account, lobby))
                 or not self.game.alive()):
             raise RuntimeError("connection_changed")
-        discovering = self.memory is None
-        if discovering:
-            notice = "discovery_failed" if self.discovery_failed else ("discovering" if valid else "searching_lobby")
-        elif not valid:
+        if not valid:
             notice = "no_lobby"
         else:
             notice = "read_only" if self.read_only else ""
@@ -90,11 +90,18 @@ class LiveConnection:
                  # Profiles refresh once a second, membership every tick.
                  "profiles": {uid: row for uid, row in self.profiles.items()
                               if verified and uid in members},
-                 "send_enabled": verified and not self.read_only,
+                 # T1: chat sending needs a known chat fingerprint; receiving does not (it only parses).
+                 "send_enabled": verified and not self.read_only and self.allows("chat_send"),
                  "avatar_stage": getattr(self.avatars, "stage", "disabled"),
                  "avatar_error": getattr(self.avatars, "error", ""),
-                 "state": "ready" if verified else ("syncing" if valid or discovering else "no_lobby"),
+                 "state": "ready" if verified else "no_lobby",
                  "name": self.steam.room_name(lobby) if valid else "",
+                 "lobby_source": self.locator.source if valid else "",   # diagnostics only (presence/registry/callback/friends)
+                 # Paused gates for the soft banner; the public build number only names the build in that banner.
+                 "degraded": list(self.compatibility.degraded) if self.compatibility else [],
+                 # Features whose fingerprint the contract does not list: the sidecar tells main to fetch the remote manifest (1.0.8 ②).
+                 "unknown": list(self.compatibility.unknown) if self.compatibility else [],
+                 "game_build": self.compatibility.build if self.compatibility else "",
                  "notice": notice}
         self.state = state
         return state, members, changed
@@ -111,7 +118,8 @@ class LiveConnection:
                 or command.get("context") != current):
             return "failed"
         # Bind the original destination. A game move after this check is not atomic.
-        if self.memory.lobby() != current["lobby"] or self.steam.account() != current["account"] or not self.game.alive():
+        if (not self.locator.still(current["account"], current["lobby"]) or self.steam.account() != current["account"]
+                or not self.game.alive()):
             return "failed"
         if self.compatibility:
             self.compatibility.check()
@@ -132,7 +140,7 @@ def run_worker(commands, events, stop, read_only=False, render_avatars=True):
             raise RuntimeError("event_queue_overflow")
 
     while not stop.is_set():
-        discovery = steam = avatars = None
+        steam = avatars = None
         try:
             emit(unavailable("checking"))
             game = running_game()
@@ -140,23 +148,12 @@ def run_worker(commands, events, stop, read_only=False, render_avatars=True):
             steam = Steam(game.root)
             steam.start()
             compatibility.check()
-            live = LiveConnection(game, None, steam, read_only, compatibility=compatibility)
+            live = LiveConnection(game, steam, read_only, compatibility=compatibility)
             last_state, last_emit, receive_context = None, 0, None
-            receive_senders, retry_discovery_at = set(), 0
+            receive_senders = set()
             reactions = ReactionAssets()
             while not stop.is_set():
-                if discovery and discovery.done.is_set():
-                    live.memory = discovery.memory
-                    if discovery.failed:
-                        live.discovery_failed = True
-                        discovery.close()
-                        discovery = None
-                        retry_discovery_at = time.monotonic() + 15
-                # Discovery must run even when friends presence reports another
-                # Steam game or no game. It supplies the actual Bongo Cat lobby.
-                if not discovery and time.monotonic() >= retry_discovery_at:
-                    live.discovery_failed = False
-                    discovery = MemoryDiscovery(game, stop)
+                # No memory discovery: the lobby is located from Steam on every snapshot (lobby.LobbyLocator).
                 state, members, changed = live.snapshot()
                 context = {k: state[k] for k in ("account", "lobby", "generation")}
                 if state != last_state or time.monotonic()-last_emit >= 0.5:
@@ -180,8 +177,7 @@ def run_worker(commands, events, stop, read_only=False, render_avatars=True):
                     except queue.Full:
                         pass
                 receive_context, receive_senders = context, allowed
-                # Asset decoding competes with discovery for the Python GIL.
-                # Publish verified chat readiness before starting that work.
+                # Asset decoding is heavy (GIL). Publish verified chat readiness before starting that work.
                 if state["lobby_verified"] and render_avatars and not avatars:
                     from .avatars import Avatars
                     avatars = Avatars(game.root)
@@ -212,6 +208,4 @@ def run_worker(commands, events, stop, read_only=False, render_avatars=True):
                 avatars.close()
             if steam:
                 steam.close()  # No LeaveLobby, joins or lobby setting mutations.
-            if discovery:
-                discovery.close()
         stop.wait(3)

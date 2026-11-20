@@ -146,6 +146,9 @@ class Sidecar:
         self.steam_ignored = None
         self.steam_ignored_account = ""   # 전체 목록 응답(성공·실패)을 받은 계정
         self.hidden_pushed = None   # main에 마지막으로 알린 게임 고양이 숨김 목록(D-033 3단계). 이번 실행에서 아직 없으면 None
+        # 호환 상태(1.0.8 ②): worker가 판정을 마친 상태의 (빌드, 모르는 기능, 멈춘 게이트). main이 원격 매니페스트를 언제 받을지 정한다
+        self.compat_status = None
+        self.compat_pushed = None
         self.worker = None
         self.read_only = read_only
         self.retire_by = None   # Steam을 놓은 worker를 끝내는 중이면 강제 종료 기한(monotonic). 끝나면 새 worker를 띄운다
@@ -476,6 +479,7 @@ class Sidecar:
                     self.service.update(event)
                     self.update_steam_hidden()
                     self.mark_state(event)
+                    self.track_compat(event)
                 elif event.get("type") == "message":
                     # Steam 차단한 사람의 메시지는 업스트림이 받아 두지만(앱 차단이 아니므로) 화면에서 숨기니 알림 수에서 뺀다
                     if self.service.receive(event) and event.get("sender") not in self.steam_hidden:
@@ -507,11 +511,14 @@ class Sidecar:
 
     def mark_state(self, event):
         # worker 상태 전이(연결 단계·오류 코드·재시도)만 남긴다. 계정·로비·이름·멤버는 남기지 않는다
-        key = (event.get("state"), event.get("notice"), bool(event.get("lobby_verified")), bool(event.get("send_enabled")))
+        key = (event.get("state"), event.get("notice"), bool(event.get("lobby_verified")), bool(event.get("send_enabled")),
+               event.get("lobby_source", ""), tuple(event.get("degraded") or ()))
         if key != self.diag_state:
             self.diag_state = key
+            # lobby_source(1.0.8): presence/registry/callback/friends — 로비를 찾은 경로(값은 경로 이름뿐, ID는 남기지 않는다)
+            # degraded(1.0.8): 멈춘 게이트(chat_send·avatars). T0(로비·경고·플리)은 여기 없다
             mark("worker_state", state=key[0], notice=key[1], lobby_verified=key[2], send_enabled=key[3],
-                 members=len(event.get("members") or []))
+                 lobby_source=key[4], degraded=list(key[5]), members=len(event.get("members") or []))
 
     def close(self):
         if self.closed:
@@ -638,6 +645,19 @@ class Sidecar:
                 return None
         steam = self.steam_hidden if self.steam_ignored is None else self.steam_ignored | (self.steam_hidden & set(members))
         return sorted(uid for uid in set(blocked) | steam if isinstance(uid, str) and STEAM_ID64_TEXT.fullmatch(uid))
+
+    def track_compat(self, event):
+        """판정이 끝난 상태(ready·no_lobby)만 센다. worker를 다시 띄우는 동안의 checking·unavailable로 '모르는 지문 없음'을 알리지 않는다."""
+        if event.get("state") in ("ready", "no_lobby"):
+            self.compat_status = (event.get("game_build") or "", tuple(event.get("unknown") or ()), tuple(event.get("degraded") or ()))
+
+    def compat_update(self):
+        """main에 알릴 새 호환 상태(바뀌었을 때만). 아니면 None. 빌드 번호와 기능 이름뿐이다(계정·로비 없음)."""
+        if self.compat_status is None or self.compat_status == self.compat_pushed:
+            return None
+        self.compat_pushed = self.compat_status
+        build, unknown, degraded = self.compat_status
+        return {"event": "compat_status", "build": build, "unknown": list(unknown), "degraded": list(degraded)}
 
     def hidden_update(self):
         """main에 알릴 새 목록. 판정이 끝난 뒤 이번 실행의 첫 목록(앱 실행 때 1회)과, 그 뒤 바뀐 목록만 낸다. 아니면 None."""
@@ -876,6 +896,11 @@ class Sidecar:
             if self.closed:
                 raise ValueError("block_unavailable")
             self.service.set_blocked(args.get("steam_id"), args.get("blocked"), args.get("account"))
+        elif action == "reload_compat":
+            # 1.0.8 ②: main이 새 유효 계약(원격 매니페스트 반영)을 썼다. worker를 교체해(retire → tend_worker가 새로 띄움)
+            # 새 계약으로 다시 판정한다 — 앱·사이드카는 그대로라 대화 기록이 남는다
+            mark("compat_reload")
+            self.retire_worker()
         else:
             raise ValueError("unknown_action")
         return {"ok": True}
@@ -954,6 +979,11 @@ def main():
                 ids = None
             if ids is not None:
                 ipc.write(json.dumps({"event": "hidden_ids", "ids": ids}) + "\n")
+                ipc.flush()
+            # 호환 상태 알림(1.0.8 ②): 모르는 연결 지문이 생기면 main이 원격 매니페스트를 즉시·백오프로 받는다
+            compat = sidecar.compat_update()
+            if compat is not None:
+                ipc.write(json.dumps(compat) + "\n")
                 ipc.flush()
             if shutdown.is_set() and inbox.empty():
                 break

@@ -49,8 +49,9 @@ def _with_default(base, events):
 
 
 def _install_diag():
-    """worker 단계 표식(관측 전용, D-050): upstream worker 모듈이 쓰는 이름을 감싸 시작·끝·시간·결과 코드만 남긴다.
-    원래 함수를 그대로 부르고 예외도 그대로 다시 던진다(동작 불변). 탐색 바이트 수는 upstream이 세지 않아 남기지 않는다."""
+    """worker 단계 표식(관측 전용, D-050): worker 모듈이 쓰는 이름을 감싸 시작·끝·시간·결과 코드만 남긴다.
+    원래 함수를 그대로 부르고 예외도 그대로 다시 던진다(동작 불변). 1.0.8부터 메모리 탐색(discovery)이 없다 — 로비는 Steam에서
+    찾고(lobby.LobbyLocator), 어느 경로로 찾았는지는 사이드카의 worker_state 표식(lobby_source)에 남는다."""
     import os
     from bongo_chat import worker as worker_module
     from diag import enable_faulthandler, mark
@@ -73,24 +74,18 @@ def _install_diag():
         return wrapper
 
     worker_module.running_game = timed("game_detect", worker_module.running_game)
-    worker_module.verify_compatibility = timed("compatibility", worker_module.verify_compatibility)
+    timed_verify = timed("compatibility", worker_module.verify_compatibility)
+
+    def verify_with_features(*args, **kwargs):
+        # 1.0.8 기능별 판정: 모르는 기능·멈춘 게이트(이름뿐)와 공개 빌드 번호를 남긴다. 저하 신고의 1차 단서
+        result = timed_verify(*args, **kwargs)
+        mark("compat_features", build=getattr(result, "build", ""), unknown=list(getattr(result, "unknown", ())),
+             degraded=list(getattr(result, "degraded", ())))
+        return result
+
+    worker_module.verify_compatibility = verify_with_features
     steam_class = worker_module.Steam
     steam_class.start = timed("steam_init", steam_class.start)
-    discovery_class = worker_module.MemoryDiscovery
-    original_run = discovery_class.run
-
-    def discovery_run(self):
-        started = time.monotonic()
-        mark("discovery_begin")
-        try:
-            original_run(self)
-        finally:
-            memory = self.memory
-            method = (getattr(memory, "diagnostics", None) or {}).get("discovery_method") if memory else None
-            mark("discovery_end", ok=not self.failed and memory is not None, failed=self.failed, method=method,
-                 seconds=round(time.monotonic() - started, 3))
-
-    discovery_class.run = discovery_run
 
 
 def run_worker_with_default(commands, events, stop, read_only=False, render_avatars=True):
