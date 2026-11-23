@@ -72,6 +72,8 @@ export interface ViewMessage {
   unsaved?: boolean;
 }
 
+export interface LastSpeaker { id: string; sender: string; name: string; own: boolean }
+
 export interface ViewReaction {
   id: string;
   sender: string;
@@ -120,6 +122,9 @@ export interface ViewResponse {
   has_newer: boolean;         // 응답 창보다 최신이 더 있다
   latest_seq: number;
   incoming_count?: number;    // 수락된 타인 메시지 누적 수(사이드카 경로만)
+  // 플로팅 아바타(1.0.10): 대화 목록에 보이는 마지막 채팅(입퇴장 제외)의 발화자, 본인 포함. 검색·HISTORY와 무관하게 매번 온다.
+  // name = 그 메시지에 남은 이름(나간 사람 표시용). 대화가 없으면 null, 이전 사이드카에는 없다
+  last_speaker?: LastSpeaker | null;
   nicknames: Record<string, string>;   // 현재 계정의 표시 이름 덮어쓰기(steam_id → 이름, D-032). 사이드카가 항상 {} 이상 보낸다
   blocks_ready: boolean;               // 차단 목록을 읽었는지. false면 업스트림이 상대 대화를 보류한다(D-033)
   blocked_users: BlockedUser[];        // 앱 차단 목록(steam_id 순)

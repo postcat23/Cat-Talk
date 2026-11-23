@@ -1,0 +1,24 @@
+/* 플로팅 아바타(1.0.10). 무대 = 팝업 창 전체(electron/floating.js: 폭 188+64+188, 높이 28+64+16). 원형은 가로 가운데·위에서 28.
+   원형 밖은 클릭 통과(창)·pointer-events 없음(무대). 라벨·광선은 화면 안쪽(data-inward)으로 나간다 */
+.stage{position:absolute;inset:0;pointer-events:none;--c:64px;--top:28px}
+
+/* 원형(사용자 명세): 지름 64, 배경 = 다크 테마 패널 배경(--panel #1a1b22) 65% — 테마와 무관하게 고정.
+   그림자·흰 테두리선은 접기 탭(OPEN/CLOSE)과 같은 값. 실루엣은 다크 테마 글자색으로 칠한다 */
+.fab{position:absolute;left:calc(50% - var(--c) / 2);top:var(--top);width:var(--c);height:var(--c);border-radius:50%;overflow:hidden;
+  background:rgba(26,27,34,.65);box-shadow:0 4px 10px rgba(0,0,0,.35),0 0 0 .75px rgba(255,255,255,.65);
+  pointer-events:auto;cursor:pointer;touch-action:none;user-select:none;--sil-color:#ececf2}
+
+/* 이름 라벨(사용자 결정 2026-11-23): 원형 옆 화면 안쪽, 원형에서 8 띄움, 최대 폭 180(넘으면 말줄임). 원형에 마우스를 올렸을 때만 */
+.label{position:absolute;top:calc(var(--top) + var(--c) / 2);translate:0 -50%;max-width:180px;padding:4px 9px;border-radius:8px;
+  background:rgba(26,27,34,.65);color:#fff;font-size:12px;font-weight:600;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  opacity:0;transition:opacity .12s;pointer-events:none}
+.stage[data-inward="right"] .label{left:calc(50% + var(--c) / 2 + 8px)}
+.stage[data-inward="left"] .label{right:calc(50% + var(--c) / 2 + 8px)}
+.fab:hover ~ .label{opacity:1}
+
+/* 광선(사용자 결정 2026-11-23): 원형의 화면 안쪽 위 바깥, 노랑 #FFD23F. 그림 원점(왼쪽 아래)을 원형 상자 (54, 6)에 둔다
+   — 45° 가장자리(54.6, 9.4) 바로 바깥. 왼쪽은 좌우를 뒤집어 원형 상자 (10, 6)에 둔다 */
+.burst{position:absolute;top:calc(var(--top) - 26px);width:32px;height:32px;overflow:visible;pointer-events:none;
+  fill:#ffd23f;stroke:#ffd23f;stroke-width:1.2;stroke-linejoin:round;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45))}
+.stage[data-inward="right"] .burst{left:calc(50% + 22px)}
+.stage[data-inward="left"] .burst{left:calc(50% - 54px);transform:scaleX(-1)}

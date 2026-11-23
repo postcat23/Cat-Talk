@@ -60,6 +60,8 @@ export interface Chat {
   canCommand: boolean;
   degraded: string[];   // 멈춘 게이트(chat_send·avatars). 소프트 배너 문구의 재료
   incoming: number | undefined;
+  // 플로팅 아바타(1.0.10): 대화 목록에 보이는 마지막 채팅의 발화자(본인 포함, own). 대화가 없으면 null(실루엣). 검색 중에도 갱신된다
+  lastSpeaker: (Participant & { own: boolean }) | null;
   restoredDraft: RestoredDraft | null;
   query: string;
   live: boolean;   // 바닥에서 최신을 따라가는 중. 아니면 창을 고정한다
@@ -585,6 +587,15 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf, undefined, shown.warns, shown.praises) : null),
     [account, shown, avatarOf],
   );
+  // 마지막 발화자는 마지막으로 받은 view 기준(HISTORY 창처럼 폴링이 잠깐 실패해도 바꾸지 않는다). 이름·아바타는 대화 목록과 같은 규칙
+  // (닉네임 반영, 나간 사람은 메시지에 남은 이름, 아바타가 아직 없으면 기본 고양이 → 실루엣)
+  const lastSpeaker = useMemo(() => {
+    const last = view?.last_speaker;
+    if (!view || !last) return null;
+    const author = toParticipant(last.sender, view.profiles[last.sender], last.name || (last.own ? '나' : '이름 확인 중'), avatarOf,
+      view.nicknames, view.warns, view.praises);
+    return { ...author, own: last.own };
+  }, [view, avatarOf]);
   const lookup = useMemo(() => new Map(participants.map((p) => [p.id, p])), [participants]);
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
@@ -643,6 +654,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     canCommand: (shown?.can_command ?? shown?.can_send) === true,
     degraded: shown?.degraded ?? [],
     incoming: shown?.incoming_count,
+    lastSpeaker,
   };
 }
 

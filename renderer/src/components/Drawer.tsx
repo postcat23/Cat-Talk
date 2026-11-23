@@ -35,6 +35,8 @@ const SWITCHES: { key: BoolKey; label: string }[] = [
   { key: 'catInteraction', label: '고양이 상호작용 표시' },
   { key: 'presence', label: '입퇴장 문구 표시' },
   { key: 'clearCats', label: '모든 고양이 투명화' },
+  // 플로팅 아바타(1.0.10, 사용자 명세): 투명화 바로 아래, 투명화와 독립. 창 배치처럼 main(window-state.json)이 저장한다
+  { key: 'floatingAvatar', label: '플로팅 아바타' },
   { key: 'hideTaskbarIcon', label: '작업 표시줄에서 아이콘 숨기기' },
 ];
 

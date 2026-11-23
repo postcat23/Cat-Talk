@@ -18,6 +18,7 @@ export interface Settings {
   autoOpenChest: boolean;   // true=켜기 활성. 켜기/끄기 버튼 UI만, 적용/복원 로직은 보류
   playWarn: boolean;        // 드로어 '플레이 > 경고'(기본 켜기). 끄면 내 화면의 노란 카드·공개수배 전단과 내 '@경고!' 입력만 멈춘다
   playPraise: boolean;      // 드로어 '플레이 > 칭찬'(1.0.8, 기본 켜기). 끄면 내 화면의 별 표시·칭찬 도장과 내 '@칭찬!' 입력만 멈춘다(경고와 독립)
+  floatingAvatar: boolean;  // 드로어 '플로팅 아바타'(1.0.10, 기본 꺼짐). 창 배치처럼 window-state.json이 저장한다(사이드카 설정 아님)
 }
 
 export type ReportKind = 'bug' | 'request';
@@ -65,6 +66,7 @@ const initialState: UiState = {
     theme: 'system', side: saved?.side ?? 'right', height: (saved && SAVED_HEIGHT[saved.heightPct]) ?? '100%', opacity: 100,
     taskbarAlert: true, toastAlert: true, catInteraction: true, clearCats: false, presence: true,
     hideTaskbarIcon: saved?.hideTaskbar ?? false, autoOpenChest: false, playWarn: true, playPraise: true,
+    floatingAvatar: saved?.floating ?? false,
   },
   overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false, nicknameFor: null, playlist: null, reportKind: null },
 };

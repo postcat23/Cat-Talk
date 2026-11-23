@@ -1,9 +1,9 @@
-// 창 상태 영속: 도크 위치·높이·작업표시줄 숨김·소속 디스플레이를 데이터 디렉터리의 JSON에 저장한다.
+// 창 상태 영속: 도크 위치·높이·작업표시줄 숨김·소속 디스플레이·플로팅 아바타(켜짐·위치)를 데이터 디렉터리의 JSON에 저장한다.
 // 사이드카(settings.sqlite3)와 같은 디렉터리를 쓰되, 창 생성 전에 동기로 읽어야 하므로 메인이 직접 관리한다.
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULTS = { side: 'right', heightPct: 100, hideTaskbar: false, displayIndex: null };
+const DEFAULTS = { side: 'right', heightPct: 100, hideTaskbar: false, displayIndex: null, floating: false, floatingPos: null };
 const HEIGHT_PCTS = [100, 70, 50];
 const SAVE_DELAY_MS = 300;
 
@@ -19,6 +19,8 @@ const file = () => path.join(dataDir(), 'window-state.json');
 // displayIndex: 디스플레이 번호(1부터, displays.js 순번 — 사용자 명세 2026-11-18). 그 번호 디스플레이가 없으면 main이 주 모니터로 폴백한다.
 // legacyDisplay: 순번 저장 전 버전(≤1.0.5)이 남긴 {id,bounds}. 순번이 없을 때 첫 실행 1회만 모니터를 찾는 데 쓰고(이어받기,
 // 사용자 결정 2026-11-18) 다시 쓰지 않는다(flush가 저장하지 않음).
+// floating: 플로팅 아바타 켜짐(1.0.10, 기본 꺼짐 — 사용자 결정 2026-11-23). floatingPos: 드래그로 옮긴 위치
+// {display(디스플레이 번호), rx, ry(작업영역 안 비율 0~1)}. 없으면 기본 위치(electron/floating.js).
 function load() {
   let raw = {};
   try { raw = JSON.parse(fs.readFileSync(file(), 'utf-8')); } catch { /* 없음/손상 → 기본값 */ }
@@ -31,7 +33,15 @@ function load() {
     hideTaskbar: raw.hideTaskbar === true,
     displayIndex,
     legacyDisplay,
+    floating: raw.floating === true,
+    floatingPos: validFloatingPos(raw.floatingPos),
   };
+}
+
+const ratio = (v) => typeof v === 'number' && v >= 0 && v <= 1;
+function validFloatingPos(pos) {
+  return pos && Number.isInteger(pos.display) && pos.display >= 1 && ratio(pos.rx) && ratio(pos.ry)
+    ? { display: pos.display, rx: pos.rx, ry: pos.ry } : DEFAULTS.floatingPos;
 }
 
 let timer = null;
@@ -46,8 +56,8 @@ function flush(state) {
   try {
     fs.mkdirSync(dataDir(), { recursive: true });
     const tmp = file() + '.tmp';
-    const { side, heightPct, hideTaskbar, displayIndex } = state;
-    fs.writeFileSync(tmp, JSON.stringify({ side, heightPct, hideTaskbar, displayIndex }, null, 2));
+    const { side, heightPct, hideTaskbar, displayIndex, floating, floatingPos } = state;
+    fs.writeFileSync(tmp, JSON.stringify({ side, heightPct, hideTaskbar, displayIndex, floating, floatingPos }, null, 2));
     fs.renameSync(tmp, file());
   } catch (e) {
     console.error('[window-state] save failed:', e.message);

@@ -6,7 +6,7 @@ interface Window {
   };
   // 창 제어. Electron에서만 존재하고 브라우저 dev(npm run dev)에서는 undefined.
   catTalk?: {
-    initial: { side: 'left' | 'right'; heightPct: 100 | 70 | 50; hideTaskbar: boolean };
+    initial: { side: 'left' | 'right'; heightPct: 100 | 70 | 50; hideTaskbar: boolean; floating?: boolean };
     version: string;   // app.getVersion() — package.json의 version
     update: {
       status(): Promise<import('./hooks/useAppUpdate').UpdateStatus>;
@@ -30,6 +30,16 @@ interface Window {
     playlist: {
       title(id: string): Promise<string | null>;
       open(ids: string[]): Promise<{ ok: boolean; mode?: 'single' | 'list' | 'fallback'; reason?: string }>;
+    };
+    // 플로팅 아바타(1.0.10). inward = 라벨·광선이 나가는 화면 안쪽
+    floating: {
+      setEnabled(on: boolean): void;
+      setInteractive(interactive: boolean): void;
+      dragStart(): void;
+      dragEnd(): Promise<{ moved: boolean }>;
+      focusMain(): void;
+      layout(): Promise<{ inward: 'left' | 'right' }>;
+      onLayout(cb: (layout: { inward: 'left' | 'right' }) => void): () => void;
     };
     setDockSide(side: 'left' | 'right'): void;
     setChatHeight(pct: 100 | 70 | 50): void;
