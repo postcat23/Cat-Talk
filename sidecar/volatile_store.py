@@ -7,12 +7,14 @@ upstream src/bongo_chat/store.py는 수정하지 않는다. Store를 그대로 �
 - 차단 목록(blocked_users/set_blocked)은 그 settings에 계정별 키 'blocked:<account>'로 영속한다(D-033).
   업스트림 blocked_users 테이블은 인메모리라 쓰지 않는다.
 - Steam '모든 대화 차단'한 사람(hidden_senders, 사이드카가 채운다)은 대화 조회에서 앱 차단과 같은 단계로 뺀다(D-033 2단계).
+- 마지막 채팅 행(last_chat)은 플로팅 아바타(1.0.10)용 Cat-Talk 추가 조회다. 업스트림 view 응답은 바꾸지 않는다.
 """
 import json
 from pathlib import Path
 import sqlite3
+import time
 
-from bongo_chat.store import Store
+from bongo_chat.store import RETENTION_SECONDS, Store
 
 # Path(":memory:")는 os.fspath가 ":memory:" 문자열을 돌려줘 sqlite가 인메모리로 연다.
 # Windows 실측: PRAGMA database_list의 main 파일명 '', journal_mode=memory, 디스크 파일 없음.
@@ -53,6 +55,19 @@ class VolatileStore(Store):
         if blocked is not None and self.hidden_senders:
             blocked = set(blocked) | self.hidden_senders
         return super().message_page(account, lobby, allowed, query, before, limit, start, seen, blocked)
+
+    def last_chat(self, account, lobby, allowed, blocked=None):
+        """이 계정·로비에서 대화 목록에 보이는 마지막 채팅 행(입퇴장 제외) {id, sender, name, own}. 없으면 None.
+        플로팅 아바타(1.0.10)의 '마지막 발화자'용이다. 범위는 업스트림 Store.message_page의 scope와 같게 맞춘다
+        (보관 기한·야옹 제외·앱 차단 또는 허용 목록, 위 message_page처럼 Steam 차단도 뺀다). 검색어·창과 무관하다."""
+        if blocked is not None and self.hidden_senders:
+            blocked = set(blocked) | self.hidden_senders
+        membership = "IN" if blocked is None else "NOT IN"
+        scope = f"account=? AND lobby=? AND sender {membership} (SELECT id FROM visible_users) AND received>=? AND is_meow_message(body)=0"
+        with self.visible(account if blocked is None else "", allowed if blocked is None else blocked - {account}):
+            row = self.db.execute(f"SELECT id, sender, name, own FROM messages WHERE {scope} ORDER BY seq DESC LIMIT 1",
+                                  (account, lobby, time.time() - RETENTION_SECONDS)).fetchone()
+        return dict(row) if row else None
 
     # 재전송(resend, Cat-Talk 추가 — server.py): 전송 실패한 내 메시지만 대상이다. 업스트림 Store에는 행 단위 삭제가 없어
     # 인메모리 messages에 직접 쓴다. receipts는 ON DELETE CASCADE이고, 실패 행에는 보통 receipt가 없다(reject_echo가 옮김).
