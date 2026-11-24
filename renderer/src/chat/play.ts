@@ -2,7 +2,7 @@
 // 모두 내 화면·내 입력에만 적용된다 — 남의 화면은 바꾸지 않는다(고양이 투명화·상호작용 표시와 같은 성격).
 import type { Settings } from '../state/UiContext';
 
-export type PlayKey = 'playWarn' | 'playPraise';
+export type PlayKey = 'playWarn' | 'playPraise' | 'playEvent';
 
 // mention = '@' 단축어를 쓰는 기능. 그런 기능이 하나라도 켜져 있으면 '@' 자동완성이 뜨고,
 // 모두 꺼져 있으면 '@'는 일반 글자로 입력된다(사용자 결정)
@@ -10,6 +10,8 @@ export type PlayKey = 'playWarn' | 'playPraise';
 export const PLAY_FEATURES: { key: PlayKey; label: string; mention: boolean; hint: string }[] = [
   { key: 'playWarn', label: '경고', mention: true, hint: '@사용자이름 경고!' },     // 경고·공개수배 전체(D-052)
   { key: 'playPraise', label: '칭찬', mention: true, hint: '@사용자이름 칭찬!' },   // 칭찬·칭찬 도장 전체(1.0.8, 경고의 거울)
+  // 문구 트리거 이벤트 효과(1.0.10, chat/events.ts). 문구는 공개하지 않는다(사용자 명세 설명 문구)
+  { key: 'playEvent', label: '이벤트 모션', mention: false, hint: '숨겨진 문구 찾기' },
 ];
 
 export const mentionEnabled = (settings: Settings) => PLAY_FEATURES.some((f) => f.mention && settings[f.key]);

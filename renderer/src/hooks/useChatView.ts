@@ -9,6 +9,8 @@ import {
 } from '../chat/model';
 import { CARD_MS, MAX_ENTRIES, PL_EXISTS, PL_FULL } from '../chat/playlist';
 import { admitEvents, finishEvent } from '../chat/playQueue';
+import { admitEvent, matchEvent, type EventPlay } from '../chat/events';
+import { takeArrivals, type ArrivalTracker } from '../chat/arrivals';
 import type { ReactionStack } from './useReactionStack';
 
 const POLL_MS = 600;   // D-007: push 없이 view 폴링으로 전체 상태를 재구성한다
@@ -88,6 +90,11 @@ export interface Chat {
   praise(target: string): Promise<boolean>;  // 칭찬(1.0.8, 경고의 거울): 내 cattalk.praise의 대상 +1. 자기 자신은 안 된다
   praised: WantedEvent | null;               // 띄울 칭찬 도장(차례대로 하나씩, 대상별로 묶임)
   dismissPraised(id: string, result: Extract<WantedResult, 'shown' | 'expired' | 'absent'>): void;
+  // 문구 트리거 이벤트(1.0.10, chat/events.ts): 띄울 효과(하나씩, 로컬 발동). 재생을 시작하면 eventStarted(쿨다운 시작),
+  // 끝났거나(재생 완료·보류 1분 지남) 버리면 dismissEvent
+  event: EventPlay | null;
+  eventStarted(id: string): void;
+  dismissEvent(id: string): void;
   // 플리 공유(D-053). playlist = 보이는 로비 목록(등록순, 차단 제외), playlistMine = 내 곡. add·remove는 내 cattalk.pl 쓰기를 보낸다
   // (성공 = 접수, 실패는 안내 후 false). showRandom은 랜덤 결과 카드를 띄운다
   playlist: PlaylistEntry[];
@@ -136,9 +143,36 @@ function usePlayQueue(enabled: boolean, display: 'wanted_display' | 'praised_dis
   return { current: queue[0] ?? null, take, dismiss, on };
 }
 
+// 문구 트리거 이벤트 효과(1.0.10). enabled = 드로어 '플레이 > 이벤트 모션'. 대기·재생 중인 것이 있거나 마지막 재생 시작 뒤
+// 10초(쿨다운)가 안 지났으면 새 문구를 무시한다(도배 방지). 끄면 대기·재생 중인 것도 버린다
+function useEventMotion(enabled: boolean) {
+  const [current, setCurrent] = useState<EventPlay | null>(null);
+  const ref = useRef<EventPlay | null>(null);
+  const startedAt = useRef<number | null>(null);
+  const on = useRef(enabled);
+  const count = useRef(0);
+  const set = useCallback((next: EventPlay | null) => {
+    ref.current = next;
+    setCurrent(next);
+  }, []);
+  useEffect(() => {
+    on.current = enabled;
+    if (!enabled && ref.current) set(null);
+  }, [enabled, set]);
+  // 새로 올라온 글들(오래된 것부터). 기간 안 문구가 든 첫 글 하나로 판정한다
+  const take = useCallback((texts: string[]) => {
+    const now = Date.now();
+    const def = texts.map((text) => matchEvent(text, new Date(now))).find(Boolean);
+    if (def && admitEvent(on.current, ref.current, startedAt.current, now)) set({ id: `${def.id}:${++count.current}`, effect: def.effect, at: now });
+  }, [set]);
+  const started = useCallback((id: string) => { if (ref.current?.id === id) startedAt.current = Date.now(); }, []);
+  const dismiss = useCallback((id: string) => { if (ref.current?.id === id) set(null); }, [set]);
+  return { current, take, started, dismiss };
+}
+
 // warnEnabled·praiseEnabled = 드로어 '플레이 > 경고'·'칭찬'(서로 독립). 끄면 그 종류의 발동 화면을 받는 대로 버리고 그 쓰기를 보내지 않는다(내 화면·내 입력만)
 export function useChatView(pushReaction: ReactionStack['push'], reactionsEnabled: boolean, warnEnabled: boolean,
-  praiseEnabled: boolean): Chat {
+  praiseEnabled: boolean, eventEnabled: boolean): Chat {
   const { dispatch } = useUi();
   const [view, setView] = useState<ViewResponse | null>(null);
   const [failed, setFailed] = useState(false);
@@ -157,6 +191,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [cooldown, setCooldown] = useState<Cooldown>({ active: false, key: 0 });
   const { current: wanted, take: takeWantedEvents, dismiss: dismissWanted, on: warnOn } = usePlayQueue(warnEnabled, 'wanted_display');
   const { current: praised, take: takePraisedEvents, dismiss: dismissPraised, on: praiseOn } = usePlayQueue(praiseEnabled, 'praised_display');
+  const { current: event, take: takeEvent, started: eventStarted, dismiss: dismissEvent } = useEventMotion(eventEnabled);
+  const arrivals = useRef<ArrivalTracker | null>(null);   // 새로 올라온 글 판정 기준선(chat/arrivals.ts)
   const [playlistCards, setPlaylistCards] = useState<PlaylistCard[]>([]);
   const seenPlaylist = useRef(new Set<string>());   // 이미 띄운 추가 알림 id(사이드카가 한 번만 주지만 응답을 버린 회차 대비)
   const cooldownUntil = useRef(0);   // performance.now() 기준. 판정은 이 값으로 하고 cooldown 상태는 표시용이다
@@ -310,6 +346,10 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       setFailed(false);
       fetchAvatars(data);
       rememberAuthors(data);
+      // 문구 트리거 이벤트(1.0.10): 대화 목록에 새로 올라온 글만 본다(시작 시 기록·위로 불러온 옛 글·검색 결과 제외)
+      const arrived = takeArrivals(arrivals.current, data, Boolean(q));
+      arrivals.current = arrived.next;
+      if (arrived.fresh.length) takeEvent(arrived.fresh.map((m) => m.body));
       viewRef.current = data;
       // 다른 로비로 옮겼으면 고정해 둔 창도 그 로비 것이 아니다
       if (takeDraft(data)) {
@@ -341,7 +381,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       busy.current = false;
       if (again.current) { again.current = false; void poll(); }
     }
-  }, [applyTimeline, dispatch, fetchAvatars, rememberAuthors, takeDraft, takeReactions, takePlaylist, takePlay]);
+  }, [applyTimeline, dispatch, fetchAvatars, rememberAuthors, takeDraft, takeReactions, takePlaylist, takePlay, takeEvent]);
 
   useEffect(() => {
     void poll();
@@ -694,7 +734,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
 
   return {
     items, participants, me, nicknames, blockedUsers, query, live, focus, newest, toast, restoredDraft, byId, setQuery, setLive, loadOlder, loadNewer, jumpTo, send, resend, cooldown, openProfile, openTrade, setNickname, setBlocked, refresh, notify, saveSettings, saveDraft, sending, hasDraft,
-    warn, wanted, dismissWanted, praise, praised, dismissPraised,
+    warn, wanted, dismissWanted, praise, praised, dismissPraised, event, eventStarted, dismissEvent,
     playlist, playlistMine, playlistCards, playlistAdd, playlistRemove, showRandom,
     blocksReady: shown?.blocks_ready ?? true,
     conn: failed ? 'off' : connState(view),

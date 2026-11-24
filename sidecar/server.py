@@ -93,6 +93,8 @@ UI_SETTINGS = {
     "play_warn": (True, lambda value: type(value) is bool),
     # 드로어 '플레이 > 칭찬'(1.0.8, 기본 켜기). 경고와 같은 성격 — 끄면 내 화면의 별 표시·칭찬 도장과 내 '@칭찬!' 입력만 멈춘다
     "play_praise": (True, lambda value: type(value) is bool),
+    # 드로어 '플레이 > 이벤트 모션'(1.0.10, 기본 켜기). 렌더러만 읽는다 — 끄면 트리거 문구가 와도 내 화면에 효과를 띄우지 않는다(로컬 발동)
+    "play_event": (True, lambda value: type(value) is bool),
 }
 # 렌더러가 알리는 공개수배 전단·칭찬 도장(1.0.8) 처리 결과(진단 로그 전용, 결과 코드만): 끝까지 재생 / 같은 대상과 묶여 생략 /
 # 플레이 > 경고(칭찬) 꺼짐 / 가려진 채 1분 지남 / 대상이 목록에 없음

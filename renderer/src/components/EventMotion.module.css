@@ -1,0 +1,63 @@
+/* 문구 트리거 이벤트 효과(1.0.10). 무대 = 패널 전체(.panel 안, 본체 형제 — 채팅 투명도 밖). 클릭은 통과한다.
+   전체 길이 4초 = 3.4초 재생 + 0.6초 페이드아웃(사용자 결정, chat/events.ts EVENT_DURATION_MS와 같게).
+   도트 느낌: 움직임은 steps()로 끊어 움직인다. 배치는 beta에서 조정한다 */
+.layer{position:absolute;inset:0;z-index:8;pointer-events:none;overflow:hidden;animation:fadeOut 4s linear forwards}
+@keyframes fadeOut{0%,85%{opacity:1}to{opacity:0}}
+/* 뒤 막: 라이트 모드만 반투명 검정 45%(흰 배경에서 도트 눈이 묻혀서, 사용자 결정 2026-11-24), 다크는 없음 — tokens.css --event-dim */
+.layer::before{content:'';position:absolute;inset:0;background:var(--event-dim);animation:dimIn .25s steps(3) both}
+@keyframes dimIn{from{opacity:0}}
+
+/* 눈(배경): 눈송이마다 패널 높이만큼 내려가는 세로 줄(.fall, 높이 100% — translateY %가 패널 높이)과 좌우로 살랑이는 점(.flake) */
+.snow{position:absolute;inset:0}
+.fall{position:absolute;top:0;width:0;height:100%;animation:fall 3s steps(28) both}
+@keyframes fall{from{transform:translateY(-3%)}to{transform:translateY(100%)}}
+/* 흰 점 + 연한 파랑 테두리 1px */
+.flake{display:block;background:#fff;box-shadow:0 0 0 1px rgba(110,150,200,.75),1px 1px 0 1px rgba(70,100,150,.35);
+  animation:sway .9s steps(3) infinite alternate}
+@keyframes sway{to{transform:translateX(var(--drift))}}
+
+/* 가랜드(가장 처음 모양 — 타일 repeat-x): 상단바 바로 아래(top은 EventMotion이 잰다). 상단바 밑에서 툭 내려오게 위를 자른다.
+   타일 이음매(갈고리) 하나가 패널 가운데에 오게 배경 위치를 맞춘다(EventMotion 인라인) */
+.garlandClip{position:absolute;left:0;right:0;overflow:hidden}
+.garland{height:100%;background-repeat:repeat-x;filter:drop-shadow(0 2px 0 rgba(0,0,0,.28));animation:drop .4s steps(5) both}
+@keyframes drop{from{transform:translateY(-100%)}}
+/* 리본(각진 줄무늬): 가랜드 가운데 갈고리에 단다. 가랜드가 내려온 뒤 매듭에서 톡 펼쳐진다(끊어서) */
+.bow{position:absolute;left:50%;transform:translateX(-50%);display:block;filter:drop-shadow(0 2px 0 rgba(0,0,0,.3));
+  animation:bowIn .35s steps(4) .3s both}
+@keyframes bowIn{from{transform:translateX(-50%) scale(.3);opacity:0}}
+
+/* 'MERRY CHRISTMAS' + 트리: 채팅창(패널) 가운데. 문구와 트리 사이 여백 36px(사용자 지시로 18에서 늘림, 2026-11-24).
+   낮은 채팅 높이에서 리본·입력창과 겹치면 EventMotion이 위치(top)와 축소(transform)를 인라인으로 바꾼다 */
+.scene{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px}
+.title{display:block;filter:drop-shadow(0 2px 0 rgba(0,0,0,.35))}
+.merry{animation:pop .4s steps(4) .3s both,bob .8s steps(2) .7s infinite alternate}
+.christmas{margin-bottom:36px;animation:pop .4s steps(4) .45s both,bob .8s steps(2) .85s infinite alternate}
+@keyframes pop{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}
+@keyframes bob{to{transform:translateY(-3px)}}
+
+.tree{position:relative;width:168px;aspect-ratio:2/3;animation:rise .45s steps(5) .1s both}
+@keyframes rise{from{transform:translateY(28px);opacity:0}}
+.treeImg{display:block;width:100%;height:100%}
+
+/* 전구(트리 그림에 없는 것): 가지 위 작은 점이 번갈아 깜빡인다. 별: 꼭대기에서 밝아졌다 돌아온다 */
+.light{position:absolute;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;background:var(--c);box-shadow:0 0 6px 1px var(--c);
+  animation:blink .9s steps(2) infinite}
+@keyframes blink{50%{opacity:.25;box-shadow:none}}
+.star{position:absolute;display:block;transform:translate(-50%,-62%);animation:twinkle .5s steps(2) infinite alternate}
+@keyframes twinkle{to{transform:translate(-50%,-62%) scale(1.12);filter:brightness(1.45) drop-shadow(0 0 6px #ffe066)}}
+
+/* 선물상자: 트리 밑동 양옆(땅 = 트리 그림 바닥 5% 위), 트리와 겹치지 않게 트리 그림의 실제 가장자리(상자 폭의 2.3%·2.5% 안쪽) 밖에
+   6px 띄운다(사용자 결정 2026-11-24). 나타난 뒤 각자 다른 박자로 위로 통통 */
+.gift{position:absolute;bottom:5%;animation:giftIn .4s steps(4) .35s both}
+.giftLeft{right:calc(100% - 2.3% + 6px)}
+.giftRight{left:calc(100% - 2.5% + 6px)}
+@keyframes giftIn{from{transform:scale(.2);opacity:0}}
+.giftImg{display:block;filter:drop-shadow(0 2px 0 rgba(0,0,0,.3));animation:hop .6s steps(4) .75s infinite}
+.giftRight .giftImg{animation-duration:.72s;animation-delay:.95s}
+@keyframes hop{0%,100%{transform:translateY(0)}45%{transform:translateY(-12px)}}
+
+/* 움직임 줄이기: 눈은 빼고 막·가랜드·트리·글자·별·전구·선물을 멈춘 채 보여 준다(끝은 EventMotion이 4초 뒤에 지운다) */
+@media (prefers-reduced-motion:reduce){
+  .layer,.layer *,.layer::before{animation:none}
+  .snow{display:none}
+}

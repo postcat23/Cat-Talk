@@ -91,6 +91,7 @@ export interface UiSettings {
   auto_open_chest: boolean;
   play_warn: boolean;   // 드로어 '플레이 > 경고'
   play_praise?: boolean;   // 드로어 '플레이 > 칭찬'(1.0.8). 이전 사이드카에는 없다
+  play_event?: boolean;    // 드로어 '플레이 > 이벤트 모션'(1.0.10). 이전 사이드카에는 없다
 }
 
 export interface ViewResponse {
@@ -241,6 +242,7 @@ export const SETTING_KEYS: Partial<Record<keyof Settings, string>> = {
   autoOpenChest: 'auto_open_chest',
   playWarn: 'play_warn',
   playPraise: 'play_praise',
+  playEvent: 'play_event',
 };
 
 export function settingsFromView(view: ViewResponse): Partial<Settings> {
@@ -251,6 +253,7 @@ export function settingsFromView(view: ViewResponse): Partial<Settings> {
     toastAlert: view.notifications.notification_toast,
     catInteraction: view.reactions_enabled,
     ...(ui && { opacity: ui.chat_opacity, presence: ui.presence_notices, clearCats: ui.clear_cats, autoOpenChest: ui.auto_open_chest,
-      playWarn: ui.play_warn, ...(typeof ui.play_praise === 'boolean' && { playPraise: ui.play_praise }) }),
+      playWarn: ui.play_warn, ...(typeof ui.play_praise === 'boolean' && { playPraise: ui.play_praise }),
+      ...(typeof ui.play_event === 'boolean' && { playEvent: ui.play_event }) }),
   };
 }
