@@ -16,6 +16,7 @@ import Conversation from './components/Conversation';
 import Composer from './components/Composer';
 import NicknameModal from './components/NicknameModal';
 import ReportModal from './components/ReportModal';
+import FloatingAvatar from './components/FloatingAvatar';
 
 const HEIGHT_PCT: Record<ChatHeight, 100 | 70 | 50> = { '100%': 100, '70%': 70, '50%': 50 };
 
@@ -39,9 +40,10 @@ function Panel() {
   useEffect(() => { shell?.setDockSide(settings.side); }, [shell, settings.side]);
   useEffect(() => { shell?.setChatHeight(HEIGHT_PCT[settings.height]); }, [shell, settings.height]);
   useEffect(() => { shell?.setSkipTaskbar(settings.hideTaskbarIcon); }, [shell, settings.hideTaskbarIcon]);
+  useEffect(() => { shell?.floating.setEnabled(settings.floatingAvatar); }, [shell, settings.floatingAvatar]);   // 켜짐 저장(창은 FloatingAvatar가 연다)
   useEffect(() => shell?.onExpand(() => dispatch({ type: 'expand' })), [shell, dispatch]);
   useClickThrough();
-  useMessageAlerts(chat.incoming, overlays.collapsed, settings.toastAlert, settings.taskbarAlert);
+  const unread = useMessageAlerts(chat.incoming, overlays.collapsed, settings.toastAlert, settings.taskbarAlert);
 
   const style = {
     height: shell ? undefined : settings.height,
@@ -70,6 +72,8 @@ function Panel() {
           <NicknameModal />
           <ReportModal />
         </section>
+        {/* 플로팅 아바타(1.0.10): 패널 밖 별도 창(팝업)에 포털로 그린다. 꺼져 있으면 아무것도 그리지 않는다 */}
+        <FloatingAvatar unread={unread} />
       </AppUpdateContext.Provider>
       </AutoChestContext.Provider>
     </ChatContext.Provider>

@@ -47,6 +47,7 @@ function view({ query = '', before, start, limit = 100 }: ViewArgs): ViewRespons
     has_more: first !== undefined && matching.some((m) => m.seq! < first),
     has_newer: last !== undefined && matching.some((m) => m.seq! > last),
     latest_seq: messages.at(-1)?.seq ?? 0,
+    last_speaker: lastSpeaker(visible),
     profiles: PROFILES,
     participants: Object.fromEntries(Object.entries(PROFILES).map(([id, p]) => [id, { ...p, blocked: id in blocked }])),
     blocks_ready: true,
@@ -61,6 +62,12 @@ function view({ query = '', before, start, limit = 100 }: ViewArgs): ViewRespons
     playlist_mine: playlist.filter((e) => e.by === ME_ID).map((e) => e.id),
     ...(!needle && { playlist_added: takePlaylistAdded(), playlist_failed: [] }),
   };
+}
+
+// 플로팅 아바타(1.0.10) 마지막 발화자: 사이드카처럼 보이는 대화의 마지막 채팅(입퇴장 제외), 검색·창과 무관
+function lastSpeaker(visible: typeof messages): ViewResponse['last_speaker'] {
+  const m = visible.filter((v) => !v.kind).at(-1);
+  return m ? { id: m.id, sender: m.sender, name: m.name, own: Boolean(m.own) } : null;
 }
 
 // 사이드카 set_nickname 대역(D-032). 목업 id(p1…)는 Steam ID가 아니어서 uint64 검증 대신 PROFILES에 있는지만 본다.

@@ -3,8 +3,8 @@ import { rpc } from '../rpc';
 import { useUi, type Settings } from '../state/UiContext';
 import { CHAT_SEND_PAUSED, errorText, noticeText, PROFILE_OPENING, TRADE_OPENING, VIEW_UNAVAILABLE } from '../chat/messages';
 import {
-  accountStatus, connState, displayName, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
-  type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
+  accountStatus, authorProfile, connState, displayName, isPresence, SETTING_KEYS, settingsFromView, toChatItems, toParticipant,
+  type AuthorAvatars, type AvatarLookup, type ChatItem, type ChatMessage, type ConnState, type Participant, type ViewContext, type ViewMessage, type ViewResponse,
   type PlaylistEntry, type WantedEvent, type WantedResult,
 } from '../chat/model';
 import { CARD_MS, MAX_ENTRIES, PL_EXISTS, PL_FULL } from '../chat/playlist';
@@ -60,6 +60,8 @@ export interface Chat {
   canCommand: boolean;
   degraded: string[];   // 멈춘 게이트(chat_send·avatars). 소프트 배너 문구의 재료
   incoming: number | undefined;
+  // 플로팅 아바타(1.0.10): 대화 목록에 보이는 마지막 채팅의 발화자(본인 포함, own). 대화가 없으면 null(실루엣). 검색 중에도 갱신된다
+  lastSpeaker: (Participant & { own: boolean }) | null;
   restoredDraft: RestoredDraft | null;
   query: string;
   live: boolean;   // 바닥에서 최신을 따라가는 중. 아니면 창을 고정한다
@@ -143,6 +145,8 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   const [query, setQueryState] = useState('');
   const [toast, setToast] = useState<Toast | null>(null);
   const [avatars, setAvatars] = useState<Record<string, string>>({});
+  // 나간 사람 아바타 유지(1.0.10): 보낸 사람 → 마지막으로 본 avatar_id. 지금 멤버와, 렌더러가 들고 있는 메시지의 보낸 사람만 남긴다
+  const [authorAvatars, setAuthorAvatars] = useState<AuthorAvatars>({});
   const [restoredDraft, setRestoredDraft] = useState<RestoredDraft | null>(null);
   const [timeline, setTimeline] = useState(EMPTY_TIMELINE);
   const [results, setResults] = useState<ViewMessage[] | null>(null);   // 첫 응답 전에는 창을 그대로 둬 스크롤 위치를 잃지 않는다
@@ -233,9 +237,10 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   }, [pushPlaylistCard]);
 
   // view에는 id만 온다. 처음 보는 이미지만 받아 메모리에 둔다(디스크·localStorage에 쓰지 않는다).
+  // 받아 둔 이미지는 아래 정리 효과가 지금 쓰는 것만 남긴다
   const fetchAvatars = useCallback((data: ViewResponse) => {
     const requested = requestedAvatars.current;
-    // 메시지 작성자는 나간 뒤에도 profiles에 남으므로 둘 다 본다
+    // profiles(차단 제외 멤버 + 나)와 participants(차단 포함 멤버)를 둘 다 본다. 나간 사람은 둘 다에 없다(authorAvatars가 기억)
     const ids = [...new Set([...Object.values(data.participants), ...Object.values(data.profiles)].map((p) => p.avatar_id).concat(data.default_avatar_id))]
       .filter((id): id is string => Boolean(id) && !requested.has(id as string))
       .slice(0, MAX_AVATAR_REQUEST);
@@ -244,6 +249,19 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     rpc<{ images: Record<string, string> }>('avatars', { ids })
       .then(({ images }) => setAvatars((current) => ({ ...current, ...images })))
       .catch(() => ids.forEach((id) => requested.delete(id)));   // 표시는 기본 고양이(없으면 실루엣), 다음 폴링에서 재시도
+  }, []);
+
+  // 멤버의 avatar_id를 보낸 사람별로 기억한다(바뀌면 새 값). 나간 뒤에는 view에 없으므로 마지막 값이 남는다
+  const rememberAuthors = useCallback((data: ViewResponse) => {
+    setAuthorAvatars((current) => {
+      let next = current;
+      for (const [uid, profile] of [...Object.entries(data.participants), ...Object.entries(data.profiles)]) {
+        if (!profile.avatar_id || next[uid] === profile.avatar_id) continue;
+        if (next === current) next = { ...current };
+        next[uid] = profile.avatar_id;
+      }
+      return next;
+    });
   }, []);
 
   // 배경 저장이라 실패해도 알리지 않는다. 글은 입력창에 남아 있고 다음 입력 때 다시 저장한다.
@@ -291,6 +309,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       if (sent !== version.current) return;
       setFailed(false);
       fetchAvatars(data);
+      rememberAuthors(data);
       viewRef.current = data;
       // 다른 로비로 옮겼으면 고정해 둔 창도 그 로비 것이 아니다
       if (takeDraft(data)) {
@@ -322,7 +341,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       busy.current = false;
       if (again.current) { again.current = false; void poll(); }
     }
-  }, [applyTimeline, dispatch, fetchAvatars, takeDraft, takeReactions, takePlaylist, takePlay]);
+  }, [applyTimeline, dispatch, fetchAvatars, rememberAuthors, takeDraft, takeReactions, takePlaylist, takePlay]);
 
   useEffect(() => {
     void poll();
@@ -551,6 +570,39 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
   }, [dispatch, showError]);
 
   const shown = failed ? null : view;
+
+  // 기억 범위(무한 누적 방지): 지금 멤버와, 렌더러가 들고 있는 메시지(대화 창·검색 결과·HISTORY 최신·마지막 발화자)의 보낸 사람.
+  // 메시지가 창에서 빠지면(로비 이동·검색 종료·HISTORY 이동 포함) 그 사람의 기억도 지운다. view는 마지막으로 받은 것(폴링 실패 중에도 유지)
+  useEffect(() => {
+    const keep = new Set([...Object.keys(view?.profiles ?? {}), ...Object.keys(view?.participants ?? {})]);
+    for (const m of timeline.messages) keep.add(m.sender);
+    for (const m of results ?? []) keep.add(m.sender);
+    if (latest) keep.add(latest.sender);
+    if (view?.last_speaker) keep.add(view.last_speaker.sender);
+    setAuthorAvatars((current) => {
+      const gone = Object.keys(current).filter((uid) => !keep.has(uid));
+      if (gone.length === 0) return current;
+      const next = { ...current };
+      for (const uid of gone) delete next[uid];
+      return next;
+    });
+  }, [view, timeline, results, latest]);
+
+  // 받아 둔 이미지도 지금 쓰는 것만 남긴다: 지금 멤버·기억한 작성자의 avatar_id와 기본 고양이. 지운 id는 다시 쓰이면 다시 받는다
+  useEffect(() => {
+    const keep = new Set(Object.values(authorAvatars));
+    for (const p of [...Object.values(view?.profiles ?? {}), ...Object.values(view?.participants ?? {})]) if (p.avatar_id) keep.add(p.avatar_id);
+    if (view?.default_avatar_id) keep.add(view.default_avatar_id);
+    const gone = Object.keys(avatars).filter((id) => !keep.has(id));
+    if (gone.length === 0) return;
+    for (const id of gone) requestedAvatars.current.delete(id);
+    setAvatars((current) => {
+      const next = { ...current };
+      for (const id of gone) delete next[id];
+      return next;
+    });
+  }, [avatars, authorAvatars, view]);
+
   // 아바타 준비 상태는 마지막으로 받은 view 기준: 폴링이 잠깐 실패해도 HISTORY 창의 고양이를 받아 둔 이미지로 유지한다
   const ready = view?.avatar_stage === 'ready';
   // 아바타가 아직 없거나(스킨 변경 중 포함) 받기 전이면 게임 기본 고양이. 그것도 없으면(시작 직후 로딩·렌더 불가·브라우저 dev) 실루엣
@@ -561,13 +613,13 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     // 연결이 끊겨도 HISTORY는 고정한 창을 계속 보여 준다
     const source = query || live ? shown : view;
     if (!source) return [];
-    return toChatItems({ ...source, messages: (query && results) || timeline.messages }, avatarOf);
-  }, [shown, view, query, results, live, timeline, avatarOf]);
+    return toChatItems({ ...source, messages: (query && results) || timeline.messages }, avatarOf, authorAvatars);
+  }, [shown, view, query, results, live, timeline, avatarOf, authorAvatars]);
   const newest = useMemo(() => {
     if (live || query || !view || !latest || timeline.messages.some((m) => m.id === latest.id)) return null;
-    const [item] = toChatItems({ ...view, messages: [latest] }, avatarOf);
+    const [item] = toChatItems({ ...view, messages: [latest] }, avatarOf, authorAvatars);
     return item.kind === 'msg' ? item : null;
-  }, [live, query, view, latest, timeline, avatarOf]);
+  }, [live, query, view, latest, timeline, avatarOf, authorAvatars]);
   const participants = useMemo(
     // 앱에서 차단한 멤버는 목록·상단바 참여자 수에서 뺀다(D-033). view.participants에는 blocked 플래그와 함께 남아 있다
     () => Object.entries(shown?.participants ?? {}).filter(([, p]) => !p.blocked)
@@ -585,6 +637,15 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
       ? toParticipant(account, shown.profiles[account], '계정 확인 중', avatarOf, undefined, shown.warns, shown.praises) : null),
     [account, shown, avatarOf],
   );
+  // 마지막 발화자는 마지막으로 받은 view 기준(HISTORY 창처럼 폴링이 잠깐 실패해도 바꾸지 않는다). 이름·아바타는 대화 목록과 같은 규칙
+  // (닉네임 반영, 나간 사람은 메시지에 남은 이름·기억해 둔 스킨, 아바타가 아직 없으면 기본 고양이 → 실루엣)
+  const lastSpeaker = useMemo(() => {
+    const last = view?.last_speaker;
+    if (!view || !last) return null;
+    const author = toParticipant(last.sender, authorProfile(view, last.sender, authorAvatars),
+      last.name || (last.own ? '나' : '이름 확인 중'), avatarOf, view.nicknames, view.warns, view.praises);
+    return { ...author, own: last.own };
+  }, [view, avatarOf, authorAvatars]);
   const lookup = useMemo(() => new Map(participants.map((p) => [p.id, p])), [participants]);
   const byId = useCallback((uid: string) => lookup.get(uid), [lookup]);
 
@@ -643,6 +704,7 @@ export function useChatView(pushReaction: ReactionStack['push'], reactionsEnable
     canCommand: (shown?.can_command ?? shown?.can_send) === true,
     degraded: shown?.degraded ?? [],
     incoming: shown?.incoming_count,
+    lastSpeaker,
   };
 }
 

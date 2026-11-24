@@ -4,6 +4,7 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 const windowState = require('./window-state');
 const displays = require('./displays');
+const { createFloating } = require('./floating');
 const { createAutoChest, defaultSys } = require('./auto-chest');
 const { countBadge, dotIcon } = require('./badge');
 const { attachImeMemory } = require('./ime-memory');
@@ -244,6 +245,7 @@ function dockTo(display) {
   dockedId = display.id;
   dockedBounds = win.getBounds();
   publishDisplays();
+  floating.place();   // 저장 위치가 없으면 플로팅 아바타 기본 위치(메인창 반대편 하단)가 메인창 좌/우·디스플레이를 따라간다
 }
 
 // 창이 지금 올라가 있는 디스플레이. 배율·해상도·작업표시줄이 바뀌어도 주 모니터로 끌고 오지 않는다.
@@ -262,9 +264,22 @@ function publishDisplays() {
 
 // 항상 위 레벨은 TOPMOST_LEVEL. 생성 옵션 alwaysOnTop: true는 기본 레벨 'floating'이라 바로 덮어쓴다.
 // 작업표시줄로 최소화했다 복원한 뒤 최상위가 풀린다는 보고가 있어 복원·표시 때마다, 디스플레이를 옮긴 뒤에도 다시 건다.
-function keepOnTop() { if (win && !win.isDestroyed()) win.setAlwaysOnTop(true, TOPMOST_LEVEL); }
+// 메인창을 다시 올리면 플로팅 아바타가 그 밑으로 갈 수 있어(항상 위 창끼리는 마지막으로 올린 창이 위) 플로팅도 다시 올린다.
+function keepOnTop() {
+  if (win && !win.isDestroyed()) win.setAlwaysOnTop(true, TOPMOST_LEVEL);
+  floating.raise();
+}
 
 const identifier = displays.createIdentifier({ BrowserWindow, screen, level: IDENTIFY_LEVEL });
+
+// 플로팅 아바타(사용자 명세, 2026-11-23, 1.0.10): 메인 렌더러가 window.open으로 여는 팝업 창. 배치·항상 위·드래그·저장은 floating.js
+const floating = createFloating({
+  screen, displays, state, save: (s) => windowState.save(s),
+  mainDisplay: () => (win && !win.isDestroyed() ? currentDisplay() : screen.getPrimaryDisplay()),
+  notifyLayout: (layout) => { if (win && !win.isDestroyed()) win.webContents.send('floating:layout', layout); },
+  onCloseRequest: () => { if (win && !win.isDestroyed()) win.close(); },
+  log: (event, data) => log.main(event, data),
+});
 
 // 사용자가 창을 다른 모니터로 옮기면(Win+Shift+방향키 등) 그 모니터 끝으로 재도크하고 저장한다(사용자 결정, 2026-11-18).
 // 우리 setBounds도 move를 내므로, 이동이 멈춘 뒤 목표 bounds와 다를 때만 다시 맞춘다.
@@ -385,6 +400,19 @@ function createWindow() {
   win.on('restore', keepOnTop);
   win.on('show', keepOnTop);
   win.on('closed', identifier.close);   // 식별 오버레이가 떠 있는 채로 끄면 같이 닫는다(남은 창이 종료를 늦추지 않게)
+  // 플로팅 아바타: 렌더러의 window.open은 이 팝업(about:blank, 이름 floating.NAME)만 허용한다(그 밖의 새 창은 막는다).
+  // 메인창이 닫히면 같이 닫고(남으면 window-all-closed가 오지 않아 앱이 끝나지 않는다), 메인 렌더러가 다시 로드되면 닫는다 —
+  // 팝업 내용은 이전 문서의 React가 그리던 것이라, 새로 로드된 렌더러가 다시 연다(사용자 명세). 렌더러 프로세스를 같이 쓰므로 그 프로세스가 죽어도 닫는다.
+  // 메인창이 활성화되면 플로팅을 다시 위로 올린다(메인창보다 항상 위 — 사용자 명세)
+  win.webContents.setWindowOpenHandler(({ url, frameName }) => (frameName === floating.NAME && url === 'about:blank'
+    ? { action: 'allow', overrideBrowserWindowOptions: floating.windowOptions() } : { action: 'deny' }));
+  win.webContents.on('did-create-window', (child, { frameName }) => {
+    if (frameName === floating.NAME) floating.attach(child); else child.destroy();
+  });
+  win.webContents.on('did-start-navigation', (details) => { if (details.isMainFrame && !details.isSameDocument) floating.close(); });
+  win.webContents.on('render-process-gone', () => floating.close());
+  win.on('closed', () => floating.close());
+  win.on('focus', () => floating.raise());
   attachImeMemory(win);
   setTaskbarHidden(state.hideTaskbar);
   win.on('move', onMove);
@@ -475,7 +503,7 @@ ipcMain.on('app:get-version', (e) => { e.returnValue = app.getVersion(); });
 
 // 렌더러가 저장된 값으로 시작하도록(기본값이 복원된 창을 덮어쓰지 않게) preload가 동기로 읽는다.
 ipcMain.on('window:get-initial', (e) => {
-  e.returnValue = { side: state.side, heightPct: state.heightPct, hideTaskbar: state.hideTaskbar };
+  e.returnValue = { side: state.side, heightPct: state.heightPct, hideTaskbar: state.hideTaskbar, floating: state.floating };
 });
 
 // 렌더러 설정 ↔ 창. 값은 화이트리스트로 검증하고 범위 밖이면 무시한다.
@@ -517,6 +545,26 @@ ipcMain.on('window:set-interactive', (_e, interactive) => {
   if (typeof interactive !== 'boolean' || !win) return;
   if (interactive) win.setIgnoreMouseEvents(false);
   else win.setIgnoreMouseEvents(true, { forward: true });
+});
+// 플로팅 아바타(1.0.10). 켜짐은 window-state.json에 저장하고 창은 렌더러가 연다(꺼지면 여기서도 닫는다).
+// 클릭 통과·드래그는 원형 위에서만(렌더러가 판정). 드래그 끝(moved=false면 클릭)에 위치를 저장한다.
+// 클릭으로 펼칠 때는 메인창에 포커스를 준다(OPEN 탭과 같은 펼침 + 포커스 — 사용자 명세. 접을 때는 포커스를 주지 않는다 — 사용자 결정 2026-11-23)
+ipcMain.on('floating:set-enabled', (_e, on) => {
+  if (typeof on !== 'boolean') return;
+  if (state.floating !== on) {   // 렌더러가 시작할 때마다 현재 값을 보내므로 바뀔 때만 쓴다
+    state.floating = on;
+    windowState.save(state);
+  }
+  if (!on) floating.close();
+});
+ipcMain.on('floating:set-interactive', (_e, interactive) => floating.setInteractive(interactive));
+ipcMain.on('floating:drag-start', () => floating.dragStart());
+ipcMain.handle('floating:drag-end', () => floating.dragEnd());
+ipcMain.handle('floating:layout', () => floating.layout());
+ipcMain.on('floating:focus-main', () => {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
 });
 
 app.whenReady().then(() => {

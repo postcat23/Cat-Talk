@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 
 // 안 읽은 수: 안 보는 동안(포커스 없음·접힘) 받은 타인 메시지 수. 다시 보면 0. 표시는 main이 맡는다.
 // incoming은 사이드카가 세는 타인 메시지 누적 수라 검색·목록 길이와 무관하게 증가분만 보면 된다.
-export function useMessageAlerts(incoming: number | undefined, collapsed: boolean, toast: boolean, taskbar: boolean) {
+// 반환값 = 안 읽은 수. 플로팅 아바타(1.0.10)의 광선 강조가 이것으로 켜지고, 펼쳐 보면(0) 꺼진다(사용자 명세).
+export function useMessageAlerts(incoming: number | undefined, collapsed: boolean, toast: boolean, taskbar: boolean): number {
   const shell = window.catTalk;
   const [focused, setFocused] = useState(() => document.hasFocus());
   const [unread, setUnread] = useState(0);
@@ -31,4 +32,5 @@ export function useMessageAlerts(incoming: number | undefined, collapsed: boolea
   }, [incoming, watching]);
 
   useEffect(() => { shell?.setUnread({ count: unread, toast, taskbar }); }, [shell, unread, toast, taskbar]);
+  return unread;
 }

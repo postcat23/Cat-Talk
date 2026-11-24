@@ -24,6 +24,7 @@ if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from bongo_chat.profiles import steam_profile_uri
+from bongo_chat.protocol import is_meow_message
 from bongo_chat.reactions import png
 from bongo_chat.service import ChatService, NOTIFICATION_KEYS
 from bongo_chat.worker import unavailable
@@ -608,6 +609,35 @@ class Sidecar:
             result[group] = {uid: {k: v for k, v in profile.items() if k not in INTERNAL_PROFILE_KEYS}
                              for uid, profile in result[group].items() if uid not in hidden}
 
+    def last_speaker(self, lobby):
+        """플로팅 아바타(1.0.10)의 '마지막 발화자': 이 로비 대화 목록에 보이는 마지막 채팅(입퇴장·야옹 제외)의
+        {id(메시지), sender, name(그 메시지에 남은 이름), own}. 대화가 없거나 읽지 못하면 None.
+        보이는 범위는 upstream ChatService.view와 같다(앱 차단 목록을 읽었으면 그것으로 빼고, 아니면 허용 목록) — Steam 차단은
+        저장소(hidden_senders)가 뺀다. 저장 못 한 메시지(volatile) 중 마지막 저장 행보다 뒤인 것(_before_seq 없음)이 있으면 그것이 마지막이다."""
+        service = self.service
+        account = service.state.get("account", "")
+        lobby = lobby or service.state.get("lobby", "")
+        if not account or not lobby:
+            return None
+        blocks = set(service.blocked) if service.verified() and service.blocked is not None else None
+        hidden = self.steam_hidden
+
+        def visible(sender):
+            return sender == account or blocks is not None and sender not in blocks and sender not in hidden
+
+        tail = [r for r in service.volatile.values() if r["account"] == account and r["lobby"] == lobby
+                and "_before_seq" not in r and visible(r["sender"]) and not is_meow_message(r["body"])]
+        if tail:
+            row = tail[-1]
+        else:
+            try:
+                row = self.store.last_chat(account, lobby, service.allowed(), blocks)
+            except (sqlite3.Error, OSError):
+                return None
+            if row is None:
+                return None
+        return {"id": row["id"], "sender": row["sender"], "name": row.get("name", ""), "own": bool(row["own"])}
+
     def update_steam_ignored(self, event):
         """worker가 열거한 Steam '모든 대화 차단' 전체 목록(D-040). ids가 None이면 열거 실패 — 멤버별 판정만 쓴다."""
         account, ids = event.get("account"), event.get("ids")
@@ -713,6 +743,8 @@ class Sidecar:
             # TODO(2c): update/auto_merge/notification/language 서브시스템 배선
             self.publish_avatars(result)
             result["incoming_count"] = self.incoming_count
+            # 플로팅 아바타(1.0.10): 대화 목록에 보이는 마지막 채팅의 발화자(본인 포함). 검색·HISTORY 창과 무관하게 매 view에 싣는다
+            result["last_speaker"] = self.last_speaker(lobby)
             # 경고·공개수배(D-052)·칭찬(1.0.8): 대상별 총횟수(보이는 멤버만)와, 검색이 아닐 때 새로 생긴 발동(한 번만 받아 간다)
             visible = set(result["participants"])
             result["warns"] = {uid: n for uid, n in self.warn.counts.items() if uid in visible}

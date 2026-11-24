@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('bridge', {
 
 // 창 제어(끝 도크·높이·작업표시줄·클릭 통과). 브라우저 dev에는 없으므로 렌더러는 존재 여부로 분기한다.
 contextBridge.exposeInMainWorld('catTalk', {
-  // 디스크에 저장된 창 설정(도크·높이·작업표시줄 숨김). 렌더러 초기 상태로 쓴다.
+  // 디스크에 저장된 창 설정(도크·높이·작업표시줄 숨김·플로팅 아바타 켜짐). 렌더러 초기 상태로 쓴다.
   initial: ipcRenderer.sendSync('window:get-initial'),
   // 앱 버전(main의 app.getVersion() = package.json). 드로어 '앱 업데이트'에 표시한다.
   version: ipcRenderer.sendSync('app:get-version'),
@@ -54,6 +54,22 @@ contextBridge.exposeInMainWorld('catTalk', {
   playlist: {
     title: (id) => ipcRenderer.invoke('playlist:title', id),
     open: (ids) => ipcRenderer.invoke('playlist:open', ids),
+  },
+  // 플로팅 아바타(1.0.10, 사용자 명세 2026-11-23). 창은 렌더러가 window.open(about:blank, 이름 'cattalk-floating')으로 열고 main이 배치한다.
+  // setEnabled는 켜짐 저장, setInteractive는 원형 위 커서 여부(클릭 통과), dragStart/dragEnd는 원형을 누름/놓음(dragEnd → {moved}, false면 클릭),
+  // focusMain은 펼칠 때 메인창 포커스, layout·onLayout은 {inward}(라벨·광선이 나가는 화면 안쪽 'left'|'right')
+  floating: {
+    setEnabled: (on) => ipcRenderer.send('floating:set-enabled', on),
+    setInteractive: (interactive) => ipcRenderer.send('floating:set-interactive', interactive),
+    dragStart: () => ipcRenderer.send('floating:drag-start'),
+    dragEnd: () => ipcRenderer.invoke('floating:drag-end'),
+    focusMain: () => ipcRenderer.send('floating:focus-main'),
+    layout: () => ipcRenderer.invoke('floating:layout'),
+    onLayout: (cb) => {
+      const listener = (_e, layout) => cb(layout);
+      ipcRenderer.on('floating:layout', listener);
+      return () => ipcRenderer.removeListener('floating:layout', listener);
+    },
   },
   setDockSide: (side) => ipcRenderer.send('window:set-dock-side', side),
   setChatHeight: (pct) => ipcRenderer.send('window:set-chat-height', pct),

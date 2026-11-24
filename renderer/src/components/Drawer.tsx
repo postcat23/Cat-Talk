@@ -35,6 +35,8 @@ const SWITCHES: { key: BoolKey; label: string }[] = [
   { key: 'catInteraction', label: '고양이 상호작용 표시' },
   { key: 'presence', label: '입퇴장 문구 표시' },
   { key: 'clearCats', label: '모든 고양이 투명화' },
+  // 플로팅 아바타(1.0.10, 사용자 명세): 투명화 바로 아래, 투명화와 독립. 창 배치처럼 main(window-state.json)이 저장한다
+  { key: 'floatingAvatar', label: '플로팅 아바타' },
   { key: 'hideTaskbarIcon', label: '작업 표시줄에서 아이콘 숨기기' },
 ];
 
@@ -130,6 +132,17 @@ export default function Drawer() {
         <button className={styles.dclose} aria-label="닫기" onClick={() => dispatch({ type: 'closeOverlays' })}>×</button>
       </div>
       <div className={styles.divider} />
+      {/* 앱 업데이트: 프로필 바로 아래(사용자 지시 2026-11-24 — 전에는 차단 목록 아래 맨 밑). 버그 신고·요청 사항은 맨 밑 그대로 */}
+      <div className={styles.update}>
+        <div className={styles.uhead}>앱 업데이트</div>
+        <div className={styles.urow}>
+          {APP_VERSION && <span className={styles.ubadge} data-tone={update ? UPDATE_TONE[update.state] : undefined}>{APP_VERSION}</span>}
+          {updateText && <span className={styles.utext}>{updateText}</span>}
+          {updateReady && <button className={styles.upbtn} disabled={updateBlocked} onClick={startUpdate}>재시작하여 설치</button>}
+          {updateFailed && <button className={`${styles.upbtn} ${styles.retry}`} onClick={update?.retry}>다시 시도</button>}
+        </div>
+      </div>
+      <div className={styles.divider} />
       <h3>설정</h3>
       <div className={styles.set}><span>테마</span><Seg options={THEMES} value={settings.theme} onChange={(theme) => set({ theme })} /></div>
       {/* 디스플레이 선택(사용자 명세, 2026-11-18): 모니터가 2개 이상일 때만. 지금 창이 있는 모니터가 켜져 있고, 누르면 그 모니터로
@@ -173,7 +186,7 @@ export default function Drawer() {
           </div>
         </div>
       )}
-      {/* 구분선은 프로필↔설정, 설정 영역↔차단 목록, 차단 목록↔앱 업데이트 3개. 상자 카드는 자체 배경이 구분 역할.
+      {/* 구분선은 프로필↔앱 업데이트, 앱 업데이트↔설정, 설정 영역↔차단 목록 3개. 상자 카드는 자체 배경이 구분 역할.
           켜기 = 설치돼 있으면 플래그만, 아니면 카운트다운 후 설치(재적용 포함), 끄기 = 플래그 삭제(D-019) */}
       <div className={styles.chest}>
         <span className={styles.cicon}>📦</span>
@@ -218,16 +231,6 @@ export default function Drawer() {
             <button className={styles.bbtn} onClick={() => void setBlocked(u.id, false)}>차단 해제</button>
           </div>
         ))}
-      <div className={styles.divider} />
-      <div className={styles.update}>
-        <div className={styles.uhead}>앱 업데이트</div>
-        <div className={styles.urow}>
-          {APP_VERSION && <span className={styles.ubadge} data-tone={update ? UPDATE_TONE[update.state] : undefined}>{APP_VERSION}</span>}
-          {updateText && <span className={styles.utext}>{updateText}</span>}
-          {updateReady && <button className={styles.upbtn} disabled={updateBlocked} onClick={startUpdate}>재시작하여 설치</button>}
-          {updateFailed && <button className={`${styles.upbtn} ${styles.retry}`} onClick={update?.retry}>다시 시도</button>}
-        </div>
-      </div>
       {/* 버그 신고·요청 사항(D-050): 앱 가운데 모달 → Discord 포럼. 웹훅이 없는 빌드(dev 등)는 비활성. 브라우저 dev엔 없다 */}
       {window.catTalk && (
         <div className={styles.report}>
