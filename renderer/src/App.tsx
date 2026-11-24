@@ -16,13 +16,14 @@ import Conversation from './components/Conversation';
 import Composer from './components/Composer';
 import NicknameModal from './components/NicknameModal';
 import ReportModal from './components/ReportModal';
+import EventMotion from './components/EventMotion';
 
 const HEIGHT_PCT: Record<ChatHeight, 100 | 70 | 50> = { '100%': 100, '70%': 70, '50%': 50 };
 
 function Panel() {
   const { settings, overlays, dispatch } = useUi();
   const reactions = useReactionStack(MAX_CARDS[settings.height], settings.catInteraction);
-  const chat = useChatView(reactions.push, settings.catInteraction, settings.playWarn, settings.playPraise);
+  const chat = useChatView(reactions.push, settings.catInteraction, settings.playWarn, settings.playPraise, settings.playEvent);
   const { saveSettings } = chat;
   const chestOff = useCallback((features: Feature[]) => {
     const patch = { ...(features.includes('chest') && { autoOpenChest: false }), ...(features.includes('transparent') && { clearCats: false }) };
@@ -66,6 +67,8 @@ function Panel() {
               participants={chat.participants} meId={chat.me?.id} onWarn={chat.warn} onPraise={chat.praise} onPlaylist={playlistCommand}
               onNotify={chat.notify} warnEnabled={settings.playWarn} praiseEnabled={settings.playPraise} mention={mentionEnabled(settings)} />
           </div>
+          {/* 문구 트리거 이벤트 효과(1.0.10): 패널 전체 위(상단바 위 가랜드 포함), 채팅 투명도 밖. 클릭은 통과한다 */}
+          <EventMotion />
           {/* 닉네임 변경(D-032): 패널 전체 기준 가운데. 대화 영역 오버레이와 달리 상단바·입력창까지 덮는다 */}
           <NicknameModal />
           <ReportModal />

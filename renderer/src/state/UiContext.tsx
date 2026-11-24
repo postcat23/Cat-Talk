@@ -18,6 +18,7 @@ export interface Settings {
   autoOpenChest: boolean;   // true=켜기 활성. 켜기/끄기 버튼 UI만, 적용/복원 로직은 보류
   playWarn: boolean;        // 드로어 '플레이 > 경고'(기본 켜기). 끄면 내 화면의 노란 카드·공개수배 전단과 내 '@경고!' 입력만 멈춘다
   playPraise: boolean;      // 드로어 '플레이 > 칭찬'(1.0.8, 기본 켜기). 끄면 내 화면의 별 표시·칭찬 도장과 내 '@칭찬!' 입력만 멈춘다(경고와 독립)
+  playEvent: boolean;       // 드로어 '플레이 > 이벤트 모션'(1.0.10, 기본 켜기). 끄면 트리거 문구가 와도 내 화면에 효과를 띄우지 않는다(chat/events.ts)
 }
 
 export type ReportKind = 'bug' | 'request';
@@ -64,7 +65,7 @@ const initialState: UiState = {
   settings: {
     theme: 'system', side: saved?.side ?? 'right', height: (saved && SAVED_HEIGHT[saved.heightPct]) ?? '100%', opacity: 100,
     taskbarAlert: true, toastAlert: true, catInteraction: true, clearCats: false, presence: true,
-    hideTaskbarIcon: saved?.hideTaskbar ?? false, autoOpenChest: false, playWarn: true, playPraise: true,
+    hideTaskbarIcon: saved?.hideTaskbar ?? false, autoOpenChest: false, playWarn: true, playPraise: true, playEvent: true,
   },
   overlays: { collapsed: false, drawerOpen: false, modalOpen: false, searchOpen: false, nicknameFor: null, playlist: null, reportKind: null },
 };
