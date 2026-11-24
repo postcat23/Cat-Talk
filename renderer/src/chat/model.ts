@@ -161,6 +161,17 @@ function paletteColor(uid: string) {
 // avatar_id → 받아 둔 data URI. 아직 없거나 아바타가 준비 전이면 undefined(실루엣 폴백)
 export type AvatarLookup = (avatarId: string | undefined) => string | undefined;
 
+// 보낸 사람 → 마지막으로 본 avatar_id(렌더러가 기억, useChatView). view.profiles에는 지금 로비 멤버만 온다(worker·service가
+// 멤버로 거른다) — 나간 사람의 지난 메시지·플로팅 아바타는 이것으로 스킨을 유지한다
+export type AuthorAvatars = Record<string, string>;
+
+// 메시지 작성자의 프로필: view에 있으면 그것, 없으면(나간 사람) 기억해 둔 avatar_id만. 이름은 채우지 않는다 — 나간 사람은 지금처럼
+// 메시지에 남은 이름으로 표시한다
+export function authorProfile(view: ViewResponse, uid: string, remembered?: AuthorAvatars): ViewProfile | undefined {
+  const avatarId = remembered?.[uid];
+  return view.profiles[uid] ?? (avatarId ? { avatar_id: avatarId } : undefined);
+}
+
 export function toParticipant(uid: string, profile: ViewProfile | undefined, fallbackName: string, avatarOf?: AvatarLookup,
   nicks?: Record<string, string>, warns?: Record<string, number>, praises?: Record<string, number>): Participant {
   const base = profile?.name || fallbackName;
@@ -188,7 +199,7 @@ function clock(received: number) {
 
 export const isPresence = (m: ViewMessage) => m.kind === 'member_joined' || m.kind === 'member_left';
 
-export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatItem[] {
+export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup, remembered?: AuthorAvatars): ChatItem[] {
   return view.messages.map((m): ChatItem => {
     if (isPresence(m)) {
       const name = displayName(m.sender, m.name || '이름 확인 중', view.nicknames);
@@ -197,9 +208,9 @@ export function toChatItems(view: ViewResponse, avatarOf?: AvatarLookup): ChatIt
     const own = Boolean(m.own);
     return {
       kind: 'msg', id: m.id, seq: m.seq, sender: m.sender, own, text: m.body, time: clock(m.received),
-      // 나간 참여자는 profiles에 없어도 메시지에 남은 이름으로 표시한다
-      author: toParticipant(m.sender, view.profiles[m.sender], m.name || (own ? '나' : '이름 확인 중'), avatarOf, view.nicknames, view.warns,
-        view.praises),
+      // 나간 참여자는 profiles에 없어도 메시지에 남은 이름으로, 아바타는 기억해 둔 스킨으로 표시한다
+      author: toParticipant(m.sender, authorProfile(view, m.sender, remembered), m.name || (own ? '나' : '이름 확인 중'), avatarOf,
+        view.nicknames, view.warns, view.praises),
       status: m.unsaved ? UNSAVED_LABEL : STATUS_LABEL[m.status],
       resendable: own && m.status === 'failed' && !m.unsaved,
     };
