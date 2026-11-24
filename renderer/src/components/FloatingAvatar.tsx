@@ -6,22 +6,29 @@ import { useFloatingWindow } from '../hooks/useFloatingWindow';
 import Cat from './Cat';
 import styles from './FloatingAvatar.module.css';
 
-// 광선 버스트(사용자 명세·결정 2026-11-23): 삼각 광선 3개 부채꼴, 원형의 화면 안쪽 위 바깥, 노랑.
-// 그림 좌표 32×32에서 원점 = 왼쪽 아래(원형 가장자리 바로 바깥), 안쪽이 오른쪽인 모양으로 그리고 왼쪽은 CSS로 뒤집는다.
-// 광선 = 원점에서 R0 떨어진 꼭짓점 → 바깥쪽 밑변(len, 반폭 w). 가운데(45°)가 가장 길다.
-const R0 = 3;
-const RAYS = [{ deg: 20, len: 21, w: 2.6 }, { deg: 45, len: 27, w: 3.2 }, { deg: 70, len: 21, w: 2.6 }];
+// 광선 버스트(사용자 명세·결정 2026-11-23): 삼각 광선 3개 부채꼴, 원형의 화면 안쪽 위 바깥, 노랑 + 주황 테두리(예시 이미지).
+// 그림 좌표 = 원형 상자(64×64, 원형 중심 (32,32)). 안쪽이 오른쪽인 모양(오른쪽 위)으로 그리고 왼쪽은 CSS로 원형 중심 기준 좌우를 뒤집는다.
+// 세 줄은 공통 원점에서 CENTER ± SPREAD 방향으로 뻗고, 각 광선 = 원점에서 R0 떨어진 꼭짓점 → 바깥 밑변(길이 len, 반폭 w).
+// 원점을 원형 안쪽에 두고 꼭짓점을 R0만큼 띄워 세 줄이 밑동부터 떨어지게 한다(한 점에 모으면 테두리가 밑동에서 뭉친다).
+// 가운데 꼭짓점은 원형 가장자리에서 EDGE 바깥. 값은 후보 그림 비교로 사용자가 골랐다(2026-11-23):
+// 길이 = 처음(18/24/18)의 0.55배, 사이 각 32°·밑동 9, 테두리 1(CSS).
+// 크기 변화(사용자 결정 2026-11-24)는 광선마다 자기 꼭짓점을 기준점으로 키운다(꼭짓점 고정, 길이·굵기만) — origin = 꼭짓점.
+const CENTER = 45, SPREAD = 32, R0 = 9, EDGE = 5;
+const RAYS = [{ len: 10, w: 2.6 }, { len: 13, w: 3.2 }, { len: 10, w: 2.6 }];
 const f = (v: number) => Math.round(v * 100) / 100;
-const RAY_POINTS = RAYS.map(({ deg, len, w }) => {
-  const t = (deg * Math.PI) / 180, dx = Math.cos(t), dy = -Math.sin(t), px = Math.sin(t), py = Math.cos(t);
-  const bx = len * dx, by = 32 + len * dy;
-  return [[R0 * dx, 32 + R0 * dy], [bx + w * px, by + w * py], [bx - w * px, by - w * py]].map(([x, y]) => `${f(x)},${f(y)}`).join(' ');
+const dir = (deg: number) => [Math.cos((deg * Math.PI) / 180), -Math.sin((deg * Math.PI) / 180)];
+const [OX, OY] = dir(CENTER).map((d) => 32 + (32 + EDGE - R0) * d);
+const RAY_SHAPES = RAYS.map(({ len, w }, i) => {
+  const [dx, dy] = dir(CENTER + (i - 1) * SPREAD), px = -dy, py = dx;
+  const bx = OX + (R0 + len) * dx, by = OY + (R0 + len) * dy;
+  const pts = [[OX + R0 * dx, OY + R0 * dy], [bx + w * px, by + w * py], [bx - w * px, by - w * py]];
+  return { points: pts.map(([x, y]) => `${f(x)},${f(y)}`).join(' '), origin: `${f(pts[0][0])}px ${f(pts[0][1])}px` };
 });
 
 function Burst() {
   return (
-    <svg className={styles.burst} viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
-      {RAY_POINTS.map((points) => <polygon key={points} points={points} />)}
+    <svg className={styles.burst} viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+      {RAY_SHAPES.map(({ points, origin }) => <polygon key={points} points={points} style={{ transformOrigin: origin }} />)}
     </svg>
   );
 }
@@ -95,7 +102,8 @@ export default function FloatingAvatar({ unread }: { unread: number }) {
         onPointerCancel={() => void finish(false)} onLostPointerCapture={() => void finish(false)}>
         <Cat src={lastSpeaker?.avatar} framing="face" />
       </div>
-      {unread > 0 && <Burst />}
+      {/* 안 읽은 수가 바뀌면(새 메시지) 다시 그려 크기 변화를 처음부터 한다(사용자 결정 2026-11-24 — CSS .burst polygon) */}
+      {unread > 0 && <Burst key={unread} />}
       {name && <span className={styles.label}>{name}</span>}
     </div>,
     host,

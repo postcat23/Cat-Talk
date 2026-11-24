@@ -9,7 +9,7 @@
 const NAME = 'cattalk-floating';
 const SIZE = 64;      // 원형 지름(사용자 명세)
 const SIDE = 188;     // 원형 좌우 여백: 라벨 간격 8 + 최대 폭 180
-const TOP = 28;       // 원형 위 여백: 광선(원형 위로 약 26)
+const TOP = 28;       // 원형 위 여백: 광선 자리. 광선을 줄인 뒤(2026-11-23)에는 원형 위로 약 8(테두리 포함)만 쓴다 — 여백이 투명·클릭 통과라 그대로 둔다
 const BOTTOM = 16;    // 원형 아래 여백: 그림자(접기 탭과 같은 4px 아래·10px 흐림)
 const WIDTH = SIDE * 2 + SIZE;
 const HEIGHT = TOP + SIZE + BOTTOM;
