@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/ko/).
 
 ## [Unreleased]
 
+### Added
+
+- `sidecar` — 드로어 설정 저장에 '플레이 > 이벤트 모션'(`play_event`, 기본 켜기) 추가. 렌더러만 읽음(효과는 각자 화면에서 발동)
+
 ## [1.0.9] - 2026-11-20
 
 ### Added
